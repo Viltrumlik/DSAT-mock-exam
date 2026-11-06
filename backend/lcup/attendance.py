@@ -195,12 +195,34 @@ def apply_day(plan: DayPlan) -> Counter:
 MAX_PUSH_ATTEMPTS = 5
 
 
-def push_held_reason(link) -> str | None:
-    """Why ``link``'s registers are not sent at all, or None. lc-up bills every student it lists;
-    one we have no account for cannot be in what we send, so their fee would quietly be missed."""
-    if link.memberships.filter(left_at__isnull=True, student__user__isnull=True).exists():
-        return f"attendance push held for {link.name}: an lc-up student of this group has no account here"
-    return None
+#: Our own code on a push's ``failures``, beside lc-up's: a member we could not send at all.
+NO_ACCOUNT = "no_account"
+
+
+def unsent_members(link) -> list[dict]:
+    """The lc-up members of ``link`` no push of ours can carry, as ``failures`` entries: in the group,
+    not frozen, and with no account here — the register never showed them, so nothing of theirs was
+    marked. lc-up bills every student it lists, so an admin marks them in lc-up by hand.
+
+    They used to hold the whole group's push until the account was fixed; the fix came after lc-up's
+    window had closed, and G27 lost three lessons' marks, not one student's (prod, 2026-10/11). The
+    owner, 2026-11-06: "Qolganlarini yuborish" — the rest go, and these are named."""
+    rows = (
+        link.memberships.filter(left_at__isnull=True, student__user__isnull=True)
+        .exclude(lcup_status=FROZEN)
+        .order_by("student__name", "student__lcup_student_id")
+        .values_list("student__lcup_student_id", "student__name")
+    )
+    return [
+        {
+            "user_id": None,
+            "student_id": lcup_id,
+            "code": NO_ACCOUNT,
+            "name": name or "",
+            "message": "no account here, so not sent: mark them in lc-up by hand",
+        }
+        for lcup_id, name in rows
+    ]
 
 
 def registers_just_closed(now) -> set[datetime]:
@@ -243,15 +265,16 @@ def push_worth_retrying(now) -> bool:
 
 def push_day(client, plan: DayPlan, *, now):
     """Send ``plan.push`` to lc-up — once for this group and day — and record it. None when there
-    is nothing to send, the switch is off, the day is before the cutover, the group is held, or the
-    register was already sent (or refused, or tried ``MAX_PUSH_ATTEMPTS`` times)."""
+    is nothing to send, the switch is off, the day is before the cutover, or the register was already
+    sent (or refused, or tried ``MAX_PUSH_ATTEMPTS`` times). A sent push names, after lc-up's own
+    refusals, the members it could not carry (``unsent_members``)."""
     from .client import LcupError, LcupWindowClosed
     from .conf import attendance_push_enabled, attendance_push_from
 
     if not plan.push or not attendance_push_enabled():
         return None
     start = attendance_push_from()
-    if start is None or plan.day < start or push_held_reason(plan.link):
+    if start is None or plan.day < start:
         return None
     push, _ = LcupAttendancePush.objects.get_or_create(group=plan.link, date=plan.day)
     if push.state in (LcupAttendancePush.STATE_SENT, LcupAttendancePush.STATE_REFUSED) or push.attempts >= MAX_PUSH_ATTEMPTS:
@@ -281,7 +304,7 @@ def push_day(client, plan: DayPlan, *, now):
             }
             for res in answer.get("results") or []
             if res.get("result") == "failed"
-        ]
+        ] + unsent_members(plan.link)
     push.save()
     return push
 

@@ -420,7 +420,8 @@ class FinanceExemptView(_AdminView):
 
 
 class AttendancePushListView(_AdminView):
-    """The last 100 registers sent to lc-up: what lc-up said, and the students it did not take."""
+    """The last 100 registers sent to lc-up: what lc-up said, the students it did not take, and those
+    we could not send because they have no account here."""
 
     def get(self, request):
         from users.models import User
@@ -440,7 +441,13 @@ class AttendancePushListView(_AdminView):
                 "marks": len(p.records or []),
                 "summary": p.summary or {},
                 "failures": [
-                    {"student": people.get(f.get("user_id")), "code": f.get("code") or "", "message": f.get("message") or ""}
+                    {
+                        "student": people.get(f.get("user_id")),
+                        # lc-up's name, for a member we never had an account for (``attendance.unsent_members``).
+                        "name": f.get("name") or "",
+                        "code": f.get("code") or "",
+                        "message": f.get("message") or "",
+                    }
                     for f in (p.failures or [])
                 ],
                 "error": p.error,

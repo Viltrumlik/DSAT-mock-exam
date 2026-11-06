@@ -1,6 +1,7 @@
 /**
  * /ops/lcup → Attendance: every register sent to lc-up, and the students lc-up did not take
- * (a debt block, not in the group, …) — so an administrator can settle those in lc-up by hand.
+ * (a debt block, not in the group, …) or that we could not send (no account here) — so an
+ * administrator can settle those in lc-up by hand.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -69,6 +70,21 @@ describe("lc-up attendance pushes panel", () => {
     expect(host.textContent).toContain("Sent");
     expect(host.textContent).toContain("3 marks · 2 saved");
     expect(host.textContent).toContain("Aziz Tursunov — lc-up did not take this mark (blocked_debt)");
+  });
+
+  it("names, in red, a member who went unsent because they have no account here", async () => {
+    // Prod, 2026-11: such a member used to hold the whole group's push until lc-up's window closed.
+    await mount([
+      {
+        id: 2, group: "Junior G27 | Math | Abdulaziz", date: "2026-11-05", state: "sent", attempts: 1, marks: 13,
+        summary: { saved: 13 },
+        failures: [{ student: null, name: "Doston Karimov", code: "no_account", message: "y" }],
+        error: "", sent_at: "2026-11-05T17:55:05+05:00",
+      },
+    ]);
+    const line = [...host.querySelectorAll("p")].find((p) => p.textContent?.includes("Doston Karimov"));
+    expect(line?.textContent).toBe("Doston Karimov — no account here, so not sent: mark them in lc-up by hand");
+    expect(line?.className).toContain("text-danger");
   });
 
   it("says when nothing has been sent yet", async () => {

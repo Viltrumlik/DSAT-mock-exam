@@ -12,7 +12,7 @@ from datetime import datetime, time, timedelta
 from django.test import override_settings
 from django.utils import timezone
 
-from lcup.models import LcupAbsenceReason
+from lcup.models import LcupAbsenceReason, LcupMembership, LcupStudentLink
 from lcup.sync import API, _attendance, _reasons, _Run
 from lcup.testing import POST_ATTENDANCE, FakeLcupClient
 from lcup.tests_attendance_reconcile import DAY, KASAL, R, ReconcileFixture, row
@@ -92,6 +92,21 @@ class AttendanceStageTests(ReconcileFixture):
 
         _, run = self.stage([row(101)], answer=answer)
         self.assertTrue(any("blocked_debt" in a for a in run.alerts), run.alerts)
+
+    @override_settings(**PUSH_ON)
+    def test_a_member_with_no_account_here_goes_unsent_and_is_named(self):
+        # Prod, 2026-11: one such member held G27's whole push past lc-up's window three times.
+        unknown = LcupStudentLink.objects.create(lcup_student_id=555, name="Doston Unknown")
+        LcupMembership.objects.create(group=self.link, student=unknown, lcup_status="active")
+        self.mark(self.s2, R.STATUS_ABSENT)
+        client, run = self.stage([row(101)])
+        self.assertEqual(client.posts, [(10, DAY, [{"student_id": 102, "status": "absent"}])])
+        self.assertEqual((run.counts["att_pushed"], run.counts["att_unsent_no_account"]), (1, 1))
+        self.assertEqual(
+            [a for a in run.alerts if "Doston Unknown" in a],
+            [f"attendance for {self.link.name} {DAY.isoformat()} went without Doston Unknown: "
+             "no account here — mark them in lc-up by hand"],
+        )
 
 
 class ReasonsStageTests(ReconcileFixture):

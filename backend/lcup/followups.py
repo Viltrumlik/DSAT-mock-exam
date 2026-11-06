@@ -10,7 +10,7 @@ Three questions, answered here and nowhere else, so the register, the lesson-end
    errand; nothing here messages an admin.
 2. **Not on the class list.** A live, non-frozen lc-up member of a paired group with no active
    seat in its class. The register cannot show them, so the teacher cannot mark them, and the
-   group's push to lc-up is held for them (``attendance.push_held_reason``).
+   group's push to lc-up goes without them (``attendance.unsent_members`` names them on it).
 3. **The lesson-end check.** What one class's teachers are told when its lesson ends: once, while
    the register is still open.
 
