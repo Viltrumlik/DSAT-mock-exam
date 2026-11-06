@@ -1,0 +1,5 @@
+# analyze.py (Phase 3). extract.py needs only psycopg2.
+pandas==2.2.3
+numpy==2.1.3
+scipy==1.14.1
+matplotlib==3.9.2
