@@ -8,7 +8,7 @@
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupportBooking, SupportCalendar, SupportHour } from "@/lib/api";
 
@@ -276,5 +276,40 @@ describe("SupportBookingPage — attended late, the no-show pause, started sessi
     await render();
 
     expect(buttonNamed("Cancel")).toBeUndefined();
+  });
+});
+
+describe("SupportBookingPage — on a device outside Tashkent", () => {
+  // 2026-11-09: a laptop three hours behind Tashkent showed the 16:00 hour as "13:00", and the
+  // student booked it believing so. The fixtures were built on the suite's Tashkent clock; the
+  // page must keep showing those hours after the device moves to Kyiv (UTC+2 in November).
+  // Built while the suite is still on its Tashkent clock: a describe body runs at collection,
+  // before beforeAll moves the device. `booking()` itself runs in beforeEach, on the Kyiv clock.
+  const sessionStarts = at(tomorrow, 15);
+  const sessionEnds = at(tomorrow, 16);
+
+  let savedTz: string | undefined;
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("labels the open hour and the booked session by the school's clock", async () => {
+    // The open hour is 14:00 in Tashkent — 11:00 on this device.
+    expect(new Date(CALENDAR.teachers[0].days[0].hours[2].starts_at).getHours()).toBe(11);
+    const session = booking(7, "BOOKED");
+    session.slot = { ...session.slot, starts_at: sessionStarts, ends_at: sessionEnds };
+    hooks.useMySupportBookings.mockReturnValue(loaded([session]));
+    await render();
+
+    const book = host.querySelector('[aria-label^="Book "]');
+    expect(book?.getAttribute("aria-label")).toMatch(/^Book (14:00|02:00\sPM)$/);
+    // The booked session is 15:00 in Tashkent; the device's clock would say 12:00.
+    expect(host.textContent).toMatch(/15:00|03:00\sPM/);
+    expect(host.textContent).not.toMatch(/\b(12:00\sPM|12:00)\b/);
   });
 });

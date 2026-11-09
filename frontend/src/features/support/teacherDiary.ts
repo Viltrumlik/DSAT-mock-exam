@@ -12,6 +12,13 @@
  * no figure anywhere, because it is neither attended nor missed. It stays that way for ever.
  */
 import type { SupportBooking } from "@/lib/api";
+import {
+  SCHOOL_TIME_ZONE,
+  schoolDateKey,
+  schoolDaysBetween,
+  schoolMidday,
+  toSchoolDateKey,
+} from "@/lib/schoolTime";
 import type { Tone } from "@/features/teacher/ui";
 
 /** Where a session stands, as the teacher reads it — not as the database stores it. */
@@ -144,13 +151,18 @@ export function plural(count: number, singular: string, pluralForm?: string): st
   return `${count} ${count === 1 ? singular : (pluralForm ?? `${singular}s`)}`;
 }
 
-/* ── time, as the reader's own clock shows it ─────────────────────────────────────────── */
+/* ── time, by the school's clock ──────────────────────────────────────────────────────────
+ *
+ * Shared by the teacher's diary and the student's booking page, and pinned to Asia/Tashkent
+ * rather than the device's zone: the teacher and the student must read one hour as one time.
+ * See `@/lib/schoolTime`. */
 
 export function fmtWhen(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString(undefined, {
     weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    timeZone: SCHOOL_TIME_ZONE,
   });
 }
 
@@ -158,7 +170,7 @@ export function fmtDay(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, {
-    day: "numeric", month: "short", year: "numeric",
+    day: "numeric", month: "short", year: "numeric", timeZone: SCHOOL_TIME_ZONE,
   });
 }
 
@@ -166,19 +178,22 @@ export function fmtHour(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? iso
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }
 
-/** "Today" and "Tomorrow" earn their names; after that the weekday is what anyone uses. */
+/**
+ * "Today" and "Tomorrow" earn their names; after that the weekday is what anyone uses.
+ *
+ * Takes a school date ("2026-08-08", as the calendar names its days) or a full instant; both
+ * must name the same day. "Today" is today in Tashkent, not on the device.
+ */
 export function dayLabel(iso: string, now: number): { title: string; sub: string } {
-  const d = iso.includes("T") ? new Date(iso) : new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return { title: iso, sub: "" };
-  d.setHours(0, 0, 0, 0);
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((d.getTime() - today.getTime()) / 86_400_000);
-  const sub = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const key = toSchoolDateKey(iso);
+  if (!key) return { title: iso, sub: "" };
+  const diff = schoolDaysBetween(schoolDateKey(now), key);
+  const midday = schoolMidday(key);
+  const sub = midday.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: SCHOOL_TIME_ZONE });
   if (diff === 0) return { title: "Today", sub };
   if (diff === 1) return { title: "Tomorrow", sub };
-  return { title: d.toLocaleDateString(undefined, { weekday: "short" }), sub };
+  return { title: midday.toLocaleDateString(undefined, { weekday: "short", timeZone: SCHOOL_TIME_ZONE }), sub };
 }

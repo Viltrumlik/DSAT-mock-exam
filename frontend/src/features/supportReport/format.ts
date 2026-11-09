@@ -12,6 +12,7 @@
  * 3. **The backlog is stated in what it costs**, not in a count. "32 sessions" is a number;
  *    "32 sessions that paid nobody" is the finding.
  */
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import type {
   MonthKey,
   StatusOption,
@@ -223,9 +224,9 @@ export function monthEnd(month: MonthKey | null | undefined): string {
 /**
  * An ISO datetime as "9 Sep 2026, 14:00", or the em dash when there is none.
  *
- * Rendered in the reader's own locale and timezone, matching the support teacher's diary and
- * the student's booking page — one hour must not read as two different times depending on
- * which page of this product you are on.
+ * Rendered in the reader's own locale but by the school's clock (Asia/Tashkent), matching the
+ * support teacher's diary and the student's booking page — one hour must not read as two
+ * different times depending on which page, or which device, you read it on.
  */
 export function formatWhen(iso: string | null | undefined): string {
   if (!iso) return NO_VALUE;
@@ -237,6 +238,7 @@ export function formatWhen(iso: string | null | undefined): string {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: SCHOOL_TIME_ZONE,
   });
 }
 
@@ -245,7 +247,9 @@ export function formatDay(iso: string | null | undefined): string {
   if (!iso) return NO_VALUE;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return NO_VALUE;
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    day: "numeric", month: "short", year: "numeric", timeZone: SCHOOL_TIME_ZONE,
+  });
 }
 
 /** "14:00" — the hour, on its own line under the date. "" when there is none. */
@@ -253,7 +257,7 @@ export function formatTime(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }
 
 /**

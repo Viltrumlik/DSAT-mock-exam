@@ -44,38 +44,10 @@ import { CancelBookingDialog } from "./CancelBookingDialog";
 import { AddMemberDialog } from "./AddMemberDialog";
 import { SessionRating } from "./SessionRating";
 import { SupportSubjectPill } from "./SupportSubject";
-
-function fmtWhen(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-  });
-}
-
-function fmtHour(iso: string) {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
-/** "Today" and "Tomorrow" earn their names; after that the weekday is what a student uses. */
-function dayLabel(iso: string): { title: string; sub: string } {
-  // Accepts a date ("2026-08-08") or a full instant; both must name the same day. The
-  // instant has to be flattened to midnight first, or its time-of-day rounds the day
-  // difference up and a 15:00 pick made today reads as "Tomorrow".
-  const d = iso.includes("T") ? new Date(iso) : new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return { title: iso, sub: "" };
-  d.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((d.getTime() - today.getTime()) / 86_400_000);
-  const sub = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  if (diff === 0) return { title: "Today", sub };
-  if (diff === 1) return { title: "Tomorrow", sub };
-  return { title: d.toLocaleDateString(undefined, { weekday: "short" }), sub };
-}
+// The teacher's diary reads the hour with these same three, by the school's clock. A student
+// whose device sits in another timezone once booked 16:00 reading it as 13:00 (2026-11-09);
+// one shared, Tashkent-pinned formatter is what keeps the two pages on one time.
+import { dayLabel, fmtHour, fmtWhen } from "./teacherDiary";
 
 const STATUS_STYLE: Record<SupportBooking["status"], { label: string; tone: PillTone }> = {
   BOOKED: { label: "Booked", tone: "info" },
@@ -573,7 +545,7 @@ function TeacherCalendar({
           `overflow-x-auto` clips the other axis too. */}
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 py-1.5">
         {teacher.days.map((d, i) => {
-          const label = dayLabel(d.date);
+          const label = dayLabel(d.date, Date.now());
           const free = d.hours.filter((h) => h.state === "open").length;
           // A day with nothing left is usually today, running out hour by hour — calling that
           // "Full" would blame the other students for what is just the clock.
@@ -672,7 +644,7 @@ function TeacherCalendar({
         <div className="squircle cr-rowin border border-primary/25 bg-primary/[0.06] p-4 [--sq:11px]">
           {/* Named off the pick itself, never off whichever day is on screen. */}
           <p className="text-sm font-extrabold text-foreground">
-            {dayLabel(picked).title} · {fmtHour(picked)} with {teacher.name}
+            {dayLabel(picked, Date.now()).title} · {fmtHour(picked)} with {teacher.name}
           </p>
           {/* The teacher's note for this hour. It is addressed to the student — "bring your
               Module 2 answer sheet" is no use only to the person who wrote it. */}
