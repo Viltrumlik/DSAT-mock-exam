@@ -5,7 +5,7 @@
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const get = vi.fn();
 
@@ -241,5 +241,42 @@ describe("LedgerPanel", () => {
     await click("Former students");
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("This did not load");
     expect(document.body.textContent).not.toContain("Nobody here");
+  });
+});
+
+/**
+ * A problem's time is the school's. The server writes it in UTC, so the panel used to slice the
+ * UTC date off the string and print the device's hour beside it: on a laptop in Europe/Kyiv a
+ * 01:30 tick in Tashkent read "9 Nov 2026, 22:30".
+ */
+describe("LedgerPanel on a device outside Tashkent", () => {
+  /** 16:00 on the 9th in Tashkent — 13:00 on the device. */
+  const FOUR_PM = "2026-11-09T16:00:00+05:00";
+
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date(FOUR_PM).getHours()).toBe(13);
+  });
+
+  it("dates a recent problem by the school's day and hour", async () => {
+    // 20:30 UTC on the 9th is 01:30 on the 10th in Tashkent — and 22:30 on the 9th in Kyiv.
+    const problems = [
+      { at: FOUR_PM, kind: "tick", errors: ["first"], alerts: [] },
+      { at: "2026-11-09T20:30:00+00:00", kind: "tick", errors: ["second"], alerts: [] },
+    ];
+    await mount(<LedgerPanel />, { "/billing/summary/": { ...SUMMARY, problems } });
+    expect(document.body.textContent).toContain("9 Nov 2026, 16:00");
+    expect(document.body.textContent).toContain("10 Nov 2026, 01:30");
   });
 });

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -149,5 +149,47 @@ describe("ops ticket check", () => {
     useTicket.mockReturnValue(query({ isError: true }));
     await render();
     expect(text()).toContain("No ticket with that code");
+  });
+});
+
+/**
+ * The door desk reads these hours in Tashkent; a laptop on another clock must read the same.
+ * On a device three hours behind (Europe/Kyiv in November) the page used to print 13:00 for a
+ * ticket marked at 16:00, and for a door that opens at 16:00.
+ */
+describe("ops ticket check on a device outside Tashkent", () => {
+  /** 16:00 on the 9th in Tashkent — 13:00 on the device. */
+  const FOUR_PM = "2026-11-09T16:00:00+05:00";
+
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date(FOUR_PM).getHours()).toBe(13);
+  });
+
+  it("says when marking opens by the school's clock", async () => {
+    useTicket.mockReturnValue(
+      query({ data: ticket({ can_mark: false, reason: "too_early", marking_opens_at: FOUR_PM }) }),
+    );
+    await render();
+    expect(text()).toMatch(/You can mark from (16:00|04:00\sPM)/);
+  });
+
+  it("says when the ticket was marked by the school's clock", async () => {
+    useTicket.mockReturnValue(
+      query({ data: ticket({ attendance: "ATTENDED", marked_at: FOUR_PM, can_mark: false, reason: "" }) }),
+    );
+    await render();
+    expect(text()).toMatch(/marked (16:00|04:00\sPM)/);
   });
 });

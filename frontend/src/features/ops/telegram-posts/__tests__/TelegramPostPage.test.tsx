@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -415,5 +415,59 @@ describe("TelegramPostPage", () => {
     expect(button("Edit")).toBeUndefined();
     expect(text()).toContain("Admission Workshop");
     expect(button("Pause")).toBeDefined();
+  });
+});
+
+/**
+ * A post goes out to class groups at an hour in Tashkent. On a laptop three hours behind
+ * (Europe/Kyiv in November) this page used to print the device's hours for the next send and
+ * for each group's delivery.
+ */
+describe("TelegramPostPage on a device outside Tashkent", () => {
+  /** 16:00 on the 9th in Tashkent — 13:00 on the device. */
+  const FOUR_PM = "2026-11-09T16:00:00+05:00";
+
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date(FOUR_PM).getHours()).toBe(13);
+  });
+
+  it("says when the post next goes out by the school's clock", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({ next_send_at: "2026-11-14T18:00:00+05:00" }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    expect(text()).toMatch(/Next: [\d/.]+,? (18:00|0?6:00(:00)?\sPM)/);
+  });
+
+  it("says when each group got it by the school's clock", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({
+        runs: [{
+          run_on: "2026-11-09",
+          deliveries: [
+            { id: 1, chat_id: "-1001", group_names: "Senior G1 Math", status: "SENT", error: "", sent_at: FOUR_PM, attempts: 1 },
+          ],
+        }],
+      }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    const sentCell = Array.from(document.body.querySelectorAll("td")).find((td) =>
+      /\d:\d\d/.test(td.textContent ?? ""),
+    );
+    expect(sentCell?.textContent).toMatch(/^(16:00(:00)?|0?4:00(:00)?\sPM)$/);
   });
 });
