@@ -686,4 +686,22 @@ describe("OpsEventsPage on a device outside Tashkent", () => {
     expect(text()).toMatch(SIXTEEN);
     expect(text()).not.toMatch(THIRTEEN);
   });
+
+  it("edits a 16:00 event as 16:00 and saves it untouched as 16:00", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ starts_at: FOUR_PM, ends_at: "2026-11-09T18:00:00+05:00" })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Edit")!.click());
+
+    const fields = Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]'));
+    expect(fields.map((f) => f.value)).toEqual(["2026-11-09T16:00", "2026-11-09T18:00"]);
+
+    await act(async () => buttonLabelled("Save draft")!.click());
+    expect(save.mock.calls[0][0].body).toMatchObject({
+      starts_at: "2026-11-09T11:00:00.000Z",
+      ends_at: "2026-11-09T13:00:00.000Z",
+    });
+  });
 });
