@@ -53,3 +53,5 @@ ios/**/build/
 ios/**/*.xcodeproj
 ios/**/xcuserdata/
 ios/**/.swiftpm/
+.env*
+!.env.example
