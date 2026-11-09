@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { usersApi, type SupportBooking } from "@/lib/api";
+import { SCHOOL_TIME_ZONE, schoolDateKey, schoolDaysBetween } from "@/lib/schoolTime";
 import type { ExamDateOption } from "@/features/dashboard/useDashboardData";
 
 export const servicesKeys = {
@@ -99,17 +100,20 @@ export function nextSupportHour(
   return next;
 }
 
-/** "Today, 15:00" and "Tomorrow, 15:00" earn their names; after that, "Tue, Sep 15, 15:00". */
+/**
+ * "Today, 15:00" and "Tomorrow, 15:00" earn their names; after that, "Tue, Sep 15, 15:00".
+ *
+ * By the school's clock, like the booking page and the teacher's diary — see `@/lib/schoolTime`.
+ */
 export function supportHourLabel(iso: string, now: Date = new Date()): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return iso;
-  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  const day = new Date(at);
-  day.setHours(0, 0, 0, 0);
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000);
+  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
+  const diff = schoolDaysBetween(schoolDateKey(now), schoolDateKey(at));
   if (diff === 0) return `Today, ${time}`;
   if (diff === 1) return `Tomorrow, ${time}`;
-  return `${at.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}, ${time}`;
+  const date = at.toLocaleDateString(undefined, {
+    weekday: "short", month: "short", day: "numeric", timeZone: SCHOOL_TIME_ZONE,
+  });
+  return `${date}, ${time}`;
 }
