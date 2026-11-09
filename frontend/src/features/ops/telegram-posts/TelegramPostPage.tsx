@@ -13,6 +13,7 @@ import { ArrowLeft } from "lucide-react";
 import { Alert, Badge, Button } from "@/components/ui";
 import type { BadgeVariant } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { errorBody } from "./apiError";
 import { PostForm } from "./PostForm";
 import { STATE_BADGE, firstLine, kindLabel, plainText, scheduleLabel } from "./audience";
@@ -191,7 +192,7 @@ export function TelegramPostPage({ id }: { id: number }) {
       <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
         <Badge variant={state.variant}>{state.label}</Badge>
         {p.event_id ? <Link href="/ops/events" className="underline">Event: {p.event_title}</Link> : null}
-        {p.next_send_at ? <span>Next: {new Date(p.next_send_at).toLocaleString()}</span> : null}
+        {p.next_send_at ? <span>Next: {new Date(p.next_send_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE })}</span> : null}
       </div>
 
       {notice ? <Alert tone="success">{notice}</Alert> : null}
@@ -232,7 +233,7 @@ export function TelegramPostPage({ id }: { id: number }) {
                     <tr key={d.id}>
                       <td className="px-5 py-2 font-semibold">{d.group_names || d.chat_id}</td>
                       <td className="px-2 py-2"><Badge variant={badge.variant}>{badge.label}</Badge></td>
-                      <td className="px-2 py-2 text-xs">{d.sent_at ? new Date(d.sent_at).toLocaleTimeString() : ""}</td>
+                      <td className="px-2 py-2 text-xs">{d.sent_at ? new Date(d.sent_at).toLocaleTimeString(undefined, { timeZone: SCHOOL_TIME_ZONE }) : ""}</td>
                       <td className="px-5 py-2 text-xs text-muted-foreground">{d.error}</td>
                     </tr>
                   );

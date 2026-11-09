@@ -11,6 +11,7 @@ import { isResumable } from "@/lib/midtermBuckets";
 import { cardState, type CardAttempt, type CardState } from "@/features/pastpapers/pastpaperCardState";
 import { collectionLabel, isRW } from "@/features/pastpapers/pastpaperLabels";
 import type { ReopenedPastpaper } from "@/features/pastpapers/pastpaperReportApi";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 
 export interface PaperRow {
   section: PastpaperSection;
@@ -89,5 +90,5 @@ export function midtermStatus(m: MidtermRow, kind: MidtermCardKind): { label: st
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "soon";
-  return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }

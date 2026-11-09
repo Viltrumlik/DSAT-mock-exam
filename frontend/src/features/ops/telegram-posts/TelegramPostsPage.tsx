@@ -13,6 +13,7 @@ import { Send } from "lucide-react";
 
 import { Alert, Badge, Button } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { PostForm } from "./PostForm";
 import { STATE_BADGE, firstLine, kindLabel, scheduleLabel, sentLabel } from "./audience";
 import { useTelegramPosts } from "./telegramPostsHooks";
@@ -95,7 +96,7 @@ export function TelegramPostsPage() {
                       <span>{kindLabel(post)}</span>
                       {schedule ? <span>{schedule}</span> : null}
                       <span>{post.audience_label}</span>
-                      {post.next_send_at ? <span>Next: {new Date(post.next_send_at).toLocaleString()}</span> : null}
+                      {post.next_send_at ? <span>Next: {new Date(post.next_send_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE })}</span> : null}
                       {sent ? <span>{sent}</span> : null}
                     </p>
                   </div>

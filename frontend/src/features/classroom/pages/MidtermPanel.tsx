@@ -11,6 +11,7 @@ import { pushGlobalToast } from "@/lib/toastBus";
 import { classesApi } from "@/lib/api";
 import { midtermApi, subjectLabel } from "@/lib/midtermApi";
 import { downloadBlob } from "@/lib/download";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import {
   Card, CardHeader, Button, Field, Input, Tabs, Pill,
   LoadingState, ErrorState, EmptyState, StatCard, ConfirmDialog,
@@ -398,7 +399,7 @@ export function MidtermPanel({
   }
 
   const windowStatus = schedule.is_before_start
-    ? `Opens ${schedule.available_at ? new Date(schedule.available_at).toLocaleString() : "when scheduled"}`
+    ? `Opens ${schedule.available_at ? new Date(schedule.available_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE }) : "when scheduled"}`
     : schedule.is_open ? "Open now" : "Closed";
 
   // One sentence saying where publishing stands, so the buttons beside it need no folklore.
@@ -755,7 +756,7 @@ export function MidtermPanel({
               <Button icon={Save} loading={updateSchedule.isPending} disabled={!startsInput} onClick={saveSchedule}>Save schedule</Button>
               <p className="text-xs text-muted-foreground">
                 {schedule.notified_at
-                  ? `The class was emailed on ${new Date(schedule.notified_at).toLocaleString()}. Saving again does not email them — tell them yourself.`
+                  ? `The class was emailed on ${new Date(schedule.notified_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE })}. Saving again does not email them — tell them yourself.`
                   : "Saving emails every student in this class the date, time and rules. It is sent once."}
               </p>
             </div>
@@ -814,7 +815,7 @@ export function MidtermPanel({
           </Field>
           <p className="rounded-xl bg-primary/10 px-3 py-2 text-sm font-medium text-foreground">
             {schedule.notified_at
-              ? `The class was emailed on ${new Date(schedule.notified_at).toLocaleString()}. Changing the time here does not email them again — tell them yourself.`
+              ? `The class was emailed on ${new Date(schedule.notified_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE })}. Changing the time here does not email them again — tell them yourself.`
               : `Confirming emails all ${stats.assigned} student${stats.assigned !== 1 ? "s" : ""} in this class the date, time and rules. It is sent once.`}
           </p>
         </div>

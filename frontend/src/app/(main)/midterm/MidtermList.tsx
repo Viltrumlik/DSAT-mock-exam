@@ -12,6 +12,7 @@ import { downloadBlob } from "@/lib/download";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { DOWNLOAD_PAGE } from "@/lib/desktop/routes";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 
 /**
  * Student midterm page — matches the MasterSAT "Midterm" mockup 1:1 (filter tabs +
@@ -155,7 +156,7 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
             ) : (
               <>
                 <span className="inline-flex items-center gap-1.5 rounded-xl border px-[18px] py-[11px] text-sm font-semibold" style={{ borderColor: C.border, color: "#94a3b8" }}>
-                  <Lock className="h-3.5 w-3.5" /> {m.available_at ? `Opens ${new Date(m.available_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Scheduled"}
+                  <Lock className="h-3.5 w-3.5" /> {m.available_at ? `Opens ${new Date(m.available_at).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: SCHOOL_TIME_ZONE })}` : "Scheduled"}
                 </span>
                 {cd.label && <p className="mt-1 text-[11px] font-semibold" style={{ color: C.slate }}>starts in {cd.label}</p>}
               </>
@@ -166,7 +167,7 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
             <span className="inline-flex items-center gap-1.5 rounded-xl border px-[18px] py-[11px] text-sm font-semibold" style={{ borderColor: "#f0d4d4", background: "#fdf2f2", color: "#b91c1c" }}>
               <Lock className="h-3.5 w-3.5" /> Deadline passed
             </span>
-            {m.deadline && <p className="mt-1 text-[11px] font-semibold text-slate-400">closed {new Date(m.deadline).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}
+            {m.deadline && <p className="mt-1 text-[11px] font-semibold text-slate-400">closed {new Date(m.deadline).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE })}</p>}
           </div>
         ) : m.results_visible ? (
           <div className="flex shrink-0 items-center gap-4">

@@ -21,6 +21,7 @@ import { Check } from "lucide-react";
 
 import { Alert, Button } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { useMarkAttendance, useTicket } from "@/features/events/eventsHooks";
 
 function fmtTime(iso: string | null) {
@@ -28,7 +29,7 @@ function fmtTime(iso: string | null) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? ""
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }
 
 export default function TicketCheckPage({ params }: { params: Promise<{ code: string }> }) {

@@ -34,6 +34,7 @@ import { Modal } from "@/components/ui";
 import { useMe } from "@/hooks/useMe";
 import { markEventInviteShown, wasEventInviteShown } from "@/lib/eventInvitePrompt";
 import { isStudentSiteRole } from "@/lib/roles";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 
 import { useSignUpForEvent, useUpcomingEvents } from "./eventsHooks";
 
@@ -50,8 +51,8 @@ const RECHECK_MS = 1000;
 function fmtWhen(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const day = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const day = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: SCHOOL_TIME_ZONE });
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
   return `${day} · ${time}`;
 }
 

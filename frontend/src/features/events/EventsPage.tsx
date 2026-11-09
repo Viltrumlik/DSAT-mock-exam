@@ -14,6 +14,7 @@ import { CalendarDays, Clock, MapPin, Ticket } from "lucide-react";
 import { HeroPage, PageHero, Skeleton } from "@/components/ui";
 import { Card, CardHeader, EmptyState, ErrorState } from "@/features/classroom/ui";
 import { RewardCoin } from "@/components/RewardCoin";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 
 import { refusalText, type LearningEvent } from "./eventsApi";
 import {
@@ -28,14 +29,14 @@ function fmtDay(iso: string) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? iso
-    : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: SCHOOL_TIME_ZONE });
 }
 
 function fmtTime(iso: string) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? ""
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }
 
 function seatLine(row: LearningEvent): string {

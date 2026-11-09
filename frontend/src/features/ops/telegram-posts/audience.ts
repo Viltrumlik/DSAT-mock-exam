@@ -1,4 +1,5 @@
 import type { BadgeVariant } from "@/components/ui";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import type { Audience, GroupPost, PostState, TelegramGroup } from "./telegramPostsApi";
 
 export const SUBJECTS = [
@@ -57,7 +58,7 @@ export function scheduleLabel(post: Pick<GroupPost, "when" | "weekdays" | "time_
     return `Every ${days} at ${(post.time_of_day ?? "").slice(0, 5)}`;
   }
   if (post.when === "EVENT") return "The evening before, 18:00";
-  return post.send_at ? new Date(post.send_at).toLocaleString() : "";
+  return post.send_at ? new Date(post.send_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE }) : "";
 }
 
 /** The message as plain text: tags dropped, the entities the server's `esc` writes decoded. */

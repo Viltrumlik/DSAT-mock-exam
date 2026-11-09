@@ -21,6 +21,7 @@ import { AlertTriangle, Smartphone } from "lucide-react";
 import { Alert, Badge, Button, Field, Input, Modal, Textarea } from "@/components/ui";
 import type { BadgeVariant } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import type { DiagnosticKind, DiagnosticGroup } from "@/features/mobile/mobileApi";
 import {
   useDiagnostic,
@@ -51,7 +52,7 @@ function when(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }
 
 function Panel({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {

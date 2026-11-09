@@ -15,6 +15,8 @@
  * so the worst case is "Module 1 Active" rather than `MODULE_1_ACTIVE`.
  */
 
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
+
 /** Stands in for a rate whose denominator is empty. */
 export const EM_DASH = "—";
 
@@ -285,6 +287,7 @@ export function formatDeadline(iso: string | null | undefined): string | null {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: SCHOOL_TIME_ZONE,
   });
 }
 
