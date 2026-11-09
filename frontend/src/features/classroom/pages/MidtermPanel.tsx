@@ -12,6 +12,7 @@ import { classesApi } from "@/lib/api";
 import { midtermApi, subjectLabel } from "@/lib/midtermApi";
 import { downloadBlob } from "@/lib/download";
 import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
+import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
 import {
   Card, CardHeader, Button, Field, Input, Tabs, Pill,
   LoadingState, ErrorState, EmptyState, StatCard, ConfirmDialog,
@@ -23,14 +24,6 @@ import { Avatar } from "@/components/ui/Avatar";
 import { ChartCard, BarChart } from "@/components/ui/charts";
 
 const fileSlug = (t: string) => (t || "").trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "midterm";
-
-function toLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOString() : null);
 
 /**
  * Every attempt state a student row can carry, in words.

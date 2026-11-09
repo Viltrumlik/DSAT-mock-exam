@@ -149,7 +149,7 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
           </div>
         </Field>
         {when === "ONCE" ? (
-          <Field label="Goes out at" htmlFor={`${uid}-send-at`} hint="Your device's time.">
+          <Field label="Goes out at" htmlFor={`${uid}-send-at`} hint="Tashkent time.">
             <Input id={`${uid}-send-at`} type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} />
           </Field>
         ) : null}

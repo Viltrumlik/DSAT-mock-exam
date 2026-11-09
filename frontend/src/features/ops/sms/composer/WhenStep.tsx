@@ -78,7 +78,7 @@ export function WhenStep({
         </Button>
       </div>
       {value.mode === "at" ? (
-        <Field label="Goes out at" htmlFor={`${uid}-at`} hint="Your device's time.">
+        <Field label="Goes out at" htmlFor={`${uid}-at`} hint="Tashkent time.">
           <Input
             id={`${uid}-at`}
             type="datetime-local"

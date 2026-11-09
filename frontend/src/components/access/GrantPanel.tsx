@@ -11,6 +11,7 @@ import {
   type SubjectScope,
 } from "@/lib/accessApi";
 import { classesApi } from "@/lib/api";
+import { fromLocalInput } from "@/lib/datetimeLocal";
 import { cn } from "@/lib/cn";
 import { StudentMultiSelect, type StudentRow } from "./StudentMultiSelect";
 import { ResourcePicker, type SelectedResource } from "./ResourcePicker";
@@ -133,7 +134,8 @@ export function GrantPanel({
     setSubmitting(true);
     setError(null);
     setResult(null);
-    const expires_at = expiresAt ? new Date(expiresAt).toISOString() : null;
+    // Typed on Tashkent's clock: access runs out at that hour at the centre, wherever this laptop is.
+    const expires_at = fromLocalInput(expiresAt);
     const items = resources.map((r) => ({
       resource_type: r.resource_type,
       resource_id: r.resource_id,
