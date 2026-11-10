@@ -14,7 +14,8 @@ export const OPS_SIDEBAR_ID = "ops-sidebar";
  *
  * - `lg` and up: fixed, 248 px (`--ms-sidebar`), or a 64 px icon rail (`--ms-rail`) when
  *   `collapsed` — labels move to `title` and stay the accessible name; a count becomes a dot.
- * - Below `lg`: an off-canvas drawer (always full labels) that the top bar's menu button opens.
+ * - Below `lg`: an off-canvas drawer, up to 300 px wide (always full labels), that the top bar's
+ *   menu button opens.
  *   Closed, it is `invisible` as well as off-screen, so its links leave the tab order.
  *
  * `collapsed` only ever narrows the desktop rail — every collapsed style is `lg:`-prefixed.
@@ -49,14 +50,14 @@ export function OpsSidebar({
       id={OPS_SIDEBAR_ID}
       aria-label={`${config.crumb} navigation`}
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex w-(--ms-sidebar) flex-col border-r border-ms-border bg-ms-card transition-[translate,width,visibility] duration-200 ease-ms-out",
+        "fixed inset-y-0 left-0 z-40 flex w-[min(300px,85vw)] flex-col border-r border-ms-border bg-ms-card transition-[translate,width,visibility] duration-200 ease-ms-out",
         collapsed ? "lg:w-(--ms-rail)" : "lg:w-(--ms-sidebar)",
         mobileOpen ? "translate-x-0" : "max-lg:invisible max-lg:-translate-x-full",
       )}
     >
       {/* Identity — the top bar's height, so the two edges meet. */}
       <div className={cn("flex h-(--ms-topbar) shrink-0 items-center gap-2 px-4", collapsed && "lg:justify-center lg:px-0")}>
-        <Link href={config.root} className="flex min-w-0 items-center gap-2.5 rounded-[10px]" title={`MasterSAT ${config.brand}`}>
+        <Link href={config.root} className="flex min-w-0 items-center gap-2.5 rounded-[10px] max-lg:min-h-11" title={`MasterSAT ${config.brand}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/images/logo.png" alt="" aria-hidden className="size-7 shrink-0 object-contain" />
           <span className={cn("truncate text-[16px] font-bold text-ms-fg", collapsed && "lg:hidden")}>
