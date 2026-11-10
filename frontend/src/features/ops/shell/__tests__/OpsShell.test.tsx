@@ -119,17 +119,39 @@ describe("OpsShell", () => {
 
   it("collapses to an icon rail and remembers it", () => {
     render("/ops/students", SUPER_ADMIN);
-    expect(sidebar().className).toContain("lg:w-60");
+    expect(sidebar().className).toContain("lg:w-(--ms-sidebar)");
     act(() => button("Collapse sidebar")!.click());
-    expect(sidebar().className).toContain("lg:w-16");
+    expect(sidebar().className).toContain("lg:w-(--ms-rail)");
     expect(window.localStorage.getItem("mastersat.ops.sidebar.collapsed")).toBe("1");
 
     // A fresh mount reads the choice back.
     act(() => root.unmount());
     root = createRoot(container);
     render("/ops/students", SUPER_ADMIN);
-    expect(sidebar().className).toContain("lg:w-16");
+    expect(sidebar().className).toContain("lg:w-(--ms-rail)");
     expect(button("Expand sidebar")).toBeTruthy();
+  });
+
+  it("folds the rail with [ — but not while the person is typing", () => {
+    render("/ops/students", SUPER_ADMIN);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "[" }));
+    });
+    expect(sidebar().className).toContain("lg:w-(--ms-rail)");
+
+    const input = document.createElement("input");
+    container.appendChild(input);
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "[", bubbles: true }));
+    });
+    expect(sidebar().className).toContain("lg:w-(--ms-rail)");
+  });
+
+  it("is the console surface: the redesign's tokens and face, Admin temperature", () => {
+    render("/ops/students", SUPER_ADMIN);
+    const shell = container.firstElementChild as HTMLElement;
+    expect(shell.classList.contains("ms")).toBe(true);
+    expect(shell.hasAttribute("data-ms-temp")).toBe(false);
   });
 
   it("still renders when storage throws", () => {
@@ -138,7 +160,7 @@ describe("OpsShell", () => {
     });
     try {
       render("/ops", SUPER_ADMIN);
-      expect(sidebar().className).toContain("lg:w-60");
+      expect(sidebar().className).toContain("lg:w-(--ms-sidebar)");
     } finally {
       spy.mockRestore();
     }
@@ -187,12 +209,17 @@ describe("OpsShell for the builder", () => {
     expect(sidebar().querySelector('a[title="MasterSAT builder"]')?.getAttribute("href")).toBe("/builder");
     const captions = [...sidebar().querySelectorAll("p")].map((p) => p.textContent);
     expect(captions).toEqual(["Learning", "Simulation"]);
-    // Only Triage Queue is current — not Question Bank, which it nests under.
+    // Only the Review queue is current — not the Question bank, which it nests under.
     const current = [...sidebar().querySelectorAll('[aria-current="page"]')].map((a) => a.getAttribute("href"));
     expect(current).toEqual(["/builder/question-bank/triage"]);
     const crumb = container.querySelector('nav[aria-label="Breadcrumb"]') as HTMLElement;
-    expect(crumb.textContent).toBe("BuilderTriage Queue");
+    expect(crumb.textContent).toBe("BuilderReview queue");
     expect(crumb.querySelector('a[href="/builder"]')).not.toBeNull();
+  });
+
+  it("wears the Builder temperature", () => {
+    render("/builder", SUPER_ADMIN, BUILDER_CONSOLE);
+    expect((container.firstElementChild as HTMLElement).getAttribute("data-ms-temp")).toBe("builder");
   });
 
   it("remembers its own collapsed rail, apart from the ops console's", () => {

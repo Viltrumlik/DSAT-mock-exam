@@ -21,13 +21,13 @@ afterEach(() => {
   host.remove();
 });
 
-function render(counts?: { trials?: number }) {
+function render(counts?: { trials?: number }, collapsed = false) {
   act(() => {
     root.render(
       <OpsSidebar
         groups={visibleNav(OPS_NAV_GROUPS, ADMIN)}
         pathname="/ops"
-        collapsed={false}
+        collapsed={collapsed}
         mobileOpen={false}
         onCloseMobile={() => {}}
         onToggleCollapsed={() => {}}
@@ -43,6 +43,21 @@ describe("ops sidebar count", () => {
     const link = render({ trials: 3 });
     expect(link?.textContent).toBe("Trials3");
     expect(link?.querySelector('[aria-label="3 waiting"]')).not.toBeNull();
+  });
+
+  it("keeps the count for screen readers on the icon rail, and draws a dot", () => {
+    const link = render({ trials: 16 }, true);
+    expect(link?.querySelector('[aria-label="16 waiting"]')).not.toBeNull();
+    expect(link?.querySelector("[data-count-dot]")).not.toBeNull();
+    expect(link?.getAttribute("title")).toBe("Trials");
+  });
+
+  it("marks the current section for assistive tech and in bold, without the old blue", () => {
+    render();
+    const current = host.querySelector('[aria-current="page"]') as HTMLElement;
+    expect(current.getAttribute("href")).toBe("/ops");
+    expect(current.className).toContain("font-bold");
+    expect(current.className).not.toMatch(/text-primary|bg-primary-soft/);
   });
 
   it("draws nothing for zero", () => {
