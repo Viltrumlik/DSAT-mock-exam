@@ -17,6 +17,7 @@ import {
   contrastRatio,
   readConsoleTokens,
 } from "../contrast";
+import { COLOUR_GROUPS, CONTRAST_PAIRS } from "../tokenList";
 
 const css = fs.readFileSync(path.resolve(__dirname, "../../../app/globals.css"), "utf8");
 
@@ -77,6 +78,12 @@ describe("console tokens in globals.css", () => {
     expect(Object.keys(dark).sort()).toEqual(themed);
   });
 
+  it("lists every colour token in the preview's groups, and nothing else", () => {
+    const { light } = readConsoleTokens(css);
+    const tokens = Object.keys(light).filter(isColour).map((n) => n.replace(/^--ms-/, "")).sort();
+    expect(COLOUR_GROUPS.flatMap((g) => g.names).sort()).toEqual(tokens);
+  });
+
   it("exposes a Tailwind colour for every colour token", () => {
     const body = section();
     const { light } = readConsoleTokens(css);
@@ -86,28 +93,7 @@ describe("console tokens in globals.css", () => {
     }
   });
 
-  const VERDICTS = ["positive", "attention", "critical", "info", "frozen", "neutral"];
-  const PAIRS: [fg: string, bg: string, min: number][] = [
-    ["fg", "card", 4.5],
-    ["fg-2", "card", 4.5],
-    ["fg-3", "card", 4.5],
-    ["fg-3", "bg", 4.5],
-    ["border-input", "card", 3],
-    ["primary-text", "card", 4.5],
-    ["ring", "card", 3],
-    ["#ffffff", "primary", 4.5],
-    ["#ffffff", "danger-btn", 4.5],
-    ["inverse-fg", "inverse-bg", 4.5],
-    ["inverse-link", "inverse-bg", 4.5],
-    ["chip-on-fg", "chip-on-bg", 4.5],
-    ...VERDICTS.map((v): [string, string, number] => [`${v}-fg`, `${v}-soft`, 4.5]),
-    ["rw-fg", "rw-soft", 4.5],
-    ["math-fg", "math-soft", 4.5],
-    ...[1, 2, 3, 4].map((n): [string, string, number] => [`band${n}-fg`, `band${n}-bg`, 4.5]),
-    ...[1, 2, 3, 4, 5, 6].map((n): [string, string, number] => [`av${n}-fg`, `av${n}-bg`, 4.5]),
-  ];
-
-  it.each(PAIRS)("%s on %s is at least %s:1 in light and dark", (fg, bg, min) => {
+  it.each(CONTRAST_PAIRS)("%s on %s is at least %s:1 in light and dark", (fg, bg, min) => {
     const { light, dark } = readConsoleTokens(css);
     for (const [theme, tokens] of [["light", light], ["dark", dark]] as const) {
       const value = (n: string) => (n.startsWith("#") ? n : tokens[`--ms-${n}`]);

@@ -2360,5 +2360,9 @@ mark.ts-annot {
     animation-iteration-count: 1 !important;
     animation-delay: 0ms !important;
   }
+  /* The app-wide reduced-motion rule above (`*`, !important) would stop this clock too. */
+  .animate-ms-countdown {
+    animation-duration: var(--ms-undo, 8s) !important;
+  }
 }
 /* ── end console tokens ── */

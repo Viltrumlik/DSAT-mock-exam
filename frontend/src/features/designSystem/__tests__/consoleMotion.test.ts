@@ -86,6 +86,9 @@ describe("console motion", () => {
     expect(media.length).toBeGreaterThan(0);
     expect(media).toMatch(/\[class\*="animate-ms-"\]:not\(\.animate-ms-countdown\)\s*\{[^}]*animation-duration:\s*1ms !important;/);
     expect(media).toMatch(/animation-iteration-count:\s*1 !important;/);
+    // globals.css already has `* { animation-duration: 0.001ms !important }` for reduced motion;
+    // the clock has to win against it too, with its own !important on a class selector.
+    expect(media).toMatch(/\.animate-ms-countdown\s*\{\s*animation-duration:\s*var\(--ms-undo, 8s\) !important;/);
   });
 
   it.each(["ms-press", "ms-hover-lift", "ms-transition"])("defines the %s utility", (name) => {
