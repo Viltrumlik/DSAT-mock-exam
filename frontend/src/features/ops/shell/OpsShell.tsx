@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "next-themes";
+import { CommandPalette } from "@/features/console/CommandPalette";
+import { consoleCommands } from "@/features/console/commands";
+import { consoleHref } from "@/features/console/consoleHref";
 import { isScopedOpsAdmin } from "@/features/ops/adminScope";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
 import { cn } from "@/lib/cn";
@@ -53,6 +57,30 @@ export function OpsShell({
   const wantsTrials = useMemo(() => groups.some((g) => g.items.some((i) => i.countKey === "trials")), [groups]);
   const followups = useLcupFollowups({ enabled: wantsTrials && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)) });
   const counts = useMemo(() => ({ trials: followups.data?.pending ?? 0 }), [followups.data]);
+
+  // The other console, for the top bar's switch and ⌘K. Both admit the same roles (AuthGuard adminOnly).
+  const other = config.temp === "builder" ? "admin" : "builder";
+  const otherConsole = useMemo(
+    () => ({
+      label: other === "admin" ? "Admin" : "Builder",
+      href: consoleHref(other, typeof window === "undefined" ? { protocol: "http:", host: "" } : window.location),
+    }),
+    [other],
+  );
+
+  // ⌘K: every page in the menu this person sees, then a few actions.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const { setTheme } = useTheme();
+  const commands = useMemo(
+    () =>
+      consoleCommands(groups, [
+        { id: "switch", label: `Switch to ${otherConsole.label}`, group: "Actions", icon: "switch", href: otherConsole.href, keywords: ["console"] },
+        { id: "theme-light", label: "Light theme", group: "Actions", icon: "sun", run: () => setTheme("light") },
+        { id: "theme-dark", label: "Dark theme", group: "Actions", icon: "moon", run: () => setTheme("dark") },
+        { id: "theme-system", label: "System theme", group: "Actions", icon: "monitor", run: () => setTheme("system") },
+      ]),
+    [groups, otherConsole, setTheme],
+  );
 
   const toggleCollapsed = useCallback(
     () =>
@@ -152,12 +180,15 @@ export function OpsShell({
           mobileOpen={mobileOpen}
           onOpenMobile={() => setMobileOpen(true)}
           menuButtonRef={menuButtonRef}
+          onOpenSearch={() => setSearchOpen(true)}
+          otherConsole={otherConsole}
           config={config}
         />
         <main id="ops-main" className="min-w-0 flex-1 px-4 py-5 md:px-6 md:py-6 xl:px-8">
           <div className="mx-auto w-full max-w-(--ms-content-max)">{children}</div>
         </main>
       </div>
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} commands={commands} />
     </div>
   );
 }

@@ -100,7 +100,7 @@ describe("OpsShell", () => {
     expect(sidebar().querySelector('a[href="/ops/students"]')).not.toBeNull();
   });
 
-  it("shows the breadcrumb, the user's name and Log out in the top bar", () => {
+  it("shows the breadcrumb and the person in the top bar, with Log out in their menu", () => {
     render("/ops/classrooms/12", SUPER_ADMIN);
     const crumb = container.querySelector('nav[aria-label="Breadcrumb"]') as HTMLElement;
     expect(crumb.textContent).toBe("AdminClassrooms");
@@ -108,8 +108,31 @@ describe("OpsShell", () => {
     expect(crumb.querySelector('a[href="/ops/classrooms"]')).not.toBeNull();
     expect(container.querySelector("header")?.textContent).toContain("Aziza Karimova");
 
+    // Log out moved into the person's menu (Shell board).
+    const person = container.querySelector<HTMLButtonElement>('header button[aria-haspopup="menu"]')!;
+    act(() => person.click());
     act(() => button("Log out")!.click());
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens ⌘K from the search pill, offering the pages of this person's menu", () => {
+    render("/ops/students", ADMIN);
+    const pill = [...container.querySelectorAll("header button")].find((b) => b.textContent?.includes("Search pages"))!;
+    act(() => (pill as HTMLButtonElement).click());
+    const options = [...document.body.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? "");
+    expect(options.some((o) => o.includes("Students"))).toBe(true);
+    expect(options.some((o) => o.includes("Broadcast"))).toBe(false);
+    act(() => {
+      document.body.querySelector('[role="combobox"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+  });
+
+  it("offers the other console in the switch", () => {
+    render("/ops/students", SUPER_ADMIN);
+    const group = container.querySelector('[role="group"][aria-label="Console"]') as HTMLElement;
+    expect(group.querySelector('[aria-current="page"]')?.textContent).toBe("Admin");
+    expect(group.querySelector("a")?.textContent).toBe("Builder");
+    expect(group.querySelector("a")?.getAttribute("href")).toBe("/builder");
   });
 
   it("falls back to the username when there is no name", () => {
