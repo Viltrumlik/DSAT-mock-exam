@@ -245,6 +245,18 @@ describe("OpsShell for the builder", () => {
     expect((container.firstElementChild as HTMLElement).getAttribute("data-ms-temp")).toBe("builder");
   });
 
+  it("gives a test admin no switch to Admin, where AuthGuard would turn them away", () => {
+    render("/builder", { role: "test_admin", permissions: ["*"], username: "author1" }, BUILDER_CONSOLE);
+    expect(container.querySelector('[role="group"][aria-label="Console"]')).toBeNull();
+    const pill = [...container.querySelectorAll("header button")].find((b) => b.textContent?.includes("Search pages"))!;
+    act(() => (pill as HTMLButtonElement).click());
+    const options = [...document.body.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? "");
+    expect(options.some((o) => o.includes("Switch to Admin"))).toBe(false);
+    act(() => {
+      document.body.querySelector('[role="combobox"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+  });
+
   it("remembers its own collapsed rail, apart from the ops console's", () => {
     window.localStorage.setItem("mastersat.ops.sidebar.collapsed", "1");
     render("/builder", SUPER_ADMIN, BUILDER_CONSOLE);

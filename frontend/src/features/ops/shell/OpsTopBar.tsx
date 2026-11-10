@@ -33,8 +33,8 @@ export function OpsTopBar({
   menuButtonRef?: RefObject<HTMLButtonElement | null>;
   /** Opens ⌘K. */
   onOpenSearch: () => void;
-  /** The other console's name and address, for the switch. */
-  otherConsole: { label: string; href: string };
+  /** The other console's name and address, for the switch; `null` when this person may not open it. */
+  otherConsole: { label: string; href: string } | null;
   /** Which console this bar belongs to — its home, its first crumb, its nav. */
   config?: Pick<ConsoleConfig, "root" | "crumb" | "groups">;
 }) {
@@ -116,14 +116,16 @@ export function OpsTopBar({
         <Icon name="search" size="lg" />
       </button>
 
-      <div role="group" aria-label="Console" className="hidden shrink-0 items-center gap-0.5 rounded-full bg-ms-surface-2 p-[3px] lg:inline-flex">
-        <span aria-current="page" className="inline-flex h-9 items-center rounded-full bg-ms-card px-3.5 text-[14px] font-semibold text-ms-fg shadow-ms-1">
-          {config.crumb}
-        </span>
-        <a href={otherConsole.href} className="ms-transition inline-flex h-9 items-center rounded-full px-3.5 text-[14px] font-medium text-ms-fg-2 hover:text-ms-fg">
-          {otherConsole.label}
-        </a>
-      </div>
+      {otherConsole ? (
+        <div role="group" aria-label="Console" className="hidden shrink-0 items-center gap-0.5 rounded-full bg-ms-surface-2 p-[3px] lg:inline-flex">
+          <span aria-current="page" className="inline-flex h-9 items-center rounded-full bg-ms-card px-3.5 text-[14px] font-semibold text-ms-fg shadow-ms-1">
+            {config.crumb}
+          </span>
+          <a href={otherConsole.href} className="ms-transition inline-flex h-9 items-center rounded-full px-3.5 text-[14px] font-medium text-ms-fg-2 hover:text-ms-fg">
+            {otherConsole.label}
+          </a>
+        </div>
+      ) : null}
 
       <UserMenu me={me} />
     </header>

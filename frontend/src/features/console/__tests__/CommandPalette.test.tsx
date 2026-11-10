@@ -133,6 +133,21 @@ describe("CommandPalette", () => {
     expect(all).not.toContain("Midterm results");
   });
 
+  it("keeps Tab and Shift+Tab inside the dialog while it is open", () => {
+    render(consoleCommands(visibleNav(OPS_NAV_GROUPS, SUPER_ADMIN)));
+    key({ key: "k", metaKey: true });
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    const input = combobox()!;
+    expect(document.activeElement).toBe(input);
+    key({ key: "Tab", shiftKey: true }, input);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(input);
+    key({ key: "Tab" }, document.activeElement!);
+    expect(document.activeElement).toBe(input);
+    key({ key: "Tab" }, input);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
   it("runs an action and closes", () => {
     const run = vi.fn();
     render([{ id: "dark", label: "Dark theme", group: "Actions", icon: "moon", run }]);

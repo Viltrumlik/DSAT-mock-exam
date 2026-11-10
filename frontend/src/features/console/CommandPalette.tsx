@@ -86,6 +86,20 @@ export function CommandPalette({
 
   if (!open || typeof document === "undefined") return null;
 
+  // A modal dialog keeps focus: Tab and Shift+Tab cycle through its own controls, never the page
+  // behind the scrim.
+  function trapTab(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Tab") return;
+    const focusables = [
+      ...(e.currentTarget.querySelectorAll<HTMLElement>('input, button, [href], [tabindex]:not([tabindex="-1"])') ?? []),
+    ].filter((el) => !el.hasAttribute("disabled"));
+    if (!focusables.length) return;
+    e.preventDefault();
+    const at = focusables.indexOf(document.activeElement as HTMLElement);
+    const next = e.shiftKey ? (at <= 0 ? focusables.length - 1 : at - 1) : (at + 1) % focusables.length;
+    focusables[next].focus();
+  }
+
   const optionId = (index: number) => `${baseId}-opt-${index}`;
   const current = Math.min(active, Math.max(results.length - 1, 0));
 
@@ -121,6 +135,7 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="Search"
+        onKeyDown={trapTab}
         className="animate-ms-dialog-in absolute inset-0 flex flex-col overflow-hidden bg-ms-card shadow-ms-3 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-[12vh] sm:max-h-[min(560px,76vh)] sm:w-[min(640px,calc(100vw-32px))] sm:-translate-x-1/2 sm:rounded-ms-pop"
       >
         <div className="flex h-14 shrink-0 items-center gap-3 border-b border-ms-border px-4">

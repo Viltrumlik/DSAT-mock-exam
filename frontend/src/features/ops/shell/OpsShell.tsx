@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { CommandPalette } from "@/features/console/CommandPalette";
 import { consoleCommands } from "@/features/console/commands";
-import { consoleHref } from "@/features/console/consoleHref";
+import { canOpenConsole, consoleHref } from "@/features/console/consoleHref";
 import { isScopedOpsAdmin } from "@/features/ops/adminScope";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
 import { cn } from "@/lib/cn";
@@ -58,14 +58,19 @@ export function OpsShell({
   const followups = useLcupFollowups({ enabled: wantsTrials && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)) });
   const counts = useMemo(() => ({ trials: followups.data?.pending ?? 0 }), [followups.data]);
 
-  // The other console, for the top bar's switch and ⌘K. Both admit the same roles (AuthGuard adminOnly).
+  // The other console, for the top bar's switch and ⌘K — only when this person may open it (a test
+  // admin is kept to the Builder by AuthGuard, so they get no Admin switch).
   const other = config.temp === "builder" ? "admin" : "builder";
+  const mayOpenOther = canOpenConsole(other, me);
   const otherConsole = useMemo(
-    () => ({
-      label: other === "admin" ? "Admin" : "Builder",
-      href: consoleHref(other, typeof window === "undefined" ? { protocol: "http:", host: "" } : window.location),
-    }),
-    [other],
+    () =>
+      mayOpenOther
+        ? {
+            label: other === "admin" ? "Admin" : "Builder",
+            href: consoleHref(other, typeof window === "undefined" ? { protocol: "http:", host: "" } : window.location),
+          }
+        : null,
+    [other, mayOpenOther],
   );
 
   // ⌘K: every page in the menu this person sees, then a few actions.
@@ -74,7 +79,9 @@ export function OpsShell({
   const commands = useMemo(
     () =>
       consoleCommands(groups, [
-        { id: "switch", label: `Switch to ${otherConsole.label}`, group: "Actions", icon: "switch", href: otherConsole.href, keywords: ["console"] },
+        ...(otherConsole
+          ? [{ id: "switch", label: `Switch to ${otherConsole.label}`, group: "Actions" as const, icon: "switch" as const, href: otherConsole.href, keywords: ["console"] }]
+          : []),
         { id: "theme-light", label: "Light theme", group: "Actions", icon: "sun", run: () => setTheme("light") },
         { id: "theme-dark", label: "Dark theme", group: "Actions", icon: "moon", run: () => setTheme("dark") },
         { id: "theme-system", label: "System theme", group: "Actions", icon: "monitor", run: () => setTheme("system") },

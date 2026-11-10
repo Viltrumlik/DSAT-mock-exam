@@ -18,3 +18,15 @@ export function consoleHref(target: ConsoleName, location: { protocol: string; h
   }
   return ROOT[target];
 }
+
+/**
+ * Whether this person may open `target` — the same role rule AuthGuard applies, so the switch never
+ * leads somewhere that bounces them: a test admin works in the Builder only (AuthGuard sends them
+ * away from the Admin console), and students belong to neither console.
+ */
+export function canOpenConsole(target: ConsoleName, me: Record<string, unknown> | null | undefined): boolean {
+  const role = String(me?.role ?? "").trim().toLowerCase();
+  if (role === "student" || role === "public_student") return false;
+  if (target === "admin" && role === "test_admin") return false;
+  return true;
+}
