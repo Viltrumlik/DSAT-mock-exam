@@ -110,7 +110,7 @@ export default function QuestionBankPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Question Bank</h1>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">Old sets bank</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Read-only view across all assessment sets. To edit a question, open it inside its
             set — questions are authored and managed from the set editor.

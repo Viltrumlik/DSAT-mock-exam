@@ -170,7 +170,7 @@ export default function OpsShopPage() {
     <div className="space-y-5">
       <OpsPageHeader
         section="Shop"
-        title="Shop"
+        title="Reward shop"
         description="Stock, prices and the collection queue."
         actions={
           <Button onClick={() => setEditing(null)}>
