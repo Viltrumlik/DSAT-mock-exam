@@ -27,6 +27,7 @@ export function OpsTopBar({
   onOpenSearch,
   otherConsole,
   attention = [],
+  searchLabel = "Search pages…",
   config = OPS_CONSOLE,
 }: {
   pathname: string;
@@ -40,6 +41,8 @@ export function OpsTopBar({
   otherConsole: { label: string; href: string } | null;
   /** "Needs you" for the bell; empty for a role that reads none of it (no bell then). */
   attention?: readonly AttentionSource[];
+  /** What the pill says ⌘K searches here: "Search students, classes, pages…". */
+  searchLabel?: string;
   /** Which console this bar belongs to — its home, its first crumb, its nav. */
   config?: Pick<ConsoleConfig, "root" | "crumb" | "groups">;
 }) {
@@ -109,7 +112,7 @@ export function OpsTopBar({
         className="ms-transition hidden h-[42px] w-[min(340px,30vw)] items-center gap-2.5 rounded-full border border-ms-border-strong bg-ms-card pl-4 pr-2 text-[15px] text-ms-fg-3 hover:border-ms-border-input md:flex"
       >
         <Icon name="search" />
-        <span className="flex-1 truncate text-left">Search pages…</span>
+        <span className="flex-1 truncate text-left">{searchLabel}</span>
         <kbd className="rounded-[6px] border border-ms-border-strong px-1.5 font-ms-mono text-[12px] text-ms-fg-2">⌘ K</kbd>
       </button>
       <button

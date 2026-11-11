@@ -117,8 +117,10 @@ describe("OpsShell", () => {
 
   it("opens ⌘K from the search pill, offering the pages of this person's menu", () => {
     render("/ops/students", ADMIN);
-    const pill = [...container.querySelectorAll("header button")].find((b) => b.textContent?.includes("Search pages"))!;
-    act(() => (pill as HTMLButtonElement).click());
+    const pill = container.querySelector<HTMLButtonElement>('header button[aria-keyshortcuts]')!;
+    // A desk admin's ⌘K finds students and classes as well as pages, and the pill says so.
+    expect(pill.textContent).toContain("Search students, classes, pages…");
+    act(() => pill.click());
     const options = [...document.body.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? "");
     expect(options.some((o) => o.includes("Students"))).toBe(true);
     expect(options.some((o) => o.includes("Broadcast"))).toBe(false);
@@ -248,8 +250,9 @@ describe("OpsShell for the builder", () => {
   it("gives a test admin no switch to Admin, where AuthGuard would turn them away", () => {
     render("/builder", { role: "test_admin", permissions: ["*"], username: "author1" }, BUILDER_CONSOLE);
     expect(container.querySelector('[role="group"][aria-label="Console"]')).toBeNull();
-    const pill = [...container.querySelectorAll("header button")].find((b) => b.textContent?.includes("Search pages"))!;
-    act(() => (pill as HTMLButtonElement).click());
+    const pill = container.querySelector<HTMLButtonElement>('header button[aria-keyshortcuts]')!;
+    expect(pill.textContent).toContain("Search questions, pages…");
+    act(() => pill.click());
     const options = [...document.body.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? "");
     expect(options.some((o) => o.includes("Switch to Admin"))).toBe(false);
     act(() => {

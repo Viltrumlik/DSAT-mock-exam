@@ -200,6 +200,7 @@ export function OpsShell({
           onOpenSearch={() => setSearchOpen(true)}
           otherConsole={otherConsole}
           attention={attention}
+          searchLabel={`Search ${[...entityKinds.map((k) => k.toLowerCase()), "pages"].join(", ")}…`}
           config={config}
         />
         <main id="ops-main" className="min-w-0 flex-1 px-4 py-5 md:px-6 md:py-6 xl:px-8">
