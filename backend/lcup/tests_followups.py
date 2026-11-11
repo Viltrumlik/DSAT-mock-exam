@@ -6,6 +6,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from classes.models import ClassroomMembership
+from classes.models_attendance import AttendanceSession
 from lcup.followups import (
     REASON_IGNORED,
     REASON_NEEDS_REVIEW,
@@ -266,6 +267,9 @@ class SendLessonChecksTests(FollowupsFixtureMixin, TestCase):
         self.assertEqual(set(self.sent().values_list("recipient_id", flat=True)), {self.teacher.pk, second.pk})
 
     def test_a_class_that_has_not_started_yet_has_no_lesson_to_check(self):
+        # No register at all: one dated before ``start_date`` is proof the class was already meeting
+        # (a class lc-up moved up a level — ``classes.lesson_schedule.has_begun``).
+        AttendanceSession.objects.filter(classroom=self.room).delete()
         type(self.room).objects.filter(pk=self.room.pk).update(start_date=date(2026, 10, 26))
         self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 5)), {})
         self.assertFalse(self.sent().exists())
@@ -311,7 +315,9 @@ class PreviewCommandTests(FollowupsFixtureMixin, TestCase):
         self.assertIn("Middle G23: nothing to say — no notification", self.preview())
 
     def test_a_class_that_has_not_started_yet_is_not_listed(self):
-        self.mark(self.MONDAY, self.student("Bek", "Rahimov"), "ABSENT")
+        # Nothing marked: a register dated before ``start_date`` would be proof the class was already
+        # meeting (``classes.lesson_schedule.has_begun``). Were it listed, it would say "not taken yet".
+        self.student("Bek", "Rahimov")
         type(self.room).objects.filter(pk=self.room.pk).update(start_date=date(2026, 10, 26))
         self.assertEqual(self.preview().strip(), "No paired class meets on 2026-10-19.")
 

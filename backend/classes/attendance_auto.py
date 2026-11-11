@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from .lesson_schedule import lesson_days_in_range, lesson_weekdays, parse_lesson_time
+from .lesson_schedule import has_begun, lesson_days_in_range, lesson_weekdays, parse_lesson_time
 from .models import Classroom
 from .models_attendance import AttendanceSession
 
@@ -60,12 +60,13 @@ def due_lesson_dates(classroom: Classroom, *, now=None, backfill_days: int = BAC
 
     # A class cannot have held a lesson before it existed. Without this floor, switching the
     # feature on hands every classroom a fortnight of registers for lessons that never
-    # happened. ``start_date`` is the school's own answer and wins; ``created_at`` is the
-    # fallback for the many rows that predate the field.
-    began = classroom.start_date or timezone.localdate(classroom.created_at)
-    first = max(first, began)
+    # happened. ``start_date`` is the school's own answer and wins (``has_begun``, which also
+    # knows a class lc-up moved up a level); ``created_at`` is the fallback for the many rows
+    # that predate the field.
+    if classroom.start_date is None:
+        first = max(first, timezone.localdate(classroom.created_at))
 
-    dates = lesson_days_in_range(classroom, first, today)
+    dates = [day for day in lesson_days_in_range(classroom, first, today) if has_begun(classroom, day)]
     if not dates:
         return []
 

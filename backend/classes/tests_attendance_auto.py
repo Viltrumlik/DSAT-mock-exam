@@ -120,6 +120,24 @@ class DueLessonDatesTests(AutoSessionFixture):
         due = self.dates(later, now=at(MONDAY + timedelta(days=4), 12))
         self.assertEqual(due, [MONDAY + timedelta(days=4)])
 
+    def test_a_class_moved_up_a_level_keeps_its_lessons_before_the_new_course(self):
+        """lc-up's course start is the class's ``start_date``, so moving a group up a level moves it to
+        the NEW course's first day — after lessons the group still holds (2026-11-11: a class's start
+        went to the next day and that day's register never opened). A register dated before
+        ``start_date`` is proof the class was already meeting."""
+        wednesday = MONDAY + timedelta(days=2)
+        moved = self.make_class(start_date=MONDAY + timedelta(days=3))
+        AttendanceSession.objects.create(classroom=moved, date=MONDAY)
+        self.assertEqual(self.dates(moved, now=at(wednesday, 12)), [wednesday])
+        self.assertEqual(
+            [s.date for s in attendance_auto.ensure_sessions(moved, now=at(wednesday, 12))], [wednesday]
+        )
+
+    def test_a_class_that_has_never_met_still_waits_for_its_start(self):
+        wednesday = MONDAY + timedelta(days=2)
+        new = self.make_class(start_date=MONDAY + timedelta(days=3))
+        self.assertEqual(self.dates(new, now=at(wednesday, 12)), [])
+
     def test_a_class_with_no_start_date_is_floored_at_its_creation(self):
         """Switching this on must not hand every old classroom a fortnight of registers for
         lessons that never happened."""
