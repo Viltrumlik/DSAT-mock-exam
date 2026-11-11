@@ -15,8 +15,9 @@ import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BellRing, FileText, Gauge, ScrollText, Send } from "lucide-react";
 
+import { Tabs } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
-import { TabBar, activeTab, panelId, tabId, type Tab } from "@/features/ops/detail/tabs";
+import { activeTab, panelId, tabId, type Tab } from "@/features/ops/detail/tabs";
 import { BalanceBanner } from "./BalanceBanner";
 import { CampaignsPanel } from "./CampaignsPanel";
 import { DebtPanel } from "./DebtPanel";
@@ -58,12 +59,12 @@ function SmsPageInner() {
         description="The eskiz account: balance, every SMS sent, campaigns, the automatic debt warning and the approved templates."
       />
       {forecast ? <BalanceBanner forecast={forecast} /> : null}
-      <TabBar
-        scope="sms"
+      <Tabs<SmsTab>
         label="SMS sections"
-        tabs={TABS}
-        active={tab}
-        onSelect={(key) => router.replace(smsTabHref(key), { scroll: false })}
+        value={tab}
+        onChange={(key) => router.replace(smsTabHref(key), { scroll: false })}
+        ids={{ tab: (key) => tabId("sms", key), panel: (key) => panelId("sms", key) }}
+        tabs={TABS.map((t) => ({ id: t.key, label: t.label }))}
       />
       {/* key={tab}: a new tab mounts afresh, so it eases in (sms-rise; still under reduced motion). */}
       <div key={tab} className="sms-rise" role="tabpanel" id={panelId("sms", tab)} aria-labelledby={tabId("sms", tab)}>

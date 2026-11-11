@@ -22,7 +22,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
-import { Alert, Button, Field, Select, Switch } from "@/components/ui";
+import { Alert, Button, Field, Select, Switch } from "./consoleKit";
 import {
   SAMPLE,
   dateTime,
@@ -108,7 +108,7 @@ function TemplateChoice({
   };
 
   return (
-    <div className="space-y-2 border border-border p-3">
+    <div className="space-y-2 rounded-[16px] border border-ms-border p-4">
       <Field label={label} htmlFor={`${uid}-template`} hint={hint}>
         <Select id={`${uid}-template`} selectSize="sm" value={String(value.id)} onChange={(e) => pick(Number(e.target.value))}>
           {chosen ? null : <option value={value.id}>{`#${value.id} · not in the template list — refresh it`}</option>}
@@ -137,8 +137,8 @@ function TemplateChoice({
       ))}
       <div>
         <p className={`${CAPTION_TEXT} mb-1`}>Sample</p>
-        <p className="whitespace-pre-wrap border border-border bg-surface-2 px-3 py-2 text-[13px]">{sample}</p>
-        <p className="mt-1 text-[12px] text-muted-foreground">{plural(parts, "SMS part")} each</p>
+        <p className="whitespace-pre-wrap rounded-ms-ctl bg-ms-surface-2 px-3 py-2 text-[14px]">{sample}</p>
+        <p className="mt-1 text-[12px] text-ms-fg-3">{plural(parts, "SMS part")} each</p>
       </div>
     </div>
   );
@@ -187,7 +187,7 @@ function SettingsForm({ settings: s, usable }: { settings: SmsSettings; usable: 
       title="Settings"
       actions={
         s.updated_at ? (
-          <span className="text-[12px] text-muted-foreground">
+          <span className="text-[12px] text-ms-fg-3">
             Changed {dateTime(s.updated_at)}
             {s.updated_by_name ? ` by ${s.updated_by_name}` : ""}
           </span>
@@ -313,7 +313,7 @@ function NextDay({
       title={`Next warning day · ${dayLabel(p.day)}${p.is_last_day ? " · the last day" : ""}`}
       actions={
         !isToday ? null : allOut ? (
-          <span className="text-[13px] font-medium text-foreground">Already sent today</span>
+          <span className="text-[13px] font-medium text-ms-fg">Already sent today</span>
         ) : (
           <Button
             size="sm"
@@ -331,21 +331,21 @@ function NextDay({
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {p.blocked ? <Alert tone="warning">{p.blocked}</Alert> : null}
         {isToday && !enabled ? (
-          <p className="text-[13px] text-muted-foreground">The warning is off, so it can&apos;t be sent now.</p>
+          <p className="text-[13px] text-ms-fg-3">The warning is off, so it can&apos;t be sent now.</p>
         ) : null}
-        <p className="text-[13px] tabular-nums text-foreground">
+        <p className="text-[13px] tabular-nums text-ms-fg">
           <span className="font-semibold">{plural(p.count, "student")}</span>
           {isToday || p.sent_today > 0 ? ` · ${p.sent_today} already sent today · ${p.to_send} to send` : ""}
           {` · ~${money(p.cost)}`}
           {skipped.length > 0 ? (
-            <span className="text-muted-foreground">
+            <span className="text-ms-fg-3">
               {" "}
               · Left out: {skipped.map(([reason, n]) => `${skipLabel(reason)}: ${n}`).join(" · ")}
             </span>
           ) : null}
         </p>
         {p.warnings.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">Nobody would get a warning that day.</p>
+          <p className="text-[13px] text-ms-fg-3">Nobody would get a warning that day.</p>
         ) : (
           <div className={`${BOX} overflow-x-auto`}>
             <table className={TABLE}>
@@ -390,7 +390,7 @@ function History({ pollUntil }: { pollUntil: number }) {
   return (
     <Section title="History · the last 60 days">
       {rows.length === 0 ? (
-        <p className="px-3 py-3 text-[13px] text-muted-foreground">No debt warning has gone out yet.</p>
+        <p className="px-3 py-3 text-[13px] text-ms-fg-3">No debt warning has gone out yet.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className={TABLE}>

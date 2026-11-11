@@ -26,7 +26,7 @@ import { MessageDrawer } from "./MessageDrawer";
 import { MESSAGE_FILTER_KEYS, smsApi, type SmsMessage } from "./smsApi";
 import { useSmsMessages, useSmsOverview } from "./smsHooks";
 
-const Muted = ({ children }: { children: ReactNode }) => <span className="text-muted-foreground">{children}</span>;
+const Muted = ({ children }: { children: ReactNode }) => <span className="text-ms-fg-3">{children}</span>;
 
 const time = (iso: string) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
@@ -49,14 +49,14 @@ function Recipient({ m }: { m: SmsMessage }) {
         <Link
           href={`/ops/students/${m.user.id}?tab=sms`}
           onClick={(e) => e.stopPropagation()}
-          className="truncate font-medium text-foreground hover:underline"
+          className="truncate font-medium text-ms-fg hover:underline"
         >
           {m.user.name}
         </Link>
       ) : (
         <Muted>—</Muted>
       )}
-      {m.groups.length ? <span className="truncate text-[12px] text-muted-foreground">{m.groups.join(", ")}</span> : null}
+      {m.groups.length ? <span className="truncate text-[12px] text-ms-fg-3">{m.groups.join(", ")}</span> : null}
     </span>
   );
 }
@@ -99,7 +99,7 @@ function Card({ m }: { m: SmsMessage }) {
         <OperatorDot operator={m.operator} />
         <Muted>{m.source.label}</Muted>
       </span>
-      <span className="block truncate text-muted-foreground">{firstLine(m.text, 80)}</span>
+      <span className="block truncate text-ms-fg-3">{firstLine(m.text, 80)}</span>
     </span>
   );
 }

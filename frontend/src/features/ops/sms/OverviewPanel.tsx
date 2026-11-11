@@ -16,7 +16,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { Alert, Badge } from "@/components/ui";
+import { Alert, Badge } from "./consoleKit";
 import { LineChart, StackedBarChart } from "@/components/ui/charts";
 import { DebtEffect } from "./charts/DebtEffect";
 import { DeliveryChart } from "./charts/DeliveryChart";
@@ -44,14 +44,14 @@ function Card({ title, children, foot }: { title: string; children: ReactNode; f
     <Section title={title}>
       <div className="space-y-1 px-3 py-2.5 text-[13px]">
         {children}
-        {foot ? <div className="text-muted-foreground">{foot}</div> : null}
+        {foot ? <div className="text-ms-fg-3">{foot}</div> : null}
       </div>
     </Section>
   );
 }
 
 const Figure = ({ children }: { children: ReactNode }) => (
-  <p className="text-lg font-semibold tabular-nums text-foreground">{children}</p>
+  <p className="text-lg font-semibold tabular-nums text-ms-fg">{children}</p>
 );
 
 function debtOffReason(debt: SmsOverview["debt"]): string {
@@ -101,7 +101,7 @@ function Tiles({ o }: { o: SmsOverview }) {
 
 function Charts({ stats }: { stats: SmsStats }) {
   if (!stats.by_day.length) {
-    return <p className="border border-border bg-card px-3 py-6 text-center text-[13px] text-muted-foreground">No SMS in this range.</p>;
+    return <p className="rounded-ms-card bg-ms-card px-5 py-8 text-center text-[14px] text-ms-fg-3 shadow-ms-1">No SMS in this range.</p>;
   }
   const inThousands = (v: number) => money(v * 1000);
   return (
@@ -118,7 +118,7 @@ function Charts({ stats }: { stats: SmsStats }) {
       </Section>
       <Section title={`Cost · ${money(stats.totals.cost)}`}>
         <div className="space-y-2 px-2 py-3">
-          <ul aria-label="Kinds" className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[12px] text-muted-foreground">
+          <ul aria-label="Kinds" className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[12px] text-ms-fg-3">
             {COST_SERIES.map((s) => (
               <li key={s.key} className="inline-flex items-center gap-1.5">
                 <span aria-hidden className="size-2 rounded-sm" style={{ background: s.color }} />
@@ -219,9 +219,9 @@ export function OverviewPanel() {
           </p>
           {/* Either count: when every warning so far FAILED, nothing is "sent" yet some are still to go. */}
           {o.debt.today_sent > 0 || o.debt.today_left > 0 ? (
-            <p className="text-foreground">{`Today: ${o.debt.today_sent} sent · ${o.debt.today_left} left`}</p>
+            <p className="text-ms-fg">{`Today: ${o.debt.today_sent} sent · ${o.debt.today_left} left`}</p>
           ) : null}
-          <p className="text-foreground">
+          <p className="text-ms-fg">
             {o.debt.next_day
               ? `Next: ${dayLabel(o.debt.next_day)} · ${plural(o.debt.next_count, "student")}`
               : o.debt.enabled
