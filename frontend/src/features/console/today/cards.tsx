@@ -77,10 +77,22 @@ export function debtFinding(groups: readonly Pick<FinanceGroupRow, "group" | "de
   return `Spread across ${owing.length} groups; the largest holds ${top} %.`;
 }
 
-/** When the SMS balance runs out at the last days' spend; null when nothing was spent or nothing is known. */
-export function runsOut(balance: number | null, days: readonly Pick<SmsStatsDay, "day" | "cost">[], today: string): { perDay: number; days: number; date: string } | null {
-  if (balance === null || !days.length) return null;
-  const perDay = days.reduce((s, d) => s + d.cost, 0) / days.length;
+/** How many days the SMS card averages the spend over (the stats query asks for exactly these days). */
+export const SMS_SPEND_WINDOW = 14;
+
+/**
+ * When the SMS balance runs out at the last {@link SMS_SPEND_WINDOW} days' spend; null when nothing was
+ * spent or nothing is known. `by_day` lists only the days that HAD messages (sms/stats.py groups existing
+ * rows), so the average divides by the whole window: a quiet day is a zero-spend day, not a missing one.
+ */
+export function runsOut(
+  balance: number | null,
+  days: readonly Pick<SmsStatsDay, "day" | "cost">[],
+  today: string,
+  windowDays: number = SMS_SPEND_WINDOW,
+): { perDay: number; days: number; date: string } | null {
+  if (balance === null || !days.length || windowDays <= 0) return null;
+  const perDay = days.reduce((s, d) => s + d.cost, 0) / windowDays;
   if (perDay <= 0) return null;
   const left = Math.max(0, Math.floor(balance / perDay));
   return { perDay, days: left, date: addDays(today, left) };
@@ -289,7 +301,7 @@ export function SmsCard({ enabled, delay }: { enabled: boolean; delay: number })
   const overview = useQuery({ queryKey: smsKeys.overview, queryFn: () => smsApi.overview(), enabled, staleTime: 60_000 });
   const stats = useQuery({
     queryKey: ["sms", "stats", "today-card", today],
-    queryFn: () => smsApi.stats({ from: addDays(today, -13), to: today }),
+    queryFn: () => smsApi.stats({ from: addDays(today, -(SMS_SPEND_WINDOW - 1)), to: today }),
     enabled,
     staleTime: 5 * 60_000,
   });

@@ -62,6 +62,14 @@ describe("SMS balance", () => {
     const days = Array.from({ length: 14 }, (_, i) => ({ day: `2026-10-${29 + i}`, cost: 1500 }));
     expect(runsOut(15_000, days, "2026-11-11")).toEqual({ perDay: 1500, days: 10, date: "2026-11-21" });
   });
+  it("counts the days with no messages as zero spend, not as missing", () => {
+    // by_day lists only days that had messages: 2 days × 7 000 over a 14-day window = 1 000 a day.
+    const days = [
+      { day: "2026-11-03", cost: 7000 },
+      { day: "2026-11-10", cost: 7000 },
+    ];
+    expect(runsOut(20_000, days, "2026-11-11")).toEqual({ perDay: 1000, days: 20, date: "2026-12-01" });
+  });
   it("makes no forecast without a balance or without any spend", () => {
     expect(runsOut(null, [{ day: "2026-11-11", cost: 100 }], "2026-11-11")).toBeNull();
     expect(runsOut(5000, [{ day: "2026-11-11", cost: 0 }], "2026-11-11")).toBeNull();
