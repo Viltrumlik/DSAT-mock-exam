@@ -25,12 +25,14 @@ const classes = {
   removeSupportTeacher: vi.fn(),
 };
 let search = "";
+let me: Record<string, unknown> | null = { role: "admin", permissions: [] };
 
 vi.mock("@/lib/api", () => ({
   default: { get: (...a: unknown[]) => get(...a) },
   classesApi: classes,
 }));
 vi.mock("@/components/ToastProvider", () => ({ useToast: () => ({ push: toast }) }));
+vi.mock("@/hooks/useMe", () => ({ useMe: () => ({ me }) }));
 vi.mock("@/features/org/orgHooks", () => ({
   useRegions: () => ({ data: [{ id: 1, name: "Tashkent" }] }),
   useBranches: () => ({ data: [{ id: 2, name: "Chilonzor", region: 1, is_active: true }] }),
@@ -74,7 +76,7 @@ function core(over: Partial<ClassroomCore> = {}): ClassroomCore {
     tas: [{ id: 4, name: "Sardor TA" }],
     students: 2,
     lcup: { managed: true, group_name: "G21 Math", status: "confirmed", locked_fields: LOCKED },
-    glance: { attendance_rate: 64, last_lesson: "2026-10-14", homework: { assignments: 3, handed_in: 4, expected: 6 }, owing: 1 },
+    glance: { attendance_rate: 64, last_lesson: "2026-10-14", homework: { assignments: 3, handed_in: 4, expected: 6 }, owing: 1, today: null },
     ...over,
   };
 }
@@ -160,6 +162,7 @@ beforeEach(() => {
   routerPush.mockReset();
   for (const fn of Object.values(classes)) fn.mockReset();
   search = "";
+  me = { role: "admin", permissions: [] };
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -269,11 +272,11 @@ describe("any other class", () => {
     expect(classes.governanceUpdate).toHaveBeenCalledWith(45, { is_active: false });
   });
 
-  it("counts its support teachers in the header, not again in the Summary", async () => {
+  it("names its support teachers in the header, not again in the Summary", async () => {
     route(core(UNPAIRED));
     await renderPage();
-    const header = host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
-    expect(header.textContent).toContain("Sardor TA");
+    const header = host.querySelector("h1")!.closest("section") as HTMLElement;
+    expect(header.querySelector('a[href="/ops/staff/4"]')?.textContent).toBe("Sardor TA");
     expect(box("Summary")!.textContent).not.toContain("Support teachers");
   });
 
@@ -290,7 +293,9 @@ describe("any other class", () => {
 
 describe("the header", () => {
   /** The card holding the h1: the class's header. */
-  const header = () => host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
+  const header = () => host.querySelector("h1")!.closest("section") as HTMLElement;
+  const fact = (label: string) =>
+    [...header().querySelectorAll("dl > *")].find((el) => el.querySelector("dt")?.textContent === label)?.textContent ?? "";
 
   it("says where and when the class meets, and who teaches it", async () => {
     route(core());
@@ -303,23 +308,63 @@ describe("the header", () => {
     expect(text).toContain("Synced from lc-up");
   });
 
-  it("puts the class's figures on the Overview, in the colour of their verdict", async () => {
+  it("puts the class's figures in the header, in the colour of their verdict", async () => {
     route(core());
     await renderPage();
-    const text = header().textContent;
-    expect(text).toContain("64%"); // attendance, amber
-    expect(text).toContain("67%"); // 4 of 6 handed in
-    expect(text).toMatch(/Owe lc-up\s*1/);
-    // The tile's value, not its icon square (which shares the colour and has no text).
-    const owing = [...header().querySelectorAll(".text-ms-critical-fg")].map((el) => el.textContent).filter(Boolean);
+    expect(fact("Attendance")).toContain("64%"); // amber
+    expect(fact("Owe lc-up")).toContain("1");
+    const owing = [...header().querySelectorAll("dl .text-ms-critical-fg")].map((el) => el.textContent).filter(Boolean);
     expect(owing).toEqual(["1"]);
+    // A class lc-up runs asks the money question; one without lc-up shows its homework instead.
+    expect(fact("Homework")).toBe("");
+    act(() => root.unmount());
+    root = createRoot(host);
+    route(core(UNPAIRED));
+    await renderPage();
+    expect(fact("Homework")).toContain("67%"); // 4 of 6 handed in
   });
 
-  it("leaves the figures off the other tabs", async () => {
+  it("keeps the figures on every tab", async () => {
     route(core());
     await renderPage("tab=history");
     expect(header().textContent).toContain("Junior G21 Math");
-    expect(header().textContent).not.toContain("Attendance");
+    expect(fact("Attendance")).toContain("64%");
+    expect(fact("Today")).toContain("No lesson");
+  });
+
+  it("says whether today's lesson is marked", async () => {
+    route(core({ glance: { ...core().glance, today: { lesson_time: "14:00", students: 2, marked: null } } }));
+    await renderPage();
+    expect(fact("Today")).toContain("Not marked yet");
+    expect(fact("Today")).toContain("lesson 14:00 · 2 students");
+    act(() => root.unmount());
+    root = createRoot(host);
+    route(core({ glance: { ...core().glance, today: { lesson_time: "14:00", students: 2, marked: { present: 1, late: 0, absent: 1, excused: 0 } } } }));
+    await renderPage();
+    expect(fact("Today")).toContain("2 of 2marked");
+    expect(fact("Today")).toContain("1 came · 1 absent");
+  });
+
+  it("offers Message class to the desk, prefilled with this class", async () => {
+    route(core());
+    await renderPage();
+    const link = [...header().querySelectorAll("a")].find((a) => a.textContent === "Message class");
+    expect(link?.getAttribute("href")).toBe("/ops/sms/campaigns/new?classroom=45");
+    act(() => root.unmount());
+    root = createRoot(host);
+    me = { role: "teacher", permissions: [] };
+    route(core());
+    await renderPage();
+    expect([...header().querySelectorAll("a")].some((a) => a.textContent === "Message class")).toBe(false);
+  });
+
+  it("counts what the tabs hold on the tabs", async () => {
+    route(core());
+    await renderPage();
+    const tab = (name: string) => [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent?.startsWith(name))!;
+    expect(tab("Students").textContent).toBe("Students2");
+    expect(tab("Attendance").textContent).toBe("Attendance64%");
+    expect(tab("Homework").textContent).toBe("Homework3");
   });
 
   it("says Full when the class has no seat left", async () => {

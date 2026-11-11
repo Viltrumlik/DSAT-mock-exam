@@ -78,6 +78,15 @@ export type ClassroomGlance = {
   homework: { assignments: number; handed_in: number; expected: number };
   /** Students sitting now who owe lc-up. */
   owing: number;
+  /**
+   * The lesson today (`ops_classrooms._today`): null when the class does not meet today. `marked` is today's
+   * register by kind, null while none is open.
+   */
+  today: {
+    lesson_time: string;
+    students: number;
+    marked: { present: number; late: number; absent: number; excused: number } | null;
+  } | null;
 };
 
 export type ClassroomRoster = {

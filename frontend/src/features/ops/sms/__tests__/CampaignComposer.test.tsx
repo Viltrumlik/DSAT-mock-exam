@@ -239,6 +239,13 @@ describe("CampaignComposer", () => {
     expect(cardHead("Message").getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("?classroom= preselects that class (the class page's Message class) and opens the message", async () => {
+    await render("classroom=61");
+    expect(previewAudience.mock.calls[0][0]).toEqual({ audience: "group", audience_ids: [61], excluded_user_ids: [] });
+    expect(cardHead("Who").textContent).toContain("Junior G21 | Math");
+    expect(cardHead("Message").getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("keeps Send off while the preview is on its way", async () => {
     await render();
     await click(radio("Debtors"));

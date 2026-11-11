@@ -418,6 +418,7 @@ export function BarChart({
   insight,
   note,
   link,
+  labelHead = "Day",
 }: {
   title: ReactNode;
   sub?: ReactNode;
@@ -427,11 +428,15 @@ export function BarChart({
   insight?: ReactNode;
   note?: ReactNode;
   link?: { href: string; label: string };
+  /** What a bar is, as the Table view's first column: "Day", "Lesson", "Assignment". */
+  labelHead?: string;
 }) {
   const top = niceMax(Math.max(0, ...bars.map((b) => b.values.reduce((s, v) => s + v, 0))));
   const H = 150;
   const B = 130; // the baseline
-  const slot = 28;
+  // Few bars get wider ones, and the drawing never grows past 1.35× its own size: in a full-width card a
+  // dozen 28-unit bars scaled up 2.5× and their 12-unit labels read at 30 px.
+  const slot = bars.length <= 14 ? 44 : 28;
   const W = 36 + bars.length * slot + 4;
   const y = (v: number) => B - (v / top) * (B - 12);
   const every = bars.length > 20 ? 3 : bars.length > 10 ? 2 : 1;
@@ -442,7 +447,7 @@ export function BarChart({
       insight={insight}
       note={note}
       link={link}
-      table={{ head: ["Day", ...series.map((s) => s.label)], rows: bars.map((b) => [b.full ?? b.label, ...series.map((_, i) => b.values[i] ?? 0)]) }}
+      table={{ head: [labelHead, ...series.map((s) => s.label)], rows: bars.map((b) => [b.full ?? b.label, ...series.map((_, i) => b.values[i] ?? 0)]) }}
     >
       <div className="mb-2 flex flex-wrap gap-3 text-[12.5px] text-ms-fg-2">
         {series.map((s) => (
@@ -453,7 +458,7 @@ export function BarChart({
         ))}
       </div>
       <div className="overflow-x-auto">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={typeof title === "string" ? title : "Bar chart"} className="h-auto w-full font-ms-sans" style={{ minWidth: Math.min(W, 520) }}>
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={typeof title === "string" ? title : "Bar chart"} className="h-auto w-full font-ms-sans" style={{ minWidth: Math.min(W, 520), maxWidth: Math.round(W * 1.35) }}>
           {[0, top / 2, top].map((t) => (
             <g key={t}>
               <path d={`M32 ${y(t)}H${W - 2}`} className={t === 0 ? "stroke-ms-border-strong" : "stroke-ms-line"} strokeWidth={1} />
