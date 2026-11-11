@@ -46,7 +46,7 @@ const VIEWS: { value: View; label: string }[] = [
 const SEAT_STATE: Record<string, string> = { active: "Active", trial: "Trial", frozen: "Frozen", left: "Left" };
 
 function money(amount: number) {
-  return <span className={amount < 0 ? "text-danger" : undefined}>{formatUzs(amount)}</span>;
+  return <span className={amount < 0 ? "text-ms-critical-fg" : undefined}>{formatUzs(amount)}</span>;
 }
 
 function moment(iso: string | null): string {
@@ -60,12 +60,12 @@ function Problems({ problems }: { problems: LedgerProblem[] }) {
   return (
     <section aria-label="Recent problems" className={BOX}>
       <h2 className={CAPTION}>Recent problems</h2>
-      <ul className="divide-y divide-border text-[13px]">
+      <ul className="divide-y divide-ms-line text-[13px]">
         {problems.map((problem) => (
           <li key={`${problem.at}-${problem.kind}`} className="px-3 py-2">
-            <span className="text-muted-foreground">{moment(problem.at)}</span>
+            <span className="text-ms-fg-3">{moment(problem.at)}</span>
             {[...problem.errors, ...problem.alerts].map((line) => (
-              <p key={line} className="text-danger">{line}</p>
+              <p key={line} className="text-ms-critical-fg">{line}</p>
             ))}
           </li>
         ))}
@@ -76,17 +76,17 @@ function Problems({ problems }: { problems: LedgerProblem[] }) {
 
 function Differences({ comparison, onOpen }: { comparison: LedgerComparison | null; onOpen: (id: number) => void }) {
   if (!comparison) {
-    return <p className="text-[13px] text-muted-foreground">No comparison yet. The first one runs at 23:40.</p>;
+    return <p className="text-[13px] text-ms-fg-3">No comparison yet. The first one runs at 23:40.</p>;
   }
   if (!comparison.ok) {
     return (
-      <div role="alert" className={cn(BOX, "px-3 py-3 text-[13px] text-danger")}>
+      <div role="alert" className={cn(BOX, "px-3 py-3 text-[13px] text-ms-critical-fg")}>
         {comparison.alerts.join(" ") || "This comparison did not run."}
       </div>
     );
   }
   if (!comparison.rows.length) {
-    return <p className="text-[13px] text-foreground">Every balance matches lc-up.</p>;
+    return <p className="text-[13px] text-ms-fg">Every balance matches lc-up.</p>;
   }
   return (
     <section aria-label="Differences" className={BOX}>
@@ -108,7 +108,7 @@ function Differences({ comparison, onOpen }: { comparison: LedgerComparison | nu
                 <td className={TD}>
                   {row.account_id === null ? (
                     <>
-                      {row.name} <span className="text-[12px] text-muted-foreground">Not in the ledger</span>
+                      {row.name} <span className="text-[12px] text-ms-fg-3">Not in the ledger</span>
                     </>
                   ) : (
                     <button type="button" className={TEXT_BUTTON} onClick={() => onOpen(row.account_id as number)}>
@@ -138,7 +138,7 @@ function Students({ scope, onOpen }: { scope: LedgerScope; onOpen: (id: number) 
   }, [q.data, search]);
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data.length) return <p className="text-[13px] text-muted-foreground">Nobody here.</p>;
+  if (!q.data.length) return <p className="text-[13px] text-ms-fg-3">Nobody here.</p>;
   return (
     <div className="space-y-2">
       <input
@@ -174,7 +174,7 @@ function Students({ scope, onOpen }: { scope: LedgerScope; onOpen: (id: number) 
               ))}
               {shown.length ? null : (
                 <tr>
-                  <td colSpan={3} className={cn(TD, "text-muted-foreground")}>Nobody matches.</td>
+                  <td colSpan={3} className={cn(TD, "text-ms-fg-3")}>Nobody matches.</td>
                 </tr>
               )}
             </tbody>
@@ -234,12 +234,12 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
     <div className="space-y-3">
       {back}
       <header>
-        <h2 className="text-[15px] font-semibold text-foreground">{account.name}</h2>
-        <p className="text-[13px] text-muted-foreground">
+        <h2 className="text-[15px] font-semibold text-ms-fg">{account.name}</h2>
+        <p className="text-[13px] text-ms-fg-3">
           {account.phone || "No phone"} · Balance {money(account.balance)}
         </p>
         {account.seats.map((seat) => (
-          <div key={seat.id} className="text-[13px] text-muted-foreground">
+          <div key={seat.id} className="text-[13px] text-ms-fg-3">
             <p>
               {seat.group_name} · {SEAT_STATE[seat.state] ?? seat.state} · {seatPrice(seat)}{" "}
               {pricing === seat.id ? null : (
@@ -289,13 +289,13 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
                     <td className={TD}>{entry.label}</td>
                     <td className={TD_R}>
                       {entry.voided_at ? (
-                        <span className="text-muted-foreground line-through">{formatUzs(entry.amount)}</span>
+                        <span className="text-ms-fg-3 line-through">{formatUzs(entry.amount)}</span>
                       ) : (
                         money(entry.amount)
                       )}
                     </td>
                     <td className={TD_R}>{money(entry.running)}</td>
-                    <td className={cn(TD, "text-muted-foreground")}>
+                    <td className={cn(TD, "text-ms-fg-3")}>
                       {entry.voided_at ? voidedText(entry) : entryDetails(entry) || "—"}
                       {account.payments_open && entry.can_void && voiding !== entry.id ? (
                         <>
@@ -332,20 +332,20 @@ export function LedgerPanel() {
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
   const summary = q.data;
   if (!summary.opened_at) {
-    return <p className="text-[13px] text-muted-foreground">The ledger is not open yet.</p>;
+    return <p className="text-[13px] text-ms-fg-3">The ledger is not open yet.</p>;
   }
   if (accountId !== null) return <AccountView id={accountId} onBack={() => setAccountId(null)} />;
   const counts = summary.comparison?.ok ? summary.comparison.counts : null;
   return (
     <div className="space-y-3">
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-[13px] text-ms-fg-3">
         The ledger runs beside lc-up and changes nothing yet: payments are still entered in lc-up.{" "}
         {summary.enabled ? `Last followed lc-up: ${moment(summary.last_tick_at)}.` : "Following lc-up is switched off."}
       </p>
       {/* Seven figures leave a hole in two or four columns, so the last one takes the rest of its row. */}
       <dl
         className={cn(
-          "grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-4 xl:grid-cols-7",
+          "grid grid-cols-2 gap-px overflow-hidden rounded-[16px] bg-ms-line sm:grid-cols-4 xl:grid-cols-7",
           counts && "[&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1",
         )}
       >
@@ -362,7 +362,7 @@ export function LedgerPanel() {
         ) : null}
       </dl>
       {counts ? (
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-[12px] text-ms-fg-3">
           Compared on {day(summary.comparison?.day)}. A small difference is up to 1,000 UZS, usually rounding.
         </p>
       ) : null}

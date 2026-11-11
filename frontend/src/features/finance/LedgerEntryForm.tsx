@@ -35,7 +35,7 @@ export const ENTER_LABEL: Record<EnterableKind, string> = {
   adjust: "Enter an adjustment",
 };
 
-const LABEL = "flex flex-col gap-1 text-[12px] text-muted-foreground";
+const LABEL = "flex flex-col gap-1 text-[12px] text-ms-fg-3";
 
 /** Whole so'm above zero, however it was grouped; null for anything else. */
 export function parseAmount(raw: string): number | null {
@@ -55,7 +55,7 @@ function localToday(): string {
 function Refusal({ error }: { error: unknown }) {
   if (!error) return null;
   return (
-    <p role="alert" className="text-[13px] text-danger">
+    <p role="alert" className="text-[13px] text-ms-critical-fg">
       {formatApiErrorForToast(error)}
     </p>
   );
@@ -151,7 +151,7 @@ export function EntryForm({
         </label>
       </div>
       {change === null ? null : (
-        <p className="text-[13px] text-foreground">Balance after: {formatUzs(balance + change)}</p>
+        <p className="text-[13px] text-ms-fg">Balance after: {formatUzs(balance + change)}</p>
       )}
       <Refusal error={enter.error} />
       <div className="flex flex-wrap gap-1">
@@ -214,7 +214,7 @@ export function SeatPriceForm({ seat, onClose }: { seat: LedgerSeat; onClose: ()
           />
         </label>
       </div>
-      <p className="text-[12px] text-muted-foreground">This month's charge is written again at the new price.</p>
+      <p className="text-[12px] text-ms-fg-3">This month's charge is written again at the new price.</p>
       <Refusal error={setPrice.error} />
       <div className="flex flex-wrap gap-1">
         <Btn primary type="submit" disabled={!hasReason || price === null}>
