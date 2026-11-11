@@ -86,6 +86,7 @@ describe("LessonsTimeline", () => {
     lesson(5, "Middle M5 · Math", "14:00", "16:00", "now", { marked: 11, present: 10, late: 1, roster: 12 }),
     lesson(9, "Middle M9 · English", "17:00", "19:00", "upcoming"),
     lesson(7, "Middle M7 · Math", "15:00", "17:00", "upcoming", {}, null),
+    lesson(4, "Senior S1 · Math", "14:30", "16:30", "now", {}, null),
   ];
 
   function render(at: string) {
@@ -107,6 +108,10 @@ describe("LessonsTimeline", () => {
     expect(by["Middle M9 · English"].querySelector("a")?.getAttribute("href")).toBe("/ops/classrooms/9");
     expect(by["Middle M7 · Math"].dataset.look).toBe("warn");
     expect(by["Middle M7 · Math"].textContent).toContain("No teacher · 15:00");
+    // Running with nobody teaching: amber like any unstaffed class, still live, named in words.
+    expect(by["Senior S1 · Math"].dataset.look).toBe("warn");
+    expect(by["Senior S1 · Math"].textContent).toContain("Now · No teacher");
+    expect(by["Senior S1 · Math"].querySelector(".animate-ms-pulse")).not.toBeNull();
   });
 
   it("marks the current minute with a line, and drops it outside 08:00–20:00", () => {

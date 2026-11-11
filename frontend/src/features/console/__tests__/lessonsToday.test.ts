@@ -39,6 +39,12 @@ describe("a lesson's block", () => {
     expect(lessonLook(row("upcoming", {}, null))).toBe("warn");
   });
 
+  it("keeps a running class with no teacher amber, and says so in words", () => {
+    expect(lessonLook(row("now", {}, null))).toBe("warn");
+    expect(lessonLine(row("now", {}, null))).toEqual({ text: "Now · No teacher", alert: true });
+    expect(lessonLine(row("now", { marked: 11, present: 10, late: 1, roster: 12 }, null)).text).toBe("Now · No teacher · 11 / 12 came");
+  });
+
   it("counts a register as fixable only when ended, unmarked and still open", () => {
     expect(isNotMarked(row("ended"))).toBe(true);
     expect(isNotMarked(row("ended", { state: "open" }))).toBe(true);

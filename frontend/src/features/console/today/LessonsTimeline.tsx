@@ -50,10 +50,13 @@ export function layoutLessons(lessons: readonly LessonRow[]): Placed[] {
 
 export type Look = "done" | "now" | "next" | "warn";
 
-/** The block's colour: ended (grey), now (filled), still to come (outlined), or no teacher (amber). */
+/**
+ * The block's colour: ended (grey), now (filled), still to come (outlined), or no teacher (amber).
+ * A class with no teacher stays amber while it runs too: "live" must not hide which class is unstaffed.
+ */
 export function lessonLook(l: LessonRow): Look {
-  if (l.phase === "now") return "now";
   if (!l.teacher && l.phase !== "ended") return "warn";
+  if (l.phase === "now") return "now";
   if (l.phase === "ended") return "done";
   return "next";
 }
@@ -69,7 +72,9 @@ const LOOK: Record<Look, string> = {
 export function lessonLine(l: LessonRow): { icon?: "check" | "warn"; text: string; alert?: boolean } {
   const who = l.teacher?.name ?? "";
   if (l.phase === "now") {
-    return { text: l.register.marked ? `Now · ${l.register.present + l.register.late} / ${l.register.roster} came` : ["Now", who].filter(Boolean).join(" · ") };
+    const came = l.register.marked ? `${l.register.present + l.register.late} / ${l.register.roster} came` : "";
+    if (!l.teacher) return { text: ["Now · No teacher", came].filter(Boolean).join(" · "), alert: true };
+    return { text: came ? `Now · ${came}` : ["Now", who].filter(Boolean).join(" · ") };
   }
   if (isNotMarked(l)) return { icon: "warn", text: ["Not marked", who].filter(Boolean).join(" · "), alert: true };
   if (!l.teacher) return { icon: "warn", text: `No teacher · ${hhmm(l.starts_at)}`, alert: true };
@@ -137,7 +142,7 @@ export function LessonsTimeline({ lessons }: { lessons: readonly LessonRow[] }) 
                   >
                     <b className="truncate text-[13.5px] font-semibold leading-[18px]">{l.classroom.name}</b>
                     <span className={`flex min-w-0 items-center gap-[5px] ${ln.alert ? "font-semibold text-ms-attention-fg" : ""}`}>
-                      {k === "now" ? <LiveDot /> : ln.icon ? <Icon name={ln.icon} size="sm" className="shrink-0" /> : null}
+                      {l.phase === "now" ? <LiveDot /> : ln.icon ? <Icon name={ln.icon} size="sm" className="shrink-0" /> : null}
                       <span className="truncate">{ln.text}</span>
                     </span>
                   </Link>
