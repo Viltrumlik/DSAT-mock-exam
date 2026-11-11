@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { X } from "lucide-react";
 
-import { Button, Checkbox, Field, Input, SegmentedControl } from "@/components/ui";
+import { Button, Checkbox, Field, Input, SegmentedControl } from "../consoleKit";
 import { cn } from "@/lib/cn";
 import { money, plural } from "../format";
 import { CAPTION_TEXT, LoadError, TEXT_BUTTON } from "../panelKit";
@@ -40,8 +40,8 @@ function Chip({ active, label, count, onClick }: { active: boolean; label: strin
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "rounded-md border px-2 py-1 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-        active ? "border-primary bg-primary-soft font-medium text-foreground" : "border-border text-muted-foreground hover:bg-surface-2",
+        "rounded-md border px-2 py-1 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ms-ring",
+        active ? "border-ms-primary bg-ms-primary-soft font-medium text-ms-fg" : "border-ms-border text-ms-fg-3 hover:bg-ms-surface-2",
       )}
     >
       {label} <span className="tabular-nums opacity-70">{count}</span>
@@ -82,12 +82,12 @@ function StudentPicker({
         <Input id={`${uid}-search`} inputSize="sm" value={search} onChange={(e) => setSearch(e.target.value)} />
       </Field>
       {hits.length > 0 ? (
-        <ul className="divide-y divide-border border border-border text-[13px]">
+        <ul className="divide-y divide-ms-line border border-ms-border text-[13px]">
           {hits.map((s) => (
             <li key={s.id} className="flex items-center gap-2 px-3 py-1.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-foreground">{s.name}</p>
-                <p className="truncate text-[12px] text-muted-foreground">
+                <p className="truncate font-medium text-ms-fg">{s.name}</p>
+                <p className="truncate text-[12px] text-ms-fg-3">
                   {[s.lcup_name, s.phone || "no phone", s.balance !== null ? money(s.balance) : ""].filter(Boolean).join(" · ")}
                 </p>
               </div>
@@ -98,18 +98,18 @@ function StudentPicker({
           ))}
         </ul>
       ) : search.trim().length >= STUDENT_SEARCH_MIN && students.data && !students.isFetching ? (
-        <p className="text-[13px] text-muted-foreground">No linked student matches.</p>
+        <p className="text-[13px] text-ms-fg-3">No linked student matches.</p>
       ) : null}
       {value.ids.length > 0 ? (
         <ul className="flex flex-wrap gap-1.5">
           {value.ids.map((id) => (
-            <li key={id} className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-[13px]">
+            <li key={id} className="inline-flex items-center gap-1 rounded-md border border-ms-border bg-ms-surface-2 px-2 py-0.5 text-[13px]">
               {nameOf(id)}
               <button
                 type="button"
                 aria-label={`Remove ${nameOf(id)}`}
                 onClick={() => onChange({ ...value, ids: value.ids.filter((x) => x !== id) })}
-                className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                className="rounded-sm text-ms-fg-3 hover:text-ms-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ms-ring"
               >
                 <X className="h-3.5 w-3.5" aria-hidden />
               </button>
@@ -151,11 +151,11 @@ function GroupPicker({ value, onChange }: { value: AudienceValue; onChange: (nex
         <button type="button" className={TEXT_BUTTON} disabled={value.ids.length === 0} onClick={() => onChange({ ...value, ids: [] })}>
           Clear
         </button>
-        <span className="text-[12px] text-muted-foreground">
+        <span className="text-[12px] text-ms-fg-3">
           {plural(value.ids.length, "class", "classes")} chosen{full ? ` · At most ${MAX_GROUPS} classes` : ""}
         </span>
       </div>
-      <ul className="max-h-64 divide-y divide-border overflow-y-auto border border-border text-[13px]">
+      <ul className="max-h-64 divide-y divide-ms-line overflow-y-auto border border-ms-border text-[13px]">
         {shown.map((c) => {
           const checked = value.ids.includes(c.id);
           return (
@@ -204,7 +204,7 @@ function FilterPicker({ value, onChange }: { value: AudienceValue; onChange: (ne
 
   return (
     <div className="space-y-3">
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-[13px] text-ms-fg-3">
         Students in the active classes that match. The number on each choice is how many classes have it.
       </p>
       {row("subjects", "Subject", options.data?.subjects)}
@@ -242,7 +242,7 @@ export function AudienceStep({
       {value.audience === "group" ? <GroupPicker value={value} onChange={onChange} /> : null}
       {value.audience === "filter" ? <FilterPicker value={value} onChange={onChange} /> : null}
       {value.audience === "debtors" ? (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-[13px] text-ms-fg-3">
           Every lc-up-linked learner who owes, frozen ones included — worked out when it sends.
         </p>
       ) : null}

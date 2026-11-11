@@ -4,7 +4,7 @@ import { forwardRef, useId, type ButtonHTMLAttributes, type InputHTMLAttributes,
 
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { cn } from "@/lib/cn";
-import { Badge as ConsoleBadge, Button as ConsoleButton, Dialog, inputShell, type BadgeTone } from "@/features/console/ui";
+import { Badge as ConsoleBadge, Button as ConsoleButton, Dialog, Segmented, Sheet, inputShell, type BadgeTone } from "@/features/console/ui";
 
 /**
  * The SMS panel's controls in the console's look (design handoff v0.3, PR 13a), with the props the
@@ -83,11 +83,25 @@ export function Button({
   variant = "primary",
   size = "md",
   loading = false,
+  fullWidth = false,
+  className,
   children,
   ...rest
-}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & { variant?: OldVariant; size?: "sm" | "md" | "lg"; loading?: boolean; children?: ReactNode }) {
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
+  variant?: OldVariant;
+  size?: "sm" | "md" | "lg";
+  loading?: boolean;
+  fullWidth?: boolean;
+  children?: ReactNode;
+}) {
   return (
-    <ConsoleButton variant={VARIANT[variant]} size={size === "sm" ? "sm" : "md"} state={loading ? "busy" : "idle"} {...rest}>
+    <ConsoleButton
+      variant={VARIANT[variant]}
+      size={size === "sm" ? "sm" : "md"}
+      state={loading ? "busy" : "idle"}
+      className={cn(fullWidth && "w-full", className)}
+      {...rest}
+    >
       {children}
     </ConsoleButton>
   );
@@ -256,3 +270,79 @@ export function Modal({
     </Dialog>
   );
 }
+
+// ── drawer, segmented control, checkbox (PR 13b) ─────────────────────────
+
+/** The console side Sheet with the old Drawer's title and footer; a drawer wider than 440 px opens wide. */
+export function Drawer({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  width = 420,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: ReactNode;
+  children?: ReactNode;
+  footer?: ReactNode;
+  side?: "right" | "left";
+  width?: number;
+}) {
+  return (
+    <Sheet open={open} onClose={onClose} title={title ?? ""} footer={footer} wide={width > 440}>
+      {children}
+    </Sheet>
+  );
+}
+
+/** The console's segmented control (`role="radio"` per option), named by the old `ariaLabel`. */
+export function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  size = "md",
+  className,
+  ariaLabel = "",
+}: {
+  options: { value: T; label: ReactNode }[];
+  value: T;
+  onChange: (value: T) => void;
+  size?: "sm" | "md";
+  className?: string;
+  ariaLabel?: string;
+}) {
+  return <Segmented<T> label={ariaLabel} options={options} value={value} onChange={onChange} size={size} className={className} />;
+}
+
+/** A native checkbox in the console's box, its words beside it; the label still names the input. */
+export const Checkbox = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "size"> & { label?: string }>(function Checkbox(
+  { label, className, id, ...rest },
+  ref,
+) {
+  const box = (
+    <span className="relative inline-flex size-[18px] shrink-0 items-center justify-center">
+      <input
+        ref={ref}
+        id={id}
+        type="checkbox"
+        className={cn(
+          "peer ms-transition size-[18px] cursor-pointer appearance-none rounded-[6px] border border-ms-border-strong bg-ms-card",
+          "checked:border-ms-primary checked:bg-ms-primary",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          className,
+        )}
+        {...rest}
+      />
+      <Icon name="check" size="sm" className="pointer-events-none absolute size-3 text-white opacity-0 peer-checked:opacity-100" />
+    </span>
+  );
+  if (!label) return box;
+  return (
+    <label htmlFor={id} className="inline-flex cursor-pointer items-center gap-2.5 text-[14px] text-ms-fg">
+      {box}
+      <span>{label}</span>
+    </label>
+  );
+});

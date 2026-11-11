@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 
-import { Drawer, Field, Input } from "@/components/ui";
+import { Drawer, Field, Input } from "../consoleKit";
 import { CAPTION_TEXT, TEXT_BUTTON } from "../panelKit";
 import type { PreviewRecipient, SkippedPerson } from "../smsApi";
 
@@ -42,12 +42,12 @@ export function RecipientsDrawer({
         <Field label="Find a person" htmlFor={`${uid}-search`}>
           <Input id={`${uid}-search`} inputSize="sm" value={search} onChange={(e) => setSearch(e.target.value)} />
         </Field>
-        <ul className="divide-y divide-border border border-border text-[13px]">
+        <ul className="divide-y divide-ms-line border border-ms-border text-[13px]">
           {rows.map((r) => (
             <li key={r.user_id} className="flex items-center gap-2 px-3 py-1.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-foreground">{r.name}</p>
-                <p className="truncate text-[12px] text-muted-foreground">
+                <p className="truncate font-medium text-ms-fg">{r.name}</p>
+                <p className="truncate text-[12px] text-ms-fg-3">
                   {[r.phone, r.groups.join(", ")].filter(Boolean).join(" · ")}
                 </p>
               </div>
@@ -65,12 +65,12 @@ export function RecipientsDrawer({
         {excluded.length > 0 ? (
           <div>
             <p className={`${CAPTION_TEXT} mb-1`}>{`Taken out · ${excluded.length}`}</p>
-            <ul className="divide-y divide-border border border-border text-[13px]">
+            <ul className="divide-y divide-ms-line border border-ms-border text-[13px]">
               {excluded.map((id) => {
                 const name = names.get(id) ?? `Student #${id}`;
                 return (
                   <li key={id} className="flex items-center gap-2 px-3 py-1.5">
-                    <p className="min-w-0 flex-1 truncate text-foreground">{name}</p>
+                    <p className="min-w-0 flex-1 truncate text-ms-fg">{name}</p>
                     <button
                       type="button"
                       aria-label={`Put back ${name}`}
