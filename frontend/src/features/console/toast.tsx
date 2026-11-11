@@ -66,7 +66,11 @@ export function Toaster() {
   const { mounted, closing } = usePresence(Boolean(live));
   const shown = live ?? last;
 
-  const [paused, setPaused] = useState(false);
+  // Hover and focus each hold the clock; it runs only when neither does (the pointer can leave
+  // while keyboard focus stays on Undo, and the other way round).
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const paused = hovered || focused;
   const left = useRef(0);
   const started = useRef(0);
   const timer = useRef<number | null>(null);
@@ -76,7 +80,8 @@ export function Toaster() {
   useEffect(() => {
     if (!live || !life) return;
     left.current = life;
-    setPaused(false);
+    setHovered(false);
+    setFocused(false);
   }, [live, life]);
   useEffect(() => {
     if (!live || !life || paused) return;
@@ -96,10 +101,13 @@ export function Toaster() {
       <div
         key={shown.id}
         role={error ? "alert" : "status"}
-        onPointerEnter={() => setPaused(true)}
-        onPointerLeave={() => setPaused(false)}
-        onFocus={() => setPaused(true)}
-        onBlur={() => setPaused(false)}
+        onPointerEnter={() => setHovered(true)}
+        onPointerLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        // Focus moving between the toast's own buttons is not leaving it.
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
+        }}
         className={cn(
           "pointer-events-auto flex min-h-[52px] max-w-[min(560px,100%)] items-center gap-3 rounded-[16px] py-2 pl-[18px] pr-2 text-[15px] font-medium leading-5 shadow-ms-2",
           error ? "bg-ms-critical-soft text-ms-fg ring-1 ring-ms-critical-line" : "bg-ms-inverse-bg text-ms-inverse-fg",

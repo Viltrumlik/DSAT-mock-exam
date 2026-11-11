@@ -185,6 +185,30 @@ describe("toast", () => {
   });
 });
 
+describe("toast pause", () => {
+  it("keeps Undo's clock stopped while focus stays on the toast, though the pointer has left", () => {
+    render(<Toaster />);
+    act(() => void toast.show({ message: "Cleared 2 filters", undo: () => undefined }));
+    const box = q('[role="status"]')!;
+    const undoButton = [...box.querySelectorAll("button")].find((b) => b.textContent?.includes("Undo"))!;
+    // Pointer in, then keyboard focus on Undo, then the pointer leaves.
+    act(() => box.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: document.body })));
+    act(() => undoButton.focus());
+    act(() => box.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body })));
+    tick(20_000);
+    expect(q('[role="status"]')).not.toBeNull();
+    expect(q<SVGElement>(".animate-ms-countdown")!.style.animationPlayState).toBe("paused");
+    // Focus moving to Dismiss stays inside the toast: still paused.
+    act(() => q<HTMLButtonElement>('button[aria-label="Dismiss"]')!.focus());
+    tick(20_000);
+    expect(q('[role="status"]')).not.toBeNull();
+    // Focus leaves the toast: the clock runs out what is left.
+    act(() => (document.activeElement as HTMLElement).blur());
+    tick(8_000);
+    expect(q('[role="status"]')).toBeNull();
+  });
+});
+
 describe("Button progress and tooltips", () => {
   it("ignores clicks while busy or done, without turning grey", () => {
     const onClick = vi.fn();
