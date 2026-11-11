@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -17,6 +18,7 @@ from users.models import User
 URL = "/api/classes/admin/classrooms/"
 HOST = "admin.mastersat.uz"
 STUDENT, TA = ClassroomMembership.ROLE_STUDENT, ClassroomMembership.ROLE_TA
+TUESDAY, WEDNESDAY, SUNDAY = date(2026, 11, 10), date(2026, 11, 11), date(2026, 11, 15)
 
 
 def make(username, role=C.ROLE_STUDENT, **extra):
@@ -176,11 +178,12 @@ class ClassroomChangeFormTests(ClassroomFixture):
         Assignment.objects.create(classroom=self.paired, created_by=self.teacher, title="Draft", status=Assignment.STATUS_DRAFT)
         Submission.objects.create(assignment=hw, student=self.aziz, status=Submission.STATUS_SUBMITTED)
 
-        glance = self.get(self.url(self.paired.pk)).json()["glance"]
+        with mock.patch("classes.ops_classrooms.timezone.localdate", return_value=SUNDAY):
+            glance = self.get(self.url(self.paired.pk)).json()["glance"]
         self.assertEqual(
             glance,
             {"attendance_rate": 50.0, "last_lesson": "2026-10-03",
-             "homework": {"assignments": 1, "handed_in": 1, "expected": 2}, "owing": 1},
+             "homework": {"assignments": 1, "handed_in": 1, "expected": 2}, "owing": 1, "today": None},
         )
 
     def test_an_empty_class_glance(self):
@@ -188,7 +191,37 @@ class ClassroomChangeFormTests(ClassroomFixture):
         self.assertEqual(
             glance,
             {"attendance_rate": None, "last_lesson": None,
-             "homework": {"assignments": 0, "handed_in": 0, "expected": 0}, "owing": 0},
+             "homework": {"assignments": 0, "handed_in": 0, "expected": 0}, "owing": 0, "today": None},
+        )
+
+    def today(self, room, day):
+        with mock.patch("classes.ops_classrooms.timezone.localdate", return_value=day):
+            return self.get(self.url(room.pk)).json()["glance"]["today"]
+
+    def test_today_is_none_when_the_class_does_not_meet(self):
+        self.assertIsNone(self.today(self.paired, SUNDAY))
+        self.assertIsNone(self.today(self.paired, TUESDAY))  # an ODD class, an EVEN day
+        self.assertIsNone(self.today(self.archived, WEDNESDAY))  # its day, but archived
+
+    def test_today_on_its_day_before_the_register_opens(self):
+        Classroom.objects.filter(pk=self.paired.pk).update(lesson_time="15:00-17:00")
+        self.assertEqual(self.today(self.paired, WEDNESDAY), {"lesson_time": "15:00-17:00", "students": 2, "marked": None})
+
+    def test_today_counts_the_register_by_mark(self):
+        session = AttendanceSession.objects.create(classroom=self.paired, date=WEDNESDAY)
+        AttendanceRecord.objects.create(session=session, student=self.aziz, status=AttendanceRecord.STATUS_PRESENT)
+        AttendanceRecord.objects.create(session=session, student=self.malika, status=AttendanceRecord.STATUS_LATE)
+        yesterday = AttendanceSession.objects.create(classroom=self.paired, date=WEDNESDAY - timedelta(days=2))
+        AttendanceRecord.objects.create(session=yesterday, student=self.aziz, status=AttendanceRecord.STATUS_ABSENT)
+        self.assertEqual(
+            self.today(self.paired, WEDNESDAY)["marked"], {"present": 1, "late": 1, "absent": 0, "excused": 0}
+        )
+
+    def test_a_register_opened_on_an_off_day_is_todays_lesson(self):
+        AttendanceSession.objects.create(classroom=self.unpaired, date=WEDNESDAY)  # an EVEN class on a Wednesday
+        self.assertEqual(
+            self.today(self.unpaired, WEDNESDAY),
+            {"lesson_time": "", "students": 1, "marked": {"present": 0, "late": 0, "absent": 0, "excused": 0}},
         )
 
     def test_an_unpaired_class_has_no_lcup_block(self):

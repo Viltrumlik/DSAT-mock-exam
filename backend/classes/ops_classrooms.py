@@ -198,7 +198,37 @@ def _glance(room) -> dict:
             "expected": len(ids) * len(published),
         },
         "owing": LcupStudentLink.objects.filter(user_id__in=ids, balance__lt=0).count() if ids else 0,
+        "today": _today(room, len(ids)),
     }
+
+
+#: Today's register in the header's words, in this order.
+_MARKS = (("present", "PRESENT"), ("late", "LATE"), ("absent", "ABSENT"), ("excused", "EXCUSED"))
+
+
+def _today(room, students: int) -> dict | None:
+    """
+    "Does it meet today, and is the register done?" (design handoff, scenario 5: "header shows today's
+    lesson and the roster count"). None when the class has no lesson today — by its days once it has
+    begun (a live class only), or a register opened today on any day. ``marked`` is None while no
+    register is open, else today's marks by kind.
+    """
+    from .lesson_schedule import has_begun, lesson_weekdays
+    from .models_attendance import AttendanceRecord, AttendanceSession
+
+    day = timezone.localdate()
+    register = AttendanceSession.objects.filter(classroom=room, date=day).exists()
+    scheduled = room.is_active and day.weekday() in lesson_weekdays(room) and has_begun(room, day)
+    if not (register or scheduled):
+        return None
+    marked = None
+    if register:
+        counts = dict(
+            AttendanceRecord.objects.filter(session__classroom=room, session__date=day)
+            .order_by().values("status").annotate(n=Count("pk")).values_list("status", "n")
+        )
+        marked = {word: counts.get(status, 0) for word, status in _MARKS}
+    return {"lesson_time": room.lesson_time or "", "students": students, "marked": marked}
 
 
 def _homework_work(room):

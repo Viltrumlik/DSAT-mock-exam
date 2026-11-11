@@ -20,14 +20,17 @@ import {
   Send,
   UserCog,
   Users,
-  UsersRound,
 } from "lucide-react";
 import { classesApi } from "@/lib/api";
 import { Badge } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
 import { listHrefFrom } from "@/features/ops/changelist/backLink";
 import { peopleKeys } from "@/features/ops/changelist/peopleApi";
-import { activeTab, panelId, TabBar, tabHref, tabId, type Tab } from "@/features/ops/detail/tabs";
+import { activeTab, panelId, tabHref, tabId, type Tab } from "@/features/ops/detail/tabs";
+import { Tabs } from "@/features/console/ui";
+import { isScopedOpsAdmin } from "@/features/ops/adminScope";
+import { isOpsSuperAdmin } from "@/features/ops/shell/opsNav";
+import { useMe } from "@/hooks/useMe";
 import { ConfirmDialog } from "@/features/ops/people/ConfirmDialog";
 import { Fieldset, LINK_CLASS, Row } from "@/features/ops/people/Fieldset";
 import { formatDay } from "@/features/ops/people/format";
@@ -60,9 +63,19 @@ const TABS: Tab<ClassTab>[] = [
   { key: "telegram", label: "Telegram", icon: Send },
 ];
 
+/** What a tab holds, said on the tab when worth knowing before opening (Controls board · Tabs). */
+export function classTabCounts(room: ClassroomCore): Partial<Record<ClassTab, { count: number | string; tone?: "critical" | "attention" }>> {
+  const out: Partial<Record<ClassTab, { count: number | string; tone?: "critical" | "attention" }>> = {};
+  if (room.students) out.students = { count: room.students };
+  const rate = room.glance.attendance_rate;
+  if (rate != null) out.attendance = { count: `${Math.round(rate)}%`, tone: rate < 60 ? "critical" : rate < 85 ? "attention" : undefined };
+  if (room.glance.homework.assignments) out.homework = { count: room.glance.homework.assignments };
+  return out;
+}
+
 /**
  * The Overview's read-only side: what the form does not edit and the header does not already say —
- * the lc-up pairing, the support teachers, the join code, Telegram, the lessons' length and dates.
+ * the lc-up pairing, the join code, Telegram, the lessons' length and dates (the header names the teachers).
  */
 function ClassSummary({ room }: { room: ClassroomCore }) {
   return (
@@ -82,22 +95,6 @@ function ClassSummary({ room }: { room: ClassroomCore }) {
           </>
         )}
       </Row>
-      {/* An unpaired class's header already counts its support teachers in the fourth figure. */}
-      {room.lcup ? (
-        <Row label="Support teachers" icon={UsersRound}>
-          {room.tas.length === 0 ? (
-            <span className="text-muted-foreground">None</span>
-          ) : (
-            <span className="inline-flex flex-wrap justify-end gap-x-2 gap-y-1">
-              {room.tas.map((t) => (
-                <Link key={t.id} href={`/ops/staff/${t.id}`} prefetch={false} className={LINK_CLASS}>
-                  {t.name}
-                </Link>
-              ))}
-            </span>
-          )}
-        </Row>
-      ) : null}
       <Row label="Lesson length" icon={Clock}>
         {room.lesson_hours == null ? "—" : `${room.lesson_hours} h`}
       </Row>
@@ -134,6 +131,8 @@ export function ClassroomPage({ id }: { id: number }) {
   const search = useSearchParams();
   const queryClient = useQueryClient();
   const { push } = useToast();
+  const { me } = useMe();
+  const canMessage = isOpsSuperAdmin(me) || isScopedOpsAdmin(me);
   const query = useClassroom(id);
   const room = query.data;
   const backHref = listHrefFrom(search, "/ops/classrooms");
@@ -152,23 +151,27 @@ export function ClassroomPage({ id }: { id: number }) {
     if (room) recordRecent({ kind: "class", id: room.id, name: room.name, href: `/ops/classrooms/${room.id}` });
   }, [room]);
 
-  if (query.isPending) return <p className="p-4 text-sm text-muted-foreground md:p-6">Loading…</p>;
+  if (query.isPending) {
+    return (
+      <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6" aria-busy>
+        <span className="sr-only">Loading…</span>
+        <div className="h-44 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+        <div className="h-64 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+      </div>
+    );
+  }
   if (query.isError || !room) {
     const missing = isNotFound(query.error);
     return (
-      <div className="space-y-2 p-4 text-sm md:p-6">
-        <p className="text-muted-foreground">{missing ? "This class does not exist." : "Could not load this class."}</p>
+      <div className="mx-auto w-full max-w-6xl space-y-2 p-4 text-sm md:p-6">
+        <p className="text-ms-fg-3">{missing ? "This class does not exist." : "Could not load this class."}</p>
         <p className="flex gap-3">
           {missing ? null : (
-            <button
-              type="button"
-              className="font-medium text-primary hover:underline dark:text-primary-hover"
-              onClick={() => void query.refetch()}
-            >
+            <button type="button" className={LINK_CLASS} onClick={() => void query.refetch()}>
               Retry
             </button>
           )}
-          <Link href={backHref} className="text-primary hover:underline dark:text-primary-hover">
+          <Link href={backHref} className={LINK_CLASS}>
             Back to Classrooms
           </Link>
         </p>
@@ -177,6 +180,7 @@ export function ClassroomPage({ id }: { id: number }) {
   }
 
   const tab = activeTab(search, TABS);
+  const counts = classTabCounts(room);
   const openTab = (key: ClassTab) =>
     router.replace(tabHref(`/ops/classrooms/${id}`, new URLSearchParams(search.toString()), key, "overview"), {
       scroll: false,
@@ -214,7 +218,7 @@ export function ClassroomPage({ id }: { id: number }) {
     <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
       <Link
         href={backHref}
-        className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-sm font-medium text-ms-fg-3 hover:text-ms-fg"
       >
         <ChevronLeft aria-hidden className="h-4 w-4" />
         Classrooms
@@ -222,13 +226,19 @@ export function ClassroomPage({ id }: { id: number }) {
 
       <ClassHeader
         room={room}
-        glance={tab === "overview"}
         busy={busy}
+        canMessage={canMessage}
         onToggleActive={() => void setActive(!room.is_active)}
         onDelete={() => setConfirmDelete(true)}
-      />
-
-      <TabBar scope="class" label="Class sections" tabs={TABS} active={tab} onSelect={openTab} />
+      >
+        <Tabs<ClassTab>
+          label="Class sections"
+          value={tab}
+          onChange={openTab}
+          ids={{ tab: (key) => tabId("class", key), panel: (key) => panelId("class", key) }}
+          tabs={TABS.map((t) => ({ id: t.key, label: t.label, count: counts[t.key]?.count, tone: counts[t.key]?.tone }))}
+        />
+      </ClassHeader>
 
       {/* Only the open tab is rendered, so only its part is fetched. */}
       <div role="tabpanel" id={panelId("class", tab)} aria-labelledby={tabId("class", tab)} className="min-w-0">

@@ -6,6 +6,7 @@ import { Fieldset, PartBody, Pill, StatTile, Table, Td, TONE_TEXT, WIDE_ONLY } f
 import { formatDateTime, formatDay } from "@/features/ops/people/format";
 import { rateTone } from "@/features/ops/people/PersonHeader";
 import { PUSH } from "@/features/ops/people/sections/AttendanceSection";
+import { HandedInChart, LessonsChart } from "../graphics";
 import {
   useClassroomPart,
   type ClassroomAttendance,
@@ -50,6 +51,7 @@ export function ClassAttendanceSection({ id }: { id: number }) {
                 sub={`the last ${d.sessions.length} lesson${d.sessions.length === 1 ? "" : "s"} below`}
               />
             </div>
+            <LessonsChart sessions={d.sessions} />
             <Table
               head={[
                 "Date",
@@ -100,26 +102,29 @@ export function ClassHomeworkSection({ id }: { id: number }) {
         query={query}
         isEmpty={(d) => d.assignments.length === 0}
         render={(d) => (
-          <Table head={["Title", { label: "Due", className: WIDE_ONLY }, "Turned in"]}>
-            {d.assignments.map((a) => {
-              // A share handed in is a verdict only once the work is due; before that it is progress.
-              const due = a.due_at == null || new Date(a.due_at).getTime() <= Date.now();
-              const rate = due && a.students > 0 ? (100 * a.turned_in) / a.students : null;
-              return (
-                <tr key={a.id}>
-                  <Td wrap className="font-medium sm:max-w-[24rem] sm:truncate">
-                    {a.title}
-                  </Td>
-                  <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>
-                    {a.due_at ? formatDateTime(a.due_at) : "No due date"}
-                  </Td>
-                  <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(rate)])}>
-                    {a.turned_in} / {a.students}
-                  </Td>
-                </tr>
-              );
-            })}
-          </Table>
+          <div className="space-y-5">
+            <HandedInChart assignments={d.assignments} />
+            <Table head={["Title", { label: "Due", className: WIDE_ONLY }, "Turned in"]}>
+              {d.assignments.map((a) => {
+                // A share handed in is a verdict only once the work is due; before that it is progress.
+                const due = a.due_at == null || new Date(a.due_at).getTime() <= Date.now();
+                const rate = due && a.students > 0 ? (100 * a.turned_in) / a.students : null;
+                return (
+                  <tr key={a.id}>
+                    <Td wrap className="font-medium sm:max-w-[24rem] sm:truncate">
+                      {a.title}
+                    </Td>
+                    <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>
+                      {a.due_at ? formatDateTime(a.due_at) : "No due date"}
+                    </Td>
+                    <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(rate)])}>
+                      {a.turned_in} / {a.students}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </Table>
+          </div>
         )}
       />
     </Fieldset>
