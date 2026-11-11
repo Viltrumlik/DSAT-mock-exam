@@ -33,6 +33,7 @@ export function Menu({
   text,
   variant = "ghost",
   align = "end",
+  disabled = false,
 }: {
   /** The button's name: "Actions for Bekzod Jo'rayev". */
   label: string;
@@ -42,8 +43,11 @@ export function Menu({
   text?: string;
   variant?: ButtonVariant;
   align?: "start" | "end";
+  /** While an action is in flight: the menu can't open, so nothing in it can start a second one. */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  if (disabled && open) setOpen(false);
   const { mounted, closing } = usePresence(open, 120);
   const id = useId();
   const button = useRef<HTMLButtonElement | null>(null);
@@ -91,6 +95,7 @@ export function Menu({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={text ? undefined : label}
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         className={buttonClass({ variant, size: "sm", square: !text, className: text ? "gap-1.5" : undefined })}
       >
