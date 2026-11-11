@@ -103,12 +103,15 @@ const STATUS = {
 };
 
 describe("lc-up status", () => {
-  it("lists the state as fields and each run as a row; Sync now waits for the sync to be on", async () => {
+  it("lists the state as fields, what waits as tiles that open their tab, each run as a row; Sync now waits for the sync to be on", async () => {
     await mount(<StatusPanel />, { "/lcup/status/": STATUS });
     const fields = [...host.querySelectorAll("dl > div")].map((row) => row.textContent);
     expect(fields).toContain("SyncOff");
     expect(fields).toContain("Initial reviewNot done yet");
-    expect(fields).toContain("Accounts not claimed yet7");
+    const tile = (label: string) => [...host.querySelectorAll("a")].find((a) => a.textContent?.startsWith(label));
+    expect(tile("Accounts not claimed yet")?.textContent).toContain("7");
+    expect(tile("Accounts not claimed yet")?.getAttribute("href")).toBe("/ops/lcup?tab=accounts");
+    expect(tile("Groups to pair")?.getAttribute("href")).toBe("/ops/lcup?tab=groups");
 
     const run = host.querySelector("tbody tr")?.textContent ?? "";
     expect(run).toContain("Dry run");

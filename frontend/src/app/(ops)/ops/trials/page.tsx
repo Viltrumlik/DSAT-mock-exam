@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Tabs } from "@/components/ui";
+import { Suspense } from "react";
+import { Tabs, useTabParam } from "@/features/console/ui";
 import { NotOnListPanel, TrialStudentsPanel } from "@/features/lcup/LcupPanels";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
 
@@ -9,20 +9,23 @@ import { useLcupFollowups } from "@/features/lcup/lcupHooks";
  * Trials (owner, 2026-10-20): students on trial, and lc-up members no class list shows. The teacher
  * sends both kinds to the desk. While lc-up runs the desk activates or links them there, and they
  * leave these lists within one sync; once it is off the desk activates or removes them here.
+ *
+ * In the console's look (PR 12b): its header and the tabs in the address (`?tab=missing`), each with
+ * its count.
  */
-export default function OpsTrialsPage() {
-  const [tab, setTab] = useState("trials");
+
+type TrialsTab = "trials" | "missing";
+const TAB_IDS: readonly TrialsTab[] = ["trials", "missing"];
+
+function TrialsPage() {
+  const [tab, setTab] = useTabParam(TAB_IDS, "trials");
   const q = useLcupFollowups();
   const free = q.data?.free_trial_lessons ?? 1;
-  const tabs = [
-    { value: "trials", label: q.data ? `Trial students (${q.data.trials.length})` : "Trial students" },
-    { value: "missing", label: q.data ? `Not on class list (${q.data.not_on_list.length})` : "Not on class list" },
-  ];
   return (
-    <div className="space-y-3">
-      <header>
-        <h1 className="text-lg font-semibold text-foreground">Trials</h1>
-        <p className="text-[13px] text-muted-foreground">
+    <div className="flex flex-col gap-4">
+      <header className="animate-ms-fade-in flex flex-col gap-1">
+        <h1 className="text-ms-title text-ms-fg">Trials</h1>
+        <p className="max-w-3xl text-[14px] text-ms-fg-2">
           {q.data?.seats_open ? (
             <>
               Students on trial. The free trial is {free} lesson{free === 1 ? "" : "s"}. Activate or remove them here.
@@ -35,8 +38,33 @@ export default function OpsTrialsPage() {
           )}
         </p>
       </header>
-      <Tabs tabs={tabs} value={tab} onValueChange={setTab} aria-label="Trials sections" />
-      {tab === "trials" ? <TrialStudentsPanel /> : <NotOnListPanel />}
+      <Tabs<TrialsTab>
+        label="Trials sections"
+        idPrefix="trials"
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { id: "trials", label: "Trial students", count: q.data ? q.data.trials.length : undefined },
+          {
+            id: "missing",
+            label: "Not on class list",
+            count: q.data ? q.data.not_on_list.length : undefined,
+            tone: q.data?.not_on_list.length ? "attention" : undefined,
+          },
+        ]}
+      />
+      <div role="tabpanel" id={`trials-${tab}-panel`} aria-labelledby={`trials-${tab}`} className="min-w-0">
+        {tab === "trials" ? <TrialStudentsPanel /> : <NotOnListPanel />}
+      </div>
     </div>
+  );
+}
+
+export default function OpsTrialsPage() {
+  // useSearchParams (the open tab) needs a Suspense boundary above it, or the production build's prerender fails.
+  return (
+    <Suspense fallback={null}>
+      <TrialsPage />
+    </Suspense>
   );
 }

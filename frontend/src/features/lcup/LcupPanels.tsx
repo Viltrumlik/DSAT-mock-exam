@@ -8,6 +8,8 @@ import { SeatActionDialog } from "@/features/ops/classrooms/sections/SeatDialogs
 import { useOrgClassrooms } from "@/features/org/orgHooks";
 import { formatApiErrorForToast } from "@/lib/apiError";
 import { cn } from "@/lib/cn";
+import { Badge, StatTile, buttonClass, type BadgeTone } from "@/features/console/ui";
+import { Pill } from "@/features/ops/people/Fieldset";
 import {
   lcupApi,
   type AttendancePushState,
@@ -52,39 +54,31 @@ import {
 // `cn` does not merge Tailwind classes, so a cell's alignment and colour are never set twice:
 // the table carries the colour and `nowrap` (both inherit), a cell only adds what differs.
 
-const BOX = "border border-border bg-card";
-const CAPTION_TEXT = "text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground";
-const CAPTION = `border-b border-border px-3 py-2 ${CAPTION_TEXT}`;
-const TABLE = "w-full border-separate border-spacing-0 whitespace-nowrap text-[13px] text-foreground";
-const TH_BASE = "h-8 border-b border-border bg-card px-2 text-[12px] font-semibold text-muted-foreground";
+// The console's look (design handoff v0.3, PR 12b), as Finance has it: cards, hairline tables, 36 px buttons,
+// 44 px fields. `relative`, not `overflow-hidden`: a table scrolls in its own `overflow-x-auto`, and a
+// positioned sr-only label in a cell must stay inside the box.
+const BOX = "relative rounded-ms-card bg-ms-card shadow-ms-1";
+const CAPTION_TEXT = "text-ms-over text-ms-fg-3";
+const CAPTION = `border-b border-ms-line px-5 py-3 ${CAPTION_TEXT}`;
+const TABLE = "w-full border-separate border-spacing-0 whitespace-nowrap text-[14px] text-ms-fg";
+const TH_BASE = "h-10 border-b border-ms-border bg-ms-card px-3 text-[13px] font-medium text-ms-fg-3 first:pl-5 last:pr-5";
 const TH = `${TH_BASE} text-left`;
 const TH_R = `${TH_BASE} text-right`;
-const TD = "h-[34px] border-b border-border px-2 py-1";
+const TD = "h-11 border-b border-ms-line px-3 py-1 first:pl-5 last:pr-5";
 const TD_R = `${TD} text-right tabular-nums`;
 /** A cell whose text may run to a second line (notes, errors, suggestions). */
 const TD_WRAP = `${TD} min-w-[12rem] whitespace-normal`;
-const TR = "hover:bg-surface-2 [&:last-child>td]:border-b-0";
+const TR = "ms-transition hover:bg-ms-surface [&:last-child>td]:border-b-0";
 const CONTROL =
-  "h-7 rounded-md border border-border bg-card px-2 text-[13px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+  "ms-transition h-9 rounded-ms-ctl border border-ms-border-input bg-ms-card px-3 text-[14px] text-ms-fg outline-none placeholder:text-ms-fg-3 focus:border-ms-primary focus:shadow-[0_0_0_3px_var(--ms-primary-soft-2)]";
 const TEXT_BUTTON =
-  "rounded-sm text-[13px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:no-underline dark:text-primary-hover";
+  "rounded-[6px] text-[14px] font-medium text-ms-primary-text hover:underline disabled:cursor-not-allowed disabled:text-ms-fg-disabled disabled:hover:no-underline";
 
 const DAY = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+/** The console's 36 px button; `primary` is the one blue button of its row. */
 function Btn({ primary, className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { primary?: boolean }) {
-  return (
-    <button
-      type="button"
-      {...rest}
-      className={cn(
-        "inline-flex h-7 shrink-0 items-center justify-center rounded-md border px-2.5 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50",
-        primary
-          ? "border-primary bg-primary text-primary-foreground hover:bg-primary-hover"
-          : "border-border bg-card text-foreground hover:bg-surface-2",
-        className,
-      )}
-    />
-  );
+  return <button type="button" {...rest} className={buttonClass({ variant: primary ? "primary" : "secondary", size: "sm", className })} />;
 }
 
 function when(iso: string | null | undefined): string {
@@ -94,7 +88,7 @@ function when(iso: string | null | undefined): string {
 
 /** A long list in one cell, cut to the column with the whole of it on hover. */
 function Clipped({ text, width = "max-w-[14rem]" }: { text: string; width?: string }) {
-  if (!text) return <span className="text-muted-foreground">—</span>;
+  if (!text) return <span className="text-ms-fg-3">—</span>;
   return (
     <span title={text} className={cn("block truncate", width)}>
       {text}
@@ -104,17 +98,19 @@ function Clipped({ text, width = "max-w-[14rem]" }: { text: string; width?: stri
 
 function Loading() {
   return (
-    <p role="status" className="text-[13px] text-muted-foreground">
-      Loading…
-    </p>
+    <div role="status" aria-busy className="flex flex-col gap-3">
+      <span className="sr-only">Loading…</span>
+      <div className="h-24 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+      <div className="h-64 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+    </div>
   );
 }
 
 function LoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
-    <div role="alert" className={cn(BOX, "px-3 py-3 text-[13px]")}>
-      <span className="font-semibold text-danger">This list did not load.</span>{" "}
-      <span className="text-muted-foreground">{formatApiErrorForToast(error)}</span>{" "}
+    <div role="alert" className="rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-4 py-3 text-[14px]">
+      <span className="font-semibold text-ms-critical-fg">This list did not load.</span>{" "}
+      <span className="text-ms-fg-2">{formatApiErrorForToast(error)}</span>{" "}
       <button type="button" onClick={onRetry} className={TEXT_BUTTON}>
         Retry
       </button>
@@ -125,7 +121,7 @@ function LoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) 
 function ActionError({ error }: { error: unknown }) {
   if (!error) return null;
   return (
-    <p role="alert" className="mt-1 whitespace-normal text-[12px] text-danger">
+    <p role="alert" className="mt-1 whitespace-normal text-[13px] text-ms-critical-fg">
       {formatApiErrorForToast(error)}
     </p>
   );
@@ -151,9 +147,9 @@ function DenseTable({ caption, head, children }: { caption: string; head: ReactN
 /** One line of a read-only fieldset: the label on the left, the value beside it. */
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex border-b border-border last:border-b-0">
-      <dt className="w-52 shrink-0 px-3 py-1.5 text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 px-3 py-1.5 tabular-nums text-foreground">{children}</dd>
+    <div className="flex border-b border-ms-line last:border-b-0">
+      <dt className="w-52 shrink-0 px-5 py-2.5 text-ms-fg-3">{label}</dt>
+      <dd className="min-w-0 px-3 py-2.5 tabular-nums text-ms-fg">{children}</dd>
     </div>
   );
 }
@@ -164,18 +160,18 @@ function RunRow({ run }: { run: LcupRun }) {
   return (
     <tr className={TR}>
       <td className={TD}>{when(run.started_at)}</td>
-      <td className={cn(TD, "text-muted-foreground")}>{run.dry_run ? "Dry run" : "Sync"}</td>
-      <td className={cn(TD, !run.ok && "text-danger")}>{run.ok ? "OK" : "Errors"}</td>
-      <td className={cn(TD_WRAP, "text-muted-foreground")}>
+      <td className={cn(TD, "text-ms-fg-3")}>{run.dry_run ? "Dry run" : "Sync"}</td>
+      <td className={TD}>{run.ok ? <Pill tone="positive">OK</Pill> : <Pill tone="critical">Errors</Pill>}</td>
+      <td className={cn(TD_WRAP, "text-ms-fg-3")}>
         {counts.length ? counts.map(([key, n]) => `${key.replace(/_/g, " ")}: ${n}`).join(" · ") : "—"}
       </td>
-      <td className={cn(TD_WRAP, quiet && "text-muted-foreground")}>
+      <td className={cn(TD_WRAP, quiet && "text-ms-fg-3")}>
         {quiet ? "—" : null}
         {run.alerts.map((alert) => (
           <p key={alert}>{alert}</p>
         ))}
         {run.errors.map((err) => (
-          <p key={`${err.stage}-${err.error}`} className="text-danger">
+          <p key={`${err.stage}-${err.error}`} className="text-ms-critical-fg">
             {err.stage}: {err.error}
           </p>
         ))}
@@ -192,21 +188,21 @@ function RunRow({ run }: { run: LcupRun }) {
 function PhoneConflicts({ conflicts }: { conflicts: LcupPhoneConflict[] }) {
   if (conflicts.length === 0) return null;
   const person = (p: { id: number; name: string; role?: string }) => (
-    <Link href={`/ops/${p.role === "public_student" ? "public" : p.role && p.role !== "student" ? "staff" : "students"}/${p.id}`} prefetch={false} className="text-primary hover:underline">
+    <Link href={`/ops/${p.role === "public_student" ? "public" : p.role && p.role !== "student" ? "staff" : "students"}/${p.id}`} prefetch={false} className="text-ms-primary-text hover:underline">
       {p.name}
     </Link>
   );
   return (
-    <div className="border-t border-border px-3 py-2">
-      <p className="font-medium text-foreground">
+    <div className="border-t border-ms-border px-3 py-2">
+      <p className="font-medium text-ms-fg">
         lc-up phone already on another account ({conflicts.length})
       </p>
-      <p className="text-muted-foreground">Their name follows lc-up; the phone waits until the other account no longer holds it.</p>
+      <p className="text-ms-fg-3">Their name follows lc-up; the phone waits until the other account no longer holds it.</p>
       <ul className="mt-1.5 space-y-1">
         {conflicts.map((c) => (
           <li key={c.user_id}>
             {person({ id: c.user_id, name: c.name, role: c.role })}
-            <span className="text-muted-foreground"> (lc-up: {c.lcup_name}) — held by </span>
+            <span className="text-ms-fg-3"> (lc-up: {c.lcup_name}) — held by </span>
             {c.held_by.map((h, i) => (
               <span key={h.id}>
                 {i > 0 ? ", " : null}
@@ -233,9 +229,39 @@ export function StatusPanel() {
 
   return (
     <div className="space-y-4">
-      <section aria-label="Status" className={cn(BOX, "text-[13px]")}>
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
+      {/* What waits for an admin, each opening the tab where it is done. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {(
+          [
+            ["Students to review", c.needs_review_students, "students"],
+            ["Students with no match", c.unmatched_students, "students"],
+            ["Teachers to link", c.needs_review_teachers, "teachers"],
+            ["Groups to pair", c.groups_pending, "groups"],
+            ["Accounts not claimed yet", c.unclaimed_accounts, "accounts"],
+          ] as const
+        ).map(([label, n, tab], i) => (
+          <StatTile
+            key={label}
+            label={label}
+            value={n}
+            tone={n > 0 ? "attention" : "positive"}
+            sub={n > 0 ? "open the list" : "nothing waiting"}
+            href={`/ops/lcup?tab=${tab}`}
+            delay={i * 30}
+          />
+        ))}
+      </div>
+
+      <section aria-label="Status" className={cn(BOX, "text-[14px]")}>
+        <div className="flex flex-wrap items-center gap-2 border-b border-ms-line px-5 py-3">
           <h2 className={CAPTION_TEXT}>Status</h2>
+          {status.enabled ? (
+            <Badge tone="positive" dot>
+              Sync on
+            </Badge>
+          ) : (
+            <Badge tone="neutral">Sync off</Badge>
+          )}
           <div className="ml-auto flex gap-2">
             <Btn disabled={sync.isPending} onClick={() => sync.mutate(true)}>
               Dry run
@@ -250,17 +276,12 @@ export function StatusPanel() {
           <Field label="Initial review">
             {status.initial_review_done_at ? `Done ${when(status.initial_review_done_at)}` : "Not done yet"}
           </Field>
-          <Field label="Students to review">{c.needs_review_students}</Field>
-          <Field label="Students with no match">{c.unmatched_students}</Field>
-          <Field label="Teachers to link">{c.needs_review_teachers}</Field>
-          <Field label="Groups to pair">{c.groups_pending}</Field>
-          <Field label="Accounts not claimed yet">{c.unclaimed_accounts}</Field>
         </dl>
         <PhoneConflicts conflicts={status.phone_conflicts ?? []} />
         {sync.isSuccess || sync.error ? (
-          <div className="border-t border-border px-3 py-2">
+          <div className="border-t border-ms-border px-3 py-2">
             {sync.isSuccess ? (
-              <p className="text-muted-foreground">Queued — the run appears below when the worker finishes it.</p>
+              <p className="text-ms-fg-3">Queued — the run appears below when the worker finishes it.</p>
             ) : null}
             <ActionError error={sync.error} />
           </div>
@@ -270,7 +291,7 @@ export function StatusPanel() {
       <section aria-label="Initial review" className={cn(BOX, "text-[13px]")}>
         <h2 className={CAPTION}>Initial review</h2>
         <div className="space-y-2 px-3 py-2">
-          <p className="text-muted-foreground">
+          <p className="text-ms-fg-3">
             Until this is marked done, the sync only links and suggests. Once every student who already has an account
             is linked, mark it done: from the next sync, accounts are created for the rest, and classes for groups that
             match none of ours.
@@ -320,7 +341,7 @@ export function StatusPanel() {
             ))}
           </DenseTable>
         ) : (
-          <p className="text-[13px] text-muted-foreground">No sync has run yet. A dry run shows what the first one would do.</p>
+          <p className="text-[13px] text-ms-fg-3">No sync has run yet. A dry run shows what the first one would do.</p>
         )}
       </section>
     </div>
@@ -338,6 +359,14 @@ const GROUP_STATUS: Record<GroupLinkStatus, string> = {
 
 const GROUP_ORDER: Record<GroupLinkStatus, number> = { suggested: 0, needs_teacher: 1, confirmed: 2, ignored: 3 };
 
+/** Each status word in the tone of what it asks: amber is work to do, green settled, grey set aside. */
+const GROUP_TONE: Record<GroupLinkStatus, BadgeTone> = { suggested: "attention", needs_teacher: "attention", confirmed: "positive", ignored: "neutral" };
+const LINK_TONE: Record<LinkStatus, BadgeTone> = {
+  auto: "positive", confirmed: "positive", created: "info", needs_review: "attention", unmatched: "critical", ignored: "neutral",
+};
+const CLAIM_TONE: Record<ClaimState, BadgeTone> = { pending: "neutral", signed_in: "info", done: "positive", expired: "attention", locked: "critical" };
+const PUSH_TONE: Record<AttendancePushState, BadgeTone> = { sent: "positive", failed: "attention", refused: "critical" };
+
 function GroupRow({ group, freeRooms }: { group: LcupGroup; freeRooms: { id: number; name: string }[] }) {
   const [choice, setChoice] = useState(group.suggestion ? String(group.suggestion.id) : "");
   const confirm = useLcupAction((classroomId: number | undefined) => lcupApi.confirmGroup(group.id, classroomId));
@@ -354,15 +383,17 @@ function GroupRow({ group, freeRooms }: { group: LcupGroup; freeRooms: { id: num
     <tr className={TR}>
       <td className={TD}>
         <span className="font-medium">{group.name}</span>
-        {group.deleted ? <span className="ml-2 text-[12px] text-danger">Deleted in lc-up</span> : null}
+        {group.deleted ? <span className="ml-2 text-[12px] text-ms-critical-fg">Deleted in lc-up</span> : null}
       </td>
-      <td className={cn(TD, "text-muted-foreground")}>{group.course || "—"}</td>
-      <td className={cn(TD, "text-muted-foreground")}>{schedule || "—"}</td>
-      <td className={cn(TD, "text-muted-foreground")}>
+      <td className={cn(TD, "text-ms-fg-3")}>{group.course || "—"}</td>
+      <td className={cn(TD, "text-ms-fg-3")}>{schedule || "—"}</td>
+      <td className={cn(TD, "text-ms-fg-3")}>
         <Clipped text={group.teachers.join(", ")} width="max-w-[11rem]" />
       </td>
       <td className={TD_R}>{group.member_count ?? "—"}</td>
-      <td className={cn(TD, group.status === "ignored" && "text-muted-foreground")}>{GROUP_STATUS[group.status]}</td>
+      <td className={TD}>
+        <Pill tone={GROUP_TONE[group.status]}>{GROUP_STATUS[group.status]}</Pill>
+      </td>
       <td className={TD_WRAP}>
         {group.classroom ? (
           group.classroom.name
@@ -370,14 +401,14 @@ function GroupRow({ group, freeRooms }: { group: LcupGroup; freeRooms: { id: num
           <>
             Suggested: <span className="font-medium">{group.suggestion.name}</span> ({group.suggestion.score}/14)
             {group.suggestion.reasons.length ? (
-              <span className="block text-[12px] text-muted-foreground">{group.suggestion.reasons.join(", ")}</span>
+              <span className="block text-[12px] text-ms-fg-3">{group.suggestion.reasons.join(", ")}</span>
             ) : null}
           </>
         ) : group.notes.length ? null : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-ms-fg-3">—</span>
         )}
         {group.notes.map((note) => (
-          <span key={note} className="block text-[12px] text-muted-foreground">
+          <span key={note} className="block text-[12px] text-ms-fg-3">
             {note}
           </span>
         ))}
@@ -431,16 +462,16 @@ export function GroupsPanel() {
   );
 
   if (!groups.length) {
-    return <p className="text-[13px] text-muted-foreground">No lc-up groups yet. They appear after the first sync.</p>;
+    return <p className="text-[13px] text-ms-fg-3">No lc-up groups yet. They appear after the first sync.</p>;
   }
   return (
     <div className="space-y-2">
       {rooms.error ? (
-        <p role="alert" className="text-[12px] text-danger">
+        <p role="alert" className="text-[12px] text-ms-critical-fg">
           Our class list did not load, so only suggested classes can be chosen.
         </p>
       ) : null}
-      <p className="text-[13px] tabular-nums text-muted-foreground">
+      <p className="text-[13px] tabular-nums text-ms-fg-3">
         {groups.length} {groups.length === 1 ? "group" : "groups"}
       </p>
       <DenseTable
@@ -492,13 +523,15 @@ function PersonRow({ person, kind }: { person: LcupPerson; kind: "students" | "t
   return (
     <tr className={TR}>
       <td className={cn(TD, "font-medium")}>{person.name}</td>
-      <td className={cn(TD, !person.phone && "text-muted-foreground")}>{person.phone || "no phone in lc-up"}</td>
-      <td className={cn(TD, "text-muted-foreground")}>
+      <td className={cn(TD, !person.phone && "text-ms-fg-3")}>{person.phone || "no phone in lc-up"}</td>
+      <td className={cn(TD, "text-ms-fg-3")}>
         <Clipped text={person.groups.join(", ")} />
       </td>
-      <td className={cn(TD, person.status === "ignored" && "text-muted-foreground")}>{LINK_STATUS[person.status]}</td>
-      <td className={cn(TD_WRAP, "text-muted-foreground")}>{person.reason || "—"}</td>
-      <td className={cn(TD, !person.user && "text-muted-foreground")}>
+      <td className={TD}>
+        <Pill tone={LINK_TONE[person.status]}>{LINK_STATUS[person.status]}</Pill>
+      </td>
+      <td className={cn(TD_WRAP, "text-ms-fg-3")}>{person.reason || "—"}</td>
+      <td className={cn(TD, !person.user && "text-ms-fg-3")}>
         {person.user ? `${person.user.name} (${person.user.username})` : "—"}
       </td>
       <td className={TD}>
@@ -507,7 +540,7 @@ function PersonRow({ person, kind }: { person: LcupPerson; kind: "students" | "t
             {person.candidates.map((candidate) => (
               <li key={candidate.user_id} className="flex items-center gap-2">
                 <span>{candidate.name}</span>
-                <span className="text-[12px] text-muted-foreground">{candidate.reason}</span>
+                <span className="text-[12px] text-ms-fg-3">{candidate.reason}</span>
                 <button
                   type="button"
                   className={TEXT_BUTTON}
@@ -521,7 +554,7 @@ function PersonRow({ person, kind }: { person: LcupPerson; kind: "students" | "t
             ))}
           </ul>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-ms-fg-3">—</span>
         )}
       </td>
       <td className={TD}>
@@ -592,7 +625,7 @@ function UnlinkedMembers() {
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.length) {
-    return <p className="text-[13px] text-muted-foreground">Every student of a paired class is linked to lc-up.</p>;
+    return <p className="text-[13px] text-ms-fg-3">Every student of a paired class is linked to lc-up.</p>;
   }
   return (
     <DenseTable
@@ -608,7 +641,7 @@ function UnlinkedMembers() {
       {q.data.map((row) => (
         <tr key={`${row.classroom.id}-${row.user.id}`} className={TR}>
           <td className={TD}>{row.user.name}</td>
-          <td className={cn(TD, "text-muted-foreground")}>{row.classroom.name}</td>
+          <td className={cn(TD, "text-ms-fg-3")}>{row.classroom.name}</td>
           <td className={TD_R}>{row.user.id}</td>
         </tr>
       ))}
@@ -624,7 +657,7 @@ export function StudentsPanel() {
     <div className="space-y-4">
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-[13px]">
-          <label className="flex items-center gap-2 text-muted-foreground">
+          <label className="flex items-center gap-2 text-ms-fg-3">
             Show
             <select
               aria-label="Which students"
@@ -638,7 +671,7 @@ export function StudentsPanel() {
             </select>
           </label>
           {q.data ? (
-            <span className="tabular-nums text-muted-foreground">
+            <span className="tabular-nums text-ms-fg-3">
               {q.data.length} {q.data.length === 1 ? "student" : "students"}
             </span>
           ) : null}
@@ -650,13 +683,13 @@ export function StudentsPanel() {
         ) : q.data.length ? (
           <PeopleTable people={q.data} kind="students" />
         ) : (
-          <p className="text-[13px] text-muted-foreground">Nobody here.</p>
+          <p className="text-[13px] text-ms-fg-3">Nobody here.</p>
         )}
       </div>
 
       <section aria-label="In our paired classes, but not linked to lc-up" className="space-y-2">
         <h2 className={CAPTION_TEXT}>In our paired classes, but not linked to lc-up</h2>
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-[12px] text-ms-fg-3">
           The sync never removes these students. Link each one to their lc-up record above, or leave them if they are
           not lc-up students.
         </p>
@@ -670,7 +703,7 @@ export function TeachersPanel() {
   const q = useLcupTeachers();
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data.length) return <p className="text-[13px] text-muted-foreground">Every lc-up teacher is linked.</p>;
+  if (!q.data.length) return <p className="text-[13px] text-ms-fg-3">Every lc-up teacher is linked.</p>;
   return <PeopleTable people={q.data} kind="teachers" />;
 }
 
@@ -690,11 +723,11 @@ export function AccountsPanel() {
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.length) {
-    return <p className="text-[13px] text-muted-foreground">No accounts created yet — they come after the initial review.</p>;
+    return <p className="text-[13px] text-ms-fg-3">No accounts created yet — they come after the initial review.</p>;
   }
   return (
     <div className="space-y-2">
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-[13px] text-ms-fg-3">
         A student signs in with their phone number; the first password is its last 4 digits, for 14 days.
       </p>
       <ActionError error={reissue.error} />
@@ -718,8 +751,10 @@ export function AccountsPanel() {
             <tr key={account.user.id} className={TR}>
               <td className={cn(TD, "font-medium")}>{account.user.name}</td>
               <td className={TD}>{account.phone}</td>
-              <td className={cn(TD, stuck && "text-danger")}>{CLAIM_STATE[account.state]}</td>
-              <td className={cn(TD, "text-muted-foreground")}>{when(account.expires_at)}</td>
+              <td className={TD}>
+                <Pill tone={CLAIM_TONE[account.state]}>{CLAIM_STATE[account.state]}</Pill>
+              </td>
+              <td className={cn(TD, "text-ms-fg-3")}>{when(account.expires_at)}</td>
               <td className={cn(TD, "text-right")}>
                 {stuck ? (
                   <Btn disabled={reissue.isPending} onClick={() => reissue.mutate(account.user.id)}>
@@ -750,7 +785,7 @@ export function AttendancePushesPanel() {
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.length) {
     return (
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-[13px] text-ms-fg-3">
         Nothing sent to lc-up yet. A register is sent once it closes — two hours after its lesson — and only the marks
         lc-up does not already have.
       </p>
@@ -775,17 +810,19 @@ export function AttendancePushesPanel() {
           <tr key={push.id} className={TR}>
             <td className={cn(TD, "font-medium")}>{push.group}</td>
             <td className={TD}>{push.date}</td>
-            <td className={cn(TD, push.state === "refused" && "text-danger")}>{PUSH_STATE[push.state]}</td>
+            <td className={TD}>
+              <Pill tone={PUSH_TONE[push.state]}>{PUSH_STATE[push.state]}</Pill>
+            </td>
             <td className={cn(TD, "tabular-nums")}>
               {push.marks} mark{push.marks === 1 ? "" : "s"}
               {push.summary.saved != null ? ` · ${push.summary.saved} saved` : ""}
             </td>
-            <td className={cn(TD_WRAP, quiet && "text-muted-foreground")}>
+            <td className={cn(TD_WRAP, quiet && "text-ms-fg-3")}>
               {quiet ? "—" : null}
-              {push.error ? <p className="text-[12px] text-muted-foreground">{push.error}</p> : null}
+              {push.error ? <p className="text-[12px] text-ms-fg-3">{push.error}</p> : null}
               {push.failures.map((failure, index) =>
                 failure.code === "no_account" ? (
-                  <p key={`${push.id}-${index}`} className="text-danger">
+                  <p key={`${push.id}-${index}`} className="text-ms-critical-fg">
                     {failure.name || "A student"} — no account here, so not sent: mark them in lc-up by hand
                   </p>
                 ) : (
@@ -824,7 +861,7 @@ export function ArchivePanel() {
   const held = entities.reduce((n, e) => n + e.total, 0);
   return (
     <div className="space-y-3">
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-[13px] text-ms-fg-3">
         {enabled ? "Copied every night at 03:05" : "The nightly copy is off (LCUP_ARCHIVE_ENABLED)"} — attendance and
         payments from {since}.{" "}
         {Object.entries(backfill)
@@ -832,7 +869,7 @@ export function ArchivePanel() {
           .join(" · ")}
       </p>
       {held === 0 ? (
-        <p className="text-[13px] text-muted-foreground">Nothing copied from lc-up yet.</p>
+        <p className="text-[13px] text-ms-fg-3">Nothing copied from lc-up yet.</p>
       ) : (
         <DenseTable
           caption="lc-up records held"
@@ -851,9 +888,9 @@ export function ArchivePanel() {
             <tr key={e.entity} className={TR}>
               <td className={cn(TD, "font-medium")}>{e.label}</td>
               <td className={TD_R}>{e.total}</td>
-              <td className={cn(TD_R, !e.gone && "text-muted-foreground")}>{e.gone}</td>
+              <td className={cn(TD_R, !e.gone && "text-ms-fg-3")}>{e.gone}</td>
               <td className={TD_R}>{e.versions}</td>
-              <td className={cn(TD, !e.first_day && "text-muted-foreground")}>
+              <td className={cn(TD, !e.first_day && "text-ms-fg-3")}>
                 {e.first_day ? `${e.first_day} – ${e.last_day}` : "—"}
               </td>
               <td className={TD}>{when(e.last_seen_at)}</td>
@@ -875,11 +912,11 @@ export function ArchivePanel() {
           {runs.map((run) => (
             <tr key={run.id} className={TR}>
               <td className={TD}>{when(run.started_at)}</td>
-              <td className={cn(TD, !run.ok && "text-danger")}>
-                {run.ok ? "OK" : "Failed"}
-                {run.dry_run ? " (dry run)" : ""}
+              <td className={TD}>
+                <Pill tone={run.ok ? "positive" : "critical"}>{run.ok ? "OK" : "Failed"}</Pill>
+                {run.dry_run ? <span className="text-ms-fg-3"> (dry run)</span> : ""}
               </td>
-              <td className={cn(TD_WRAP, run.ok && "text-muted-foreground")}>{archiveRunNote(run)}</td>
+              <td className={cn(TD_WRAP, run.ok && "text-ms-fg-3")}>{archiveRunNote(run)}</td>
             </tr>
           ))}
         </DenseTable>
@@ -893,10 +930,10 @@ export function ArchivePanel() {
 const TRIAL_STATE: Record<TrialState, { label: string; tone: string }> = {
   used: { label: "Came after the free lesson", tone: "font-semibold text-amber-700 dark:text-amber-300" },
   came: { label: "Came to trial", tone: "font-semibold text-sky-700 dark:text-sky-300" },
-  not_yet: { label: "Not come yet", tone: "text-muted-foreground" },
+  not_yet: { label: "Not come yet", tone: "text-ms-fg-3" },
 };
 
-const PERSON_LINK = "text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+const PERSON_LINK = "text-ms-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ms-ring";
 
 /**
  * Trial students, neediest first. While lc-up runs they are activated there and leave within one sync; once it is
@@ -911,7 +948,7 @@ export function TrialStudentsPanel() {
   const open = q.data.seats_open ?? false;
   if (!q.data.trials.length) {
     return (
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-[13px] text-ms-fg-3">
         {open ? "No one is on trial right now." : "No one is on trial in lc-up right now."}
       </p>
     );
@@ -987,7 +1024,7 @@ export function NotOnListPanel() {
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.not_on_list.length) {
-    return <p className="text-[13px] text-muted-foreground">Every lc-up member of a paired group is on their class list.</p>;
+    return <p className="text-[13px] text-ms-fg-3">Every lc-up member of a paired group is on their class list.</p>;
   }
   return (
     <DenseTable
@@ -1006,7 +1043,7 @@ export function NotOnListPanel() {
         <tr key={`${row.lcup_student_id}-${row.classroom.id}`} className={TR}>
           <td className={cn(TD, "font-medium")}>
             {row.student ? <Link href={`/ops/students/${row.student.id}`} className={PERSON_LINK}>{row.name}</Link> : row.name}
-            {row.phone ? <span className="ml-2 text-[12px] font-normal text-muted-foreground">{row.phone}</span> : null}
+            {row.phone ? <span className="ml-2 text-[12px] font-normal text-ms-fg-3">{row.phone}</span> : null}
           </td>
           <td className={TD}>{row.classroom.name}</td>
           <td className={TD}>{row.lcup_status}</td>

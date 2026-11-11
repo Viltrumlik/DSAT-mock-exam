@@ -84,7 +84,7 @@ describe("lc-up attendance pushes panel", () => {
     ]);
     const line = [...host.querySelectorAll("p")].find((p) => p.textContent?.includes("Doston Karimov"));
     expect(line?.textContent).toBe("Doston Karimov — no account here, so not sent: mark them in lc-up by hand");
-    expect(line?.className).toContain("text-danger");
+    expect(line?.className).toContain("text-ms-critical-fg");
   });
 
   it("says when nothing has been sent yet", async () => {
