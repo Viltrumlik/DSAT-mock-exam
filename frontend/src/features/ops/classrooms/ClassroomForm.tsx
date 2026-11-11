@@ -6,6 +6,8 @@ import { classesApi } from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
 import { useBranches, useRegions } from "@/features/org/orgHooks";
+import { cn } from "@/lib/cn";
+import { buttonClass, inputShell } from "@/features/console/ui";
 import { Fieldset } from "@/features/ops/people/Fieldset";
 import { serverReason, type ClassroomCore } from "./classroomsApi";
 
@@ -18,16 +20,18 @@ import { serverReason, type ClassroomCore } from "./classroomsApi";
  * and the size cap stay ours.
  */
 
-const INPUT =
-  "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted-foreground";
+/** The console's field box (44 px, focus ring); a field lc-up owns is the quieter disabled one. */
+const LOCKED = "disabled:cursor-not-allowed disabled:border-ms-border disabled:bg-ms-surface-2 disabled:text-ms-fg-disabled";
+const INPUT = cn(inputShell({ className: "w-full outline-none placeholder:text-ms-fg-3" }), LOCKED);
+const TEXTAREA = cn(inputShell({ area: true, className: "w-full outline-none placeholder:text-ms-fg-3" }), LOCKED);
 
 function Field({ id, label, locked, children }: { id: string; label: string; locked?: boolean; children: ReactNode }) {
   return (
     <div className="min-w-0 space-y-1.5">
-      <label htmlFor={id} className="flex items-baseline justify-between gap-2 text-sm font-medium text-foreground">
+      <label htmlFor={id} className="flex items-baseline justify-between gap-2 text-[14px] font-medium leading-5 text-ms-fg">
         <span>{label}</span>
         {locked ? (
-          <span className="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-[13px] font-normal text-ms-fg-3">
             <Lock aria-hidden className="h-3 w-3" />
             Set in lc-up
           </span>
@@ -41,7 +45,7 @@ function Field({ id, label, locked, children }: { id: string; label: string; loc
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <fieldset className="space-y-3">
-      <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</legend>
+      <legend className="text-ms-over mb-1 text-ms-fg-3">{title}</legend>
       <div className="grid gap-4 sm:grid-cols-2">{children}</div>
     </fieldset>
   );
@@ -124,7 +128,7 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
     <Fieldset title="Details" icon={SquarePen} description="What the class is, when and where it meets">
       <form onSubmit={(e) => void save(e)} className="space-y-6" noValidate>
         {locked.size > 0 ? (
-          <p className="flex items-start gap-2.5 rounded-lg border border-info/20 bg-info-soft px-3.5 py-3 text-sm text-info-foreground">
+          <p className="flex items-start gap-2.5 rounded-ms-ctl border border-ms-info-line bg-ms-info-soft px-3.5 py-3 text-[14px] text-ms-info-fg">
             <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
             {/* The group's name is in the Summary beside this form; lc-up's names run long. */}
             <span>
@@ -269,15 +273,15 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className={`${INPUT} h-auto py-2`}
+                className={TEXTAREA}
               />
             </Field>
           </div>
         </Group>
 
-        <div className="flex flex-col-reverse items-stretch gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col-reverse items-stretch gap-3 border-t border-ms-line pt-5 sm:flex-row sm:items-center sm:justify-between">
           {error ? (
-            <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-foreground">
+            <p role="alert" className="rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3 py-2 text-[14px] text-ms-critical-fg">
               {error}
             </p>
           ) : (
@@ -286,7 +290,7 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
           <button
             type="submit"
             disabled={saving}
-            className="h-10 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+            className={buttonClass({ variant: "primary" })}
           >
             {saving ? "Saving…" : "Save"}
           </button>

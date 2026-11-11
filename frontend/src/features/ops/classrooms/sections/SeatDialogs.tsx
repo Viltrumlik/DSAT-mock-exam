@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Field, Input, Modal, Select } from "@/components/ui";
+import { Button, Dialog, inputShell } from "@/features/console/ui";
 import { ConfirmDialog } from "@/features/ops/people/ConfirmDialog";
 import { formatPhone } from "@/features/ops/people/format";
 import { serverReason } from "../classroomsApi";
@@ -22,12 +22,12 @@ import {
  * reason on screen when it refuses. The server says what fits the seat; these only ask.
  */
 
-const INPUT =
-  "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+/** The console's field box (44 px, focus ring). */
+const INPUT = inputShell({ className: "w-full outline-none placeholder:text-ms-fg-3" });
 
 function Reason({ text }: { text: string | null }) {
   return text ? (
-    <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-foreground">
+    <p role="alert" className="animate-ms-fade-in rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3 py-2 text-[14px] text-ms-critical-fg">
       {text}
     </p>
   ) : null;
@@ -35,10 +35,23 @@ function Reason({ text }: { text: string | null }) {
 
 function Labelled({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="block space-y-1.5 text-sm font-medium text-foreground">
+    <label className="block space-y-1.5 text-[14px] font-medium text-ms-fg">
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+/** A label above and help below (the console Field's shape) around a native control with a fixed id. */
+function FormField({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <label htmlFor={id} className="text-[14px] font-medium leading-5 text-ms-fg">
+        {label}
+      </label>
+      {children}
+      {hint ? <p className="text-[13px] leading-[18px] text-ms-fg-3">{hint}</p> : null}
+    </div>
   );
 }
 
@@ -152,7 +165,7 @@ export function SeatActionDialog({
           </Labelled>
           {action === "move" ? (
             rooms.isError ? (
-              <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-foreground">
+              <p role="alert" className="rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3 py-2 text-[14px] text-ms-critical-fg">
                 Could not load the groups.{" "}
                 <button type="button" className="font-semibold hover:underline" onClick={() => void rooms.refetch()}>
                   Retry
@@ -252,6 +265,7 @@ export function NewStudentDialog({
   const [error, setError] = useState<string | null>(null);
   const [holder, setHolder] = useState<PhoneHolder | null>(null);
   const [login, setLogin] = useState<{ phone: string; code: string } | null>(null);
+  const titleId = useId();
   const set = (field: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [field]: e.target.value });
 
   const submit = async () => {
@@ -296,7 +310,7 @@ export function NewStudentDialog({
         body={
           <>
             <p>Tell them to sign in with:</p>
-            <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 rounded-lg bg-success-soft px-4 py-3 text-success-foreground">
+            <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 rounded-ms-ctl bg-ms-positive-soft px-4 py-3 text-ms-positive-fg">
               <dt>Login</dt>
               <dd className="font-semibold tabular-nums">{formatPhone(login.phone)}</dd>
               <dt>Password</dt>
@@ -310,65 +324,64 @@ export function NewStudentDialog({
   }
 
   return (
-    <Modal
-      open
-      onClose={busy ? () => undefined : onClose}
-      title="New student"
-      description="Someone new to the centre: a new account, and their seat in this group."
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button loading={busy} onClick={() => void submit()}>
-            Create student
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+    <Dialog open onClose={onClose} labelledBy={titleId} width={520} locked={busy}>
+      <div className="flex flex-col gap-4 overflow-y-auto px-[22px] pb-2 pt-[22px]">
+        <div className="flex flex-col gap-1">
+          <h2 id={titleId} className="text-[20px] font-bold leading-7 tracking-[-0.01em] text-ms-fg">
+            New student
+          </h2>
+          <p className="text-[14px] text-ms-fg-2">Someone new to the centre: a new account, and their seat in this group.</p>
+        </div>
+        <Reason text={error} />
         {holder ? (
-          <div className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
+          <div className="flex flex-col gap-2 rounded-ms-ctl border border-ms-border p-3 text-[14px]">
             <span>
-              <Link href={`/ops/${holder.section}/${holder.id}`} prefetch={false} className="font-medium text-primary hover:underline">
+              <Link href={`/ops/${holder.section}/${holder.id}`} prefetch={false} className="font-medium text-ms-primary-text hover:underline">
                 {holder.name}
               </Link>
-              <span className="text-muted-foreground"> · {holder.groups.join(", ") || "no class"}</span>
+              <span className="text-ms-fg-3"> · {holder.groups.join(", ") || "no class"}</span>
             </span>
             {holder.can_add ? (
-              <Button variant="secondary" disabled={busy} onClick={() => void addHolder(holder)}>
+              <Button disabled={busy} onClick={() => void addHolder(holder)}>
                 {`Add ${holder.name} to this group`}
               </Button>
             ) : null}
           </div>
         ) : null}
-        <Field label="Full name" htmlFor="new-student-name" required>
-          <Input id="new-student-name" autoFocus value={form.full_name} onChange={set("full_name")} autoComplete="off" />
-        </Field>
-        <Field label="Phone" htmlFor="new-student-phone" required hint="Their login. They first sign in with this and its last four digits.">
-          <Input id="new-student-phone" type="tel" value={form.phone} onChange={set("phone")} placeholder="90 123 45 67" autoComplete="off" />
-        </Field>
+        <FormField id="new-student-name" label="Full name">
+          <input id="new-student-name" data-autofocus value={form.full_name} onChange={set("full_name")} autoComplete="off" className={INPUT} />
+        </FormField>
+        <FormField id="new-student-phone" label="Phone" hint="Their login. They first sign in with this and its last four digits.">
+          <input id="new-student-phone" type="tel" value={form.phone} onChange={set("phone")} placeholder="90 123 45 67" autoComplete="off" className={INPUT} />
+        </FormField>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Parent's name" htmlFor="new-student-parent">
-            <Input id="new-student-parent" value={form.parent_name} onChange={set("parent_name")} placeholder="Optional" autoComplete="off" />
-          </Field>
-          <Field label="Parent's phone" htmlFor="new-student-parent-phone">
-            <Input id="new-student-parent-phone" type="tel" value={form.parent_phone} onChange={set("parent_phone")} placeholder="Optional" autoComplete="off" />
-          </Field>
+          <FormField id="new-student-parent" label="Parent's name">
+            <input id="new-student-parent" value={form.parent_name} onChange={set("parent_name")} placeholder="Optional" autoComplete="off" className={INPUT} />
+          </FormField>
+          <FormField id="new-student-parent-phone" label="Parent's phone">
+            <input id="new-student-parent-phone" type="tel" value={form.parent_phone} onChange={set("parent_phone")} placeholder="Optional" autoComplete="off" className={INPUT} />
+          </FormField>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Seat" htmlFor="new-student-status">
-            <Select id="new-student-status" value={form.status} onChange={set("status")}>
+          <FormField id="new-student-status" label="Seat">
+            <select id="new-student-status" value={form.status} onChange={set("status")} className={INPUT}>
               <option value="trial">Trial: no money yet</option>
               <option value="active">Active: pays from the date</option>
-            </Select>
-          </Field>
-          <Field label="Start date" htmlFor="new-student-date">
-            <Input id="new-student-date" type="date" value={form.date} onChange={set("date")} />
-          </Field>
+            </select>
+          </FormField>
+          <FormField id="new-student-date" label="Start date">
+            <input id="new-student-date" type="date" value={form.date} onChange={set("date")} className={INPUT} />
+          </FormField>
         </div>
       </div>
-    </Modal>
+      <div className="mt-3 flex items-center justify-end gap-2 border-t border-ms-border bg-ms-surface px-5 py-3.5">
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button variant="primary" state={busy ? "busy" : "idle"} busyLabel="Creating…" onClick={() => void submit()}>
+          Create student
+        </Button>
+      </div>
+    </Dialog>
   );
 }

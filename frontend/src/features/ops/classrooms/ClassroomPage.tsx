@@ -22,7 +22,6 @@ import {
   Users,
 } from "lucide-react";
 import { classesApi } from "@/lib/api";
-import { Badge } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
 import { listHrefFrom } from "@/features/ops/changelist/backLink";
 import { peopleKeys } from "@/features/ops/changelist/peopleApi";
@@ -32,7 +31,7 @@ import { isScopedOpsAdmin } from "@/features/ops/adminScope";
 import { isOpsSuperAdmin } from "@/features/ops/shell/opsNav";
 import { useMe } from "@/hooks/useMe";
 import { ConfirmDialog } from "@/features/ops/people/ConfirmDialog";
-import { Fieldset, LINK_CLASS, Row } from "@/features/ops/people/Fieldset";
+import { Fieldset, LINK_CLASS, Pill, Row } from "@/features/ops/people/Fieldset";
 import { formatDay } from "@/features/ops/people/format";
 import { formatDate } from "@/features/ops/users/peopleColumns";
 import { ClassHeader } from "./ClassHeader";
@@ -83,14 +82,14 @@ function ClassSummary({ room }: { room: ClassroomCore }) {
       <Row label="lc-up group" icon={Link2}>
         {/* Plain text, not a pill: lc-up's group names run to two lines. */}
         {!room.lcup ? (
-          <Badge variant="outline">Not paired</Badge>
+          <Pill tone="line">Not paired</Pill>
         ) : room.lcup.managed ? (
           room.lcup.group_name
         ) : (
           <>
             {room.lcup.group_name}
             <span className="mt-1 block">
-              <Badge variant="warning">Not followed</Badge>
+              <Pill tone="attention">Not followed</Pill>
             </span>
           </>
         )}
@@ -103,7 +102,7 @@ function ClassSummary({ room }: { room: ClassroomCore }) {
       </Row>
       <Row label="Join code" icon={KeyRound}>
         {room.join_code ? (
-          <span className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-sm tracking-wider">{room.join_code}</span>
+          <span className="rounded-[8px] bg-ms-surface-2 px-2 py-0.5 font-ms-mono text-[14px] tracking-wider">{room.join_code}</span>
         ) : (
           "—"
         )}
@@ -114,9 +113,9 @@ function ClassSummary({ room }: { room: ClassroomCore }) {
             Group link
           </a>
         ) : room.telegram_chat_id ? (
-          <Badge variant="success">Group attached</Badge>
+          <Pill tone="positive">Group attached</Pill>
         ) : (
-          <Badge variant="outline">Not linked</Badge>
+          <Pill tone="line">Not linked</Pill>
         )}
       </Row>
       <Row label="Created" icon={CalendarPlus}>

@@ -392,7 +392,7 @@ describe("the tabs", () => {
     const students = box("Students")!;
     expect(students.querySelector('a[href="/ops/students/7"]')?.textContent).toBe("Aziz Tursunov");
     expect(students.querySelector('a[href="/ops/public/8"]')?.textContent).toBe("Public Person");
-    const owed = [...students.querySelectorAll(".text-danger")].map((el) => el.textContent).filter((t) => t?.endsWith("UZS"));
+    const owed = [...students.querySelectorAll(".text-ms-critical-fg")].map((el) => el.textContent).filter((t) => t?.endsWith("UZS"));
     // Once under the name (a phone's) and once in the Owes column (from sm up).
     expect(owed).toEqual(["owes 250,000 UZS", "250,000 UZS"]);
   });

@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Send } from "lucide-react";
-import { Badge } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
-import { Fieldset, PartBody, Table, Td, TONE_TEXT, WIDE_ONLY } from "@/features/ops/people/Fieldset";
+import type { BadgeTone } from "@/features/console/ui";
+import { Fieldset, PartBody, Pill, Table, Td, TONE_TEXT, WIDE_ONLY } from "@/features/ops/people/Fieldset";
 import {
   classroomKeys,
   removeTelegramMember,
@@ -16,11 +16,11 @@ import {
   type ClassroomTelegramMember,
 } from "../classroomsApi";
 
-const STATUS: Record<ClassroomTelegramMember["status"], { label: string; variant: "success" | "info" | "neutral" }> = {
-  JOINED: { label: "In the group", variant: "success" },
-  PENDING: { label: "Invite sent", variant: "info" },
-  LEFT: { label: "Left", variant: "neutral" },
-  REMOVED: { label: "Removed", variant: "neutral" },
+const STATUS: Record<ClassroomTelegramMember["status"], { label: string; tone: BadgeTone }> = {
+  JOINED: { label: "In the group", tone: "positive" },
+  PENDING: { label: "Invite sent", tone: "info" },
+  LEFT: { label: "Left", tone: "neutral" },
+  REMOVED: { label: "Removed", tone: "neutral" },
 };
 
 /**
@@ -56,7 +56,7 @@ export function TelegramSection({ id }: { id: number }) {
         isEmpty={() => false}
         render={(d) =>
           !d.configured ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-ms-fg-3">
               No Telegram group is set for this class. Add the bot to the group as an admin (Invite users + Ban
               users), send /chatid there, and paste the id into the class form.
             </p>
@@ -65,7 +65,7 @@ export function TelegramSection({ id }: { id: number }) {
               {d.health?.problem ? (
                 <p className={cn("mb-4 text-sm font-medium", TONE_TEXT.danger)}>{d.health.problem}</p>
               ) : null}
-              <p className="mb-4 text-sm text-muted-foreground">
+              <p className="mb-4 text-sm text-ms-fg-3">
                 {d.counts.in_group ?? "?"} in the group (bot and admins included) · {d.counts.known} known here ·{" "}
                 {d.counts.managed} looked after by the bot · {d.counts.frozen_in_group} frozen
               </p>
@@ -73,20 +73,20 @@ export function TelegramSection({ id }: { id: number }) {
                 {d.members.map((m) => (
                   <tr key={m.id}>
                     <Td wrap className="font-medium">
-                      {m.name || <span className="text-muted-foreground">Not a MasterSAT account</span>}
+                      {m.name || <span className="text-ms-fg-3">Not a MasterSAT account</span>}
                       {m.frozen ? (
-                        <Badge variant={m.frozen_for_debt ? "danger" : "warning"} className="ml-2">
-                          {m.frozen_for_debt ? "Frozen — unpaid" : "Frozen"}
-                        </Badge>
+                        <span className="ml-2 inline-block">
+                          <Pill tone={m.frozen_for_debt ? "critical" : "frozen"}>{m.frozen_for_debt ? "Frozen — unpaid" : "Frozen"}</Pill>
+                        </span>
                       ) : null}
                     </Td>
                     <Td className={WIDE_ONLY}>
                       {m.telegram_username ? `@${m.telegram_username}` : m.telegram_display_name || "—"}
                     </Td>
                     <Td>
-                      <Badge variant={STATUS[m.status].variant}>{STATUS[m.status].label}</Badge>
+                      <Pill tone={STATUS[m.status].tone}>{STATUS[m.status].label}</Pill>
                       {m.status === "JOINED" && !m.managed ? (
-                        <span className="ml-2 text-xs text-muted-foreground">bot will not remove</span>
+                        <span className="ml-2 text-xs text-ms-fg-3">bot will not remove</span>
                       ) : null}
                     </Td>
                     <Td>

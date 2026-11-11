@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Lock, UserCog, UserPlus } from "lucide-react";
 import api, { classesApi } from "@/lib/api";
-import { Avatar, Badge } from "@/components/ui";
+import { Avatar, buttonClass, inputShell } from "@/features/console/ui";
 import { useToast } from "@/components/ToastProvider";
 import type { PeoplePage, StaffRow } from "@/features/ops/changelist/peopleApi";
-import { Fieldset, LINK_CLASS, SubHeading } from "@/features/ops/people/Fieldset";
+import { Fieldset, LINK_CLASS, Pill, SubHeading } from "@/features/ops/people/Fieldset";
 import { classDomainOf, coversSubject } from "../CreateClassroomModal";
 import { serverReason, type ClassroomCore } from "../classroomsApi";
 import { SMALL_BUTTON } from "./StudentsSection";
@@ -18,15 +18,16 @@ import { SMALL_BUTTON } from "./StudentsSection";
  * sync sets it and the server refuses a change here); support teachers (TA seats) are always ours.
  */
 
-const SELECT =
-  "h-9 min-w-0 max-w-full rounded-lg border border-border bg-card px-2.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+/** The console's field box; the buttons beside it are the same 44 px. */
+const SELECT = inputShell({ className: "min-w-0 max-w-full outline-none" });
+const PICK_BUTTON = buttonClass();
 
 /** One staff member: their initials, their name linking to their page, what they are here, a control. */
 function PersonCard({ id, name, badge, children }: { id: number; name: string; badge: ReactNode; children?: ReactNode }) {
   return (
-    <li className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
+    <li className="flex items-center justify-between gap-3 rounded-[16px] border border-ms-border px-4 py-3">
       <span className="flex min-w-0 items-center gap-3">
-        <Avatar src={null} name={name} size={36} />
+        <Avatar name={name} size="md" />
         <span className="min-w-0">
           <Link href={`/ops/staff/${id}`} prefetch={false} className={`${LINK_CLASS} block truncate`}>
             {name}
@@ -83,9 +84,9 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
       {room.teacher ? (
         // The same grid as the support teachers, so the two kinds of card are one size.
         <ul className="grid gap-3 sm:grid-cols-2">
-          <PersonCard id={room.teacher.id} name={room.teacher.name} badge={<Badge variant="primary">Teacher</Badge>}>
+          <PersonCard id={room.teacher.id} name={room.teacher.name} badge={<Pill tone="info">Teacher</Pill>}>
             {managed ? (
-              <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] text-ms-fg-3">
                 <Lock aria-hidden className="h-3.5 w-3.5" />
                 Set in lc-up
               </span>
@@ -93,13 +94,13 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
           </PersonCard>
         </ul>
       ) : (
-        <p className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm font-medium text-warning-foreground">
+        <p className="rounded-ms-ctl border border-ms-attention-line bg-ms-attention-soft px-4 py-3 text-[14px] font-medium text-ms-attention-fg">
           No teacher{managed ? " — Set in lc-up" : ""}
         </p>
       )}
       {managed ? null : (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border p-3">
-          <label htmlFor={`teacher-${room.id}`} className="text-sm text-muted-foreground">
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[16px] border border-dashed border-ms-border-strong p-3">
+          <label htmlFor={`teacher-${room.id}`} className="text-[14px] text-ms-fg-2">
             Change teacher
           </label>
           <select
@@ -125,7 +126,7 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
                 "Could not assign the teacher.",
               )
             }
-            className={SMALL_BUTTON}
+            className={PICK_BUTTON}
           >
             Make teacher
           </button>
@@ -139,7 +140,7 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
                 "Could not transfer the class.",
               )
             }
-            className={SMALL_BUTTON}
+            className={PICK_BUTTON}
           >
             Transfer ownership
           </button>
@@ -148,11 +149,11 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
 
       <SubHeading>Support teachers</SubHeading>
       {room.tas.length === 0 ? (
-        <p className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">None yet.</p>
+        <p className="rounded-ms-ctl bg-ms-surface px-4 py-3 text-[14px] text-ms-fg-2">None yet.</p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {room.tas.map((t) => (
-            <PersonCard key={t.id} id={t.id} name={t.name} badge={<Badge variant="info">Support teacher</Badge>}>
+            <PersonCard key={t.id} id={t.id} name={t.name} badge={<Pill>Support teacher</Pill>}>
               <button
                 type="button"
                 disabled={busy}
@@ -172,9 +173,9 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
         </ul>
       )}
       {supports.length > 0 ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border p-3">
-          <label htmlFor={`support-${room.id}`} className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <UserPlus aria-hidden className="h-4 w-4 text-primary" />
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[16px] border border-dashed border-ms-border-strong p-3">
+          <label htmlFor={`support-${room.id}`} className="inline-flex items-center gap-2 text-[14px] text-ms-fg-2">
+            <UserPlus aria-hidden className="h-4 w-4 text-ms-primary-text" />
             Add support teacher
           </label>
           <select
@@ -200,7 +201,7 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
                 "Could not assign the support teacher.",
               )
             }
-            className={SMALL_BUTTON}
+            className={PICK_BUTTON}
           >
             Add
           </button>
