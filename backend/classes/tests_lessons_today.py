@@ -369,6 +369,15 @@ class LcupAgreementTests(LessonsFixture):
         self.assertEqual([room.pk for room, _ in _meeting_classes(MONDAY)], [moved.pk])
         self.assertEqual(self.ids(), [moved.pk])
 
+    def test_the_lesson_end_beat_decides_it_in_one_query(self):
+        for n in range(3):
+            moved = self.pair(self.room(f"Moved up {n}", start_date=MONDAY + timedelta(days=3))).classroom
+            AttendanceSession.objects.create(classroom=moved, date=MONDAY - timedelta(days=3), created_by=self.teacher)
+            self.pair(self.room(f"Never met {n}", start_date=MONDAY + timedelta(days=3)))
+        with self.assertNumQueries(1):
+            found = list(_meeting_classes(MONDAY))
+        self.assertEqual(len(found), 3)
+
     def test_the_paired_classes_agree_with_the_lesson_end_beat(self):
         rooms = {
             "paired": self.room("Paired", time="14:00-16:00"),
