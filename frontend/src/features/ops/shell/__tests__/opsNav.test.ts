@@ -15,7 +15,7 @@ const captions = (groups: OpsNavGroup[]) => groups.map((g) => g.caption);
 describe("OPS_NAV_GROUPS", () => {
   it("is grouped as before, with the redesign's clearer names and the Centre in desk order", () => {
     expect(captions([...OPS_NAV_GROUPS])).toEqual([null, "People", "Teaching", "Centre", "Content", "System"]);
-    expect(OPS_NAV_GROUPS[0].items.map((i) => i.label)).toEqual(["Dashboard"]);
+    expect(OPS_NAV_GROUPS[0].items.map((i) => i.label)).toEqual(["Today"]);
     expect(OPS_NAV_GROUPS[1].items.map((i) => i.label)).toEqual(["Students", "Public users", "Staff", "Access"]);
     expect(OPS_NAV_GROUPS[2].items.map((i) => i.label)).toEqual([
       "Classrooms",
@@ -112,7 +112,7 @@ describe("visibleNav", () => {
 
 describe("sectionLabel", () => {
   it("names a section after its nav item", () => {
-    expect(sectionLabel("/ops")).toBe("Dashboard");
+    expect(sectionLabel("/ops")).toBe("Today");
     expect(sectionLabel("/ops/students")).toBe("Students");
     expect(sectionLabel("/ops/public")).toBe("Public users");
     expect(sectionLabel("/ops/finance")).toBe("Finance");

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { CommandPalette } from "@/features/console/CommandPalette";
+import { useAdminAttention, useBuilderAttention } from "@/features/console/attention";
 import { consoleCommands } from "@/features/console/commands";
+import { entityScope } from "@/features/console/entitySearch";
 import { canOpenConsole, consoleHref } from "@/features/console/consoleHref";
 import { isScopedOpsAdmin } from "@/features/ops/adminScope";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
@@ -58,6 +60,12 @@ export function OpsShell({
   const followups = useLcupFollowups({ enabled: wantsTrials && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)) });
   const counts = useMemo(() => ({ trials: followups.data?.pending ?? 0 }), [followups.data]);
 
+  // "Needs you" — the bell's items (and the dashboard's): Admin's only for super admins and admins,
+  // whom every one of its endpoints admits; the Builder's for everyone in it.
+  const adminAttention = useAdminAttention(config.temp === "admin" && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)));
+  const builderAttention = useBuilderAttention(config.temp === "builder" && Boolean(me));
+  const attention = config.temp === "builder" ? builderAttention : adminAttention;
+
   // The other console, for the top bar's switch and ⌘K — only when this person may open it (a test
   // admin is kept to the Builder by AuthGuard, so they get no Admin switch).
   const other = config.temp === "builder" ? "admin" : "builder";
@@ -73,7 +81,9 @@ export function OpsShell({
     [other, mayOpenOther],
   );
 
-  // ⌘K: every page in the menu this person sees, then a few actions.
+  // ⌘K: the students, classes or questions this person may look up here, every page in their menu,
+  // and a few actions.
+  const entityKinds = useMemo(() => entityScope(config.temp, me), [config.temp, me]);
   const [searchOpen, setSearchOpen] = useState(false);
   const { setTheme } = useTheme();
   const commands = useMemo(
@@ -189,13 +199,15 @@ export function OpsShell({
           menuButtonRef={menuButtonRef}
           onOpenSearch={() => setSearchOpen(true)}
           otherConsole={otherConsole}
+          attention={attention}
+          searchLabel={`Search ${[...entityKinds.map((k) => k.toLowerCase()), "pages"].join(", ")}…`}
           config={config}
         />
         <main id="ops-main" className="min-w-0 flex-1 px-4 py-5 md:px-6 md:py-6 xl:px-8">
           <div className="mx-auto w-full max-w-(--ms-content-max)">{children}</div>
         </main>
       </div>
-      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} commands={commands} />
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} commands={commands} entityKinds={entityKinds} />
     </div>
   );
 }

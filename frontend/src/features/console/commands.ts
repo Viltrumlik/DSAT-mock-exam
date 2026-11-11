@@ -1,18 +1,21 @@
 import type { IconName } from "@/components/ui/Icon";
+import type { EntityKind, HitBadge } from "./entitySearch";
 import type { OpsNavGroup } from "@/features/ops/shell/opsNav";
 
 /** One thing ⌘K can do: open a page (`href`) or run an action (`run`). */
 export type Command = {
   id: string;
   label: string;
-  group: "Pages" | "Actions";
+  group: "Pages" | "Actions" | EntityKind;
   icon: IconName;
   href?: string;
   run?: () => void;
   /** Other words that find it ("dashboard", "crm"). */
   keywords?: string[];
-  /** Quiet text after the label — a page's group ("Centre"). */
+  /** Quiet text after the label — a page's group ("Centre"), a student's phone. */
   hint?: string;
+  /** A verdict on a found student, class or question ("Owes 750 000 so'm"). */
+  badge?: HitBadge;
 };
 
 /**

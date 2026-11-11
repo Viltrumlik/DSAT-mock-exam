@@ -40,7 +40,7 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
   {
     id: "home",
     caption: null,
-    items: [{ href: "/ops", label: "Dashboard", icon: "ms-today", exact: true }],
+    items: [{ href: "/ops", label: "Today", icon: "ms-today", exact: true }],
   },
   {
     // The old single "Users" list, split three ways (2026-10-14). `/ops/users` redirects to

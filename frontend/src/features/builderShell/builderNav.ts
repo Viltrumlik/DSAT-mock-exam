@@ -18,7 +18,7 @@ export const BUILDER_NAV_GROUPS: readonly OpsNavGroup[] = [
   {
     id: "home",
     caption: null,
-    items: [{ href: "/builder", label: "Dashboard", icon: "home", exact: true }],
+    items: [{ href: "/builder", label: "Studio home", icon: "home", exact: true }],
   },
   {
     id: "learning",
