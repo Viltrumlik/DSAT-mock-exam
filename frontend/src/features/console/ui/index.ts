@@ -22,6 +22,7 @@ export {
   type Period,
   type PeriodKind,
 } from "./DateField";
+export { HeaderCard, StatTile, Timeline, type GlanceFact, type TimelineEvent, type Tone } from "./DataDisplay";
 export { ConfirmDialog, Dialog } from "./Dialog";
 export { Field, MoneyInput, TextArea, TextInput, caretAfterDigits, groupDigits, inputShell, useFieldControl, type TextInputProps } from "./Field";
 export { follow } from "./follow";

@@ -23,6 +23,7 @@ import { fetchLessonsToday, isNotMarked, lessonsTodayKey, type LessonsToday } fr
 import { useRecent, type RecentItem } from "../recent";
 import { RollNumber } from "../RollNumber";
 import { toast } from "../toast";
+import { BalanceRunway, ShareBars } from "../graphics";
 import { AVATAR_TONE, Avatar, Badge, Button, buttonClass, toneOf, type ButtonState } from "../ui";
 import { Card, Failed, Skeleton } from "./parts";
 
@@ -214,10 +215,6 @@ export function DebtCard({ enabled, delay }: { enabled: boolean; delay: number }
   const q = useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month), enabled, staleTime: 60_000 });
   if (!enabled) return null;
   const groups = (q.data?.by_group ?? []).filter((g) => g.debt > 0).sort((a, b) => b.debt - a.debt);
-  const top = groups.slice(0, 4);
-  const rest = groups.slice(4);
-  const max = top[0]?.debt ?? 1;
-  const restSum = rest.reduce((s, g) => s + g.debt, 0);
   const finding = debtFinding(groups);
   const monthName = dayLabel(`${month}-01`, { month: "long" });
   return (
@@ -234,24 +231,7 @@ export function DebtCard({ enabled, delay }: { enabled: boolean; delay: number }
       ) : (
         <div className="animate-ms-fade-in flex flex-col gap-2.5">
           {finding ? <p className="text-[14px] font-medium text-ms-fg-2">{finding}</p> : null}
-          {top.map((g, i) => (
-            <div key={g.group} className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_auto] items-center gap-2.5 text-[13.5px]">
-              <span className="truncate text-ms-fg" title={g.group}>{g.group}</span>
-              <span className="h-2.5 overflow-hidden rounded-full bg-ms-surface-2">
-                <span className="animate-ms-wipe-in block h-full rounded-full bg-ms-critical" style={{ width: `${(g.debt / max) * 100}%`, animationDelay: `${delay + 120 + i * 60}ms` }} />
-              </span>
-              <span className="text-right font-semibold tabular-nums text-ms-critical-fg">{fmt(g.debt)}</span>
-            </div>
-          ))}
-          {rest.length ? (
-            <div className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_auto] items-center gap-2.5 text-[13.5px] text-ms-fg-2">
-              <span>{rest.length} more {rest.length === 1 ? "group" : "groups"}</span>
-              <span className="h-2.5 overflow-hidden rounded-full bg-ms-surface-2">
-                <span className="block h-full rounded-full bg-ms-surface-3" style={{ width: `${Math.min(100, (restSum / max) * 100)}%` }} />
-              </span>
-              <span className="text-right tabular-nums">{fmt(restSum)}</span>
-            </div>
-          ) : null}
+          <ShareBars rows={groups.map((g) => ({ label: g.group, value: g.debt }))} format={fmt} delay={delay} />
           <div className="mt-1 flex flex-wrap gap-2">
             <Link href="/ops/sms?tab=debt" className={buttonClass({ size: "sm" })}>
               <Icon name="send" size="sm" />
@@ -270,24 +250,6 @@ export function DebtCard({ enabled, delay }: { enabled: boolean; delay: number }
 // ─── SMS ─────────────────────────────────────────────────────────────────────
 
 /** The balance falling at the recent spend, to the day it runs out (no invented history: top-ups are unknown). */
-function RunsOutGraphic({ balance, perDay, days, date }: { balance: number; perDay: number; days: number; date: string }) {
-  const span = Math.min(days, 30);
-  const endX = 8 + 344 * (span / 30);
-  const endY = days > 30 ? 84 - 72 * (1 - (perDay * 30) / balance) : 84;
-  const label = days > 30 ? "lasts beyond 30 days" : days === 0 ? "runs out today" : `runs out ≈ ${dayLabel(date)}`;
-  return (
-    <svg viewBox="0 0 360 96" role="img" aria-label={`Balance falling, ${label}`} className="h-24 w-full font-ms-sans">
-      <path d="M8 84H352" className="stroke-ms-border-strong" strokeWidth={1} />
-      <path className="animate-ms-wipe-in stroke-ms-attention" d={`M8 12 L${endX.toFixed(1)} ${endY.toFixed(1)}`} strokeWidth={2.5} strokeDasharray="5 5" strokeLinecap="round" fill="none" />
-      <circle cx={8} cy={12} r={4.5} className="fill-ms-primary" />
-      <circle cx={endX} cy={endY} r={4.5} className="fill-ms-card stroke-ms-attention" strokeWidth={2.5} />
-      <text x={Math.min(Math.max(endX, 120), 352)} y={Math.min(endY, 84) - 12} textAnchor="end" className="fill-ms-attention-fg text-[12px] font-semibold">
-        {label}
-      </text>
-    </svg>
-  );
-}
-
 export function SmsCard({ enabled, delay }: { enabled: boolean; delay: number }) {
   const today = tashkentDay();
   const overview = useQuery({ queryKey: smsKeys.overview, queryFn: () => smsApi.overview(), enabled, staleTime: 60_000 });
@@ -322,7 +284,7 @@ export function SmsCard({ enabled, delay }: { enabled: boolean; delay: number })
           )}
           {o!.balance !== null && outlook ? (
             <>
-              <RunsOutGraphic balance={o!.balance} {...outlook} />
+              <BalanceRunway framed={false} balance={o!.balance} perDay={outlook.perDay} today={today} format={fmt} />
               <span className="text-[13px] text-ms-fg-3">Spends ≈ {fmt(outlook.perDay)} so’m a day (last 14 days).</span>
             </>
           ) : stats.isError ? (

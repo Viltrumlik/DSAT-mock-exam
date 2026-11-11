@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { Illustration, type IllustrationName } from "../graphics/Illustration";
 import { buttonClass } from "./Button";
 
 /** What failed, and Retry. Never drawn like an empty list: an error is not zero (design handoff v0.3, rule 4). */
@@ -17,12 +18,29 @@ export function ErrorState({ what, onRetry }: { what: string; onRetry: () => voi
 }
 
 /** Nothing to show: why, and the next thing to do. */
-export function EmptyState({ icon = "search", title, detail, action }: { icon?: IconName; title: string; detail?: string; action?: ReactNode }) {
+export function EmptyState({
+  icon = "search",
+  art,
+  title,
+  detail,
+  action,
+}: {
+  icon?: IconName;
+  /** A spot illustration in place of the icon (Graphics board): one per screen, never in a dialog. */
+  art?: IllustrationName;
+  title: string;
+  detail?: string;
+  action?: ReactNode;
+}) {
   return (
     <div className="animate-ms-fade-in flex flex-col items-center gap-2 px-5 py-12 text-center">
-      <span className="mb-1 grid size-12 place-items-center rounded-full bg-ms-surface-2 text-ms-fg-3">
-        <Icon name={icon} size="lg" />
-      </span>
+      {art ? (
+        <Illustration name={art} decorative className="mb-2 w-[200px]" />
+      ) : (
+        <span className="mb-1 grid size-12 place-items-center rounded-full bg-ms-surface-2 text-ms-fg-3">
+          <Icon name={icon} size="lg" />
+        </span>
+      )}
       <b className="text-[16px] font-semibold text-ms-fg">{title}</b>
       {detail ? <p className="max-w-sm text-[14px] text-ms-fg-2">{detail}</p> : null}
       {action ? <div className="mt-2">{action}</div> : null}

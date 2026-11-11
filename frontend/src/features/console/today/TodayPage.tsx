@@ -94,7 +94,7 @@ export function TodayPage() {
             }
             action={count ? <span className="text-[13px] text-ms-fg-3">most urgent first</span> : undefined}
           >
-            <AttentionList sources={attention} />
+            <AttentionList sources={attention} illustrate />
           </Card>
         ) : null}
         <div className="flex min-w-0 flex-col gap-5">
