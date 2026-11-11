@@ -60,7 +60,7 @@ function Part<T>({
 }) {
   return (
     <section
-      className={cn("min-w-0 rounded-[16px] border p-5", highlight ? "border-ms-attention-line bg-ms-attention-soft" : "border-ms-border")}
+      className={cn("min-w-0 rounded-[16px] border px-[22px] py-5", highlight ? "border-ms-attention-line bg-ms-attention-soft" : "border-ms-border")}
     >
       <h3 className="mb-3 flex items-center gap-2.5 text-sm font-semibold text-ms-fg">
         <IconSquare icon={icon} tone={tone} size="sm" />
