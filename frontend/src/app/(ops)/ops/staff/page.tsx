@@ -20,12 +20,12 @@ const COLUMNS: ChangeListColumn<StaffRow>[] = [
     key: "subject",
     label: "Subject",
     render: (r) =>
-      r.subject ? SUBJECT_LABELS[r.subject] ?? r.subject : <span className="text-muted-foreground">—</span>,
+      r.subject ? SUBJECT_LABELS[r.subject] ?? r.subject : <span className="text-ms-fg-3">—</span>,
   },
   {
     key: "email",
     label: "Email",
-    render: (r) => r.email || <span className="text-muted-foreground">—</span>,
+    render: (r) => r.email || <span className="text-ms-fg-3">—</span>,
   },
   statusColumn<StaffRow>(),
   joinedColumn<StaffRow>(),

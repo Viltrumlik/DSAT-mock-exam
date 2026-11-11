@@ -68,6 +68,9 @@ function PeopleListInner<S extends PeopleSection>({
   const actions: ChangeListAction[] = bulk.map((action) => ({
     key: action,
     label: `${ACTION_LABEL[action]} selected ${noun.plural}`,
+    // The bulk bar's words; Delete asks first (the confirm dialog), so it ends in an ellipsis.
+    short: action === "delete" ? `${ACTION_LABEL[action]}…` : ACTION_LABEL[action],
+    icon: action === "freeze" ? "snow" : action === "delete" ? "trash" : undefined,
     run: (ids) =>
       new Promise<boolean>((resolve) => {
         const attempts = (rows ?? []).reduce((sum, r) => (ids.includes(r.id) ? sum + (r.attempt_count ?? 0) : sum), 0);

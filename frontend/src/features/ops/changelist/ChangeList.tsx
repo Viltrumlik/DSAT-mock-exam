@@ -1,17 +1,38 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { RollNumber } from "@/features/console/RollNumber";
+import {
+  BulkBar,
+  Button,
+  Checkbox,
+  ChipCount,
+  EmptyState,
+  ErrorState,
+  FilterChip,
+  Pagination,
+  SearchField,
+  bulkButtonClass,
+  chipClass,
+  follow,
+} from "@/features/console/ui";
 import { cn } from "@/lib/cn";
 import { PAGE_SIZES, useChangeListParams, type ChangeListPatch } from "./useChangeListParams";
 
+export { pageWindow } from "@/features/console/ui";
+
 /**
- * A list page after Django admin's changelist: title and count, a search box, "Action: [ ] Go",
- * a dense sortable table, a filter panel on the right with a count beside every choice, and
- * pages underneath. The state lives in the address (useChangeListParams); the data comes from
- * the page's own query, so this renders whatever list it is handed.
+ * A list page (design handoff v0.3, DataDisplay board, "The changelist, rebuilt"): Django admin's
+ * shape — search, a filter column with a count beside every choice, actions on ticked rows — with
+ * the console's hierarchy. One card holds the toolbar (title, count, search, the page's button), a
+ * chip bar (quick filters, the filters in force), the filter column on the left and the table;
+ * ticking a row brings up the bulk bar. The state lives in the address (useChangeListParams); the
+ * data comes from the page's own query, so this draws whatever list it is handed.
  */
 
 export type ChangeListFilterOption = { value: string; label: string; count: number };
@@ -49,7 +70,11 @@ export type ChangeListColumn<R> = {
 
 export type ChangeListAction = {
   key: string;
+  /** The whole name: "Freeze selected students" (the button's accessible name). */
   label: string;
+  /** What the bulk bar shows: "Freeze". Defaults to `label`. */
+  short?: string;
+  icon?: IconName;
   /** Resolve `true` when the action went through: the selection then clears, as after a Django action. */
   run: (ids: number[]) => void | boolean | Promise<boolean | void>;
 };
@@ -72,7 +97,7 @@ export type ChangeListProps<R extends { id: number }> = {
   onRowClick?: (row: R) => void;
   /** Each row's change form. The first cell becomes a link, so it opens in a new tab. */
   rowHref?: (row: R) => string;
-  /** A button beside the title, e.g. "Add student". */
+  /** The page's own controls beside the search, e.g. "Add student" (the screen's one primary button). */
   headerAction?: ReactNode;
   searchPlaceholder?: string;
   /** Names a row for its checkbox's label; defaults to the id. */
@@ -82,6 +107,11 @@ export type ChangeListProps<R extends { id: number }> = {
   groupLabel?: (key: string) => ReactNode;
   /** A card per row below the `sm` breakpoint, instead of the table (under the same group headers). */
   mobileCard?: (row: R) => ReactNode;
+  /**
+   * The filters in force, as chips, when the page knows them better than the filter column does
+   * (the SMS journal's dates are not facets). By default: each chosen filter, "Status: Frozen".
+   */
+  filterChips?: { key: string; label: string }[];
 };
 
 function sortKeysOf<R>(col: ChangeListColumn<R>): { asc?: string; desc?: string } | null {
@@ -97,26 +127,8 @@ function nextOrdering(keys: { asc?: string; desc?: string }, current: string): s
   return keys.asc ?? keys.desc ?? null;
 }
 
-/** "1 2 3 … 9": the ends, and the current page with one either side. */
-export function pageWindow(page: number, pages: number): Array<number | "…"> {
-  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
-  const keep = [...new Set([1, pages, page - 1, page, page + 1])].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
-  const out: Array<number | "…"> = [];
-  keep.forEach((n, i) => {
-    const prev = keep[i - 1];
-    if (prev !== undefined && n - prev === 2) out.push(prev + 1);
-    else if (prev !== undefined && n - prev > 2) out.push("…");
-    out.push(n);
-  });
-  return out;
-}
-
-/** A plain click goes through the router; a modified click opens the link the browser's way. */
-function follow(e: MouseEvent<HTMLAnchorElement>, go: () => void) {
-  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-  e.preventDefault();
-  go();
-}
+/** The quick chips are the first filter's choices, while there are few enough to sit in one bar. */
+const QUICK_MAX = 6;
 
 export function ChangeList<R extends { id: number }>({
   title,
@@ -137,13 +149,13 @@ export function ChangeList<R extends { id: number }>({
   groupBy,
   groupLabel,
   mobileCard,
+  filterChips,
 }: ChangeListProps<R>) {
   const router = useRouter();
   const { params, queryString, hrefFor, update } = useChangeListParams(filterKeys);
   const rows = data?.results;
   const filters = data?.filters ?? [];
   const active = params.filters;
-  const activeCount = Object.keys(active).length;
   const ordering = params.o || data?.ordering || "";
   const hasActions = Boolean(actions && actions.length > 0);
 
@@ -168,43 +180,52 @@ export function ChangeList<R extends { id: number }>({
     });
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set((rows ?? []).map((r) => r.id)));
 
-  // ── Actions bar ──
-  const [actionKey, setActionKey] = useState("");
+  // ── Bulk actions ──
   const [running, setRunning] = useState(false);
-  const runAction = async () => {
-    const action = actions?.find((a) => a.key === actionKey);
-    if (!action || selectedIds.length === 0) return;
+  const runAction = async (action: ChangeListAction) => {
+    if (selectedIds.length === 0) return;
     setRunning(true);
     try {
       const done = await action.run(selectedIds);
-      if (done === true) {
-        setSelected(new Set());
-        setActionKey("");
-      }
+      if (done === true) setSelected(new Set());
     } finally {
       setRunning(false);
     }
   };
 
-  // ── Filters drawer (below xl) ──
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // ── Filters sheet (below 1600 px, where the column does not fit) ──
+  const [sheetOpen, setSheetOpen] = useState(false);
   useEffect(() => {
-    if (!drawerOpen) return;
+    if (!sheetOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDrawerOpen(false);
+      if (e.key === "Escape") setSheetOpen(false);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [drawerOpen]);
+  }, [sheetOpen]);
 
   const go = (patch: ChangeListPatch, keepPage = false) => update(patch, keepPage);
   const colSpan = columns.length + (hasActions ? 1 : 0);
   const count = data?.count ?? 0;
   const page = data?.page ?? params.page;
   const pages = data?.pages ?? 1;
+  const countText = `${count.toLocaleString("en-US")} ${count === 1 ? noun.singular : noun.plural}`;
 
-  const filterPanel = (onPicked?: () => void, trailing?: ReactNode) => (
-    <FilterPanel
+  // The filters in force, as chips; "Clear all" clears exactly these.
+  const chips =
+    filterChips ??
+    filters.flatMap((f) => {
+      const value = active[f.key];
+      if (!value) return [];
+      const option = f.options.find((o) => o.value === value);
+      return [{ key: f.key, label: `${f.label}: ${option?.label ?? value}` }];
+    });
+  const clearChips: ChangeListPatch = Object.fromEntries(chips.map((c) => [c.key, null]));
+  const quick = filters[0] && filters[0].options.length <= QUICK_MAX ? filters[0] : null;
+  const narrowed = Boolean(params.q) || chips.length > 0;
+
+  const filterColumn = (onPicked?: () => void, trailing?: ReactNode) => (
+    <FilterColumn
       filters={filters}
       active={active}
       hrefFor={hrefFor}
@@ -217,400 +238,386 @@ export function ChangeList<R extends { id: number }>({
   );
 
   return (
-    <div className="space-y-3">
-      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
-        <h1 className="text-lg font-semibold text-foreground">
-          {title}
-          {data ? (
-            <span className="font-normal text-muted-foreground tabular-nums"> · {count.toLocaleString("en-US")}</span>
-          ) : null}
-        </h1>
-        {headerAction ? <div className="ml-auto">{headerAction}</div> : null}
-      </header>
-
-      <div className="flex items-start gap-6">
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex items-center gap-2">
-            <SearchBox
+    <div className="flex flex-col">
+      <section className="animate-ms-card-in overflow-hidden rounded-ms-card bg-ms-card shadow-ms-1">
+        {/* ── toolbar ── */}
+        <header className="flex flex-wrap items-center gap-3 border-b border-ms-border px-5 py-4">
+          <h1 className="text-ms-title text-ms-fg">
+            {title}
+            {data ? (
+              <>
+                {" "}
+                <RollNumber value={count.toLocaleString("en-US")} className="font-medium text-ms-fg-3" />
+              </>
+            ) : null}
+          </h1>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+            <SearchField
               value={params.q}
               placeholder={searchPlaceholder ?? `Search ${noun.plural}`}
               onSearch={(q) => go({ q })}
+              className="sm:w-[340px]"
             />
             {filters.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => setDrawerOpen(true)}
-                aria-expanded={drawerOpen}
-                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[13px] text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary xl:hidden"
-              >
-                <SlidersHorizontal aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
-                Filters
-                {activeCount > 0 ? <span className="tabular-nums text-muted-foreground">({activeCount})</span> : null}
-              </button>
+              <Button icon="sliders" onClick={() => setSheetOpen(true)} aria-expanded={sheetOpen} className="min-[1600px]:hidden">
+                Filters{chips.length ? ` (${chips.length})` : ""}
+              </Button>
             ) : null}
+            {headerAction}
           </div>
+        </header>
 
-          {hasActions ? (
-            <div className="flex flex-wrap items-center gap-2 text-[13px]">
-              <label htmlFor="changelist-action" className="text-muted-foreground">
-                Action:
-              </label>
-              <select
-                id="changelist-action"
-                value={actionKey}
-                onChange={(e) => setActionKey(e.target.value)}
-                className="h-7 rounded-md border border-border bg-card px-1.5 text-[13px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <option value="">---------</option>
-                {actions!.map((a) => (
-                  <option key={a.key} value={a.key}>
-                    {a.label}
-                  </option>
+        {/* ── chip bar: quick filters, the filters in force, how many ── */}
+        {quick || chips.length || data ? (
+          <div className="flex flex-wrap items-center gap-2 border-b border-ms-border px-5 py-3">
+            {quick ? (
+              <div role="group" aria-label={`Quick filter: ${quick.label}`} className="flex flex-wrap items-center gap-2">
+                {[{ value: null as string | null, label: "All", count: undefined as number | undefined }, ...quick.options].map((item) => {
+                  const on = item.value === (active[quick.key] ?? null);
+                  const patch = { [quick.key]: item.value };
+                  return (
+                    <a
+                      key={item.value ?? "__all"}
+                      href={hrefFor(patch)}
+                      aria-current={on ? "true" : undefined}
+                      onClick={(e) => follow(e, () => go(patch))}
+                      className={chipClass(on, item.count === 0)}
+                    >
+                      {item.label}
+                      {item.count !== undefined ? <ChipCount n={item.count} on={on} /> : null}
+                    </a>
+                  );
+                })}
+              </div>
+            ) : null}
+            {chips.length ? (
+              <>
+                {quick ? <span aria-hidden="true" className="mx-1.5 h-6 w-px bg-ms-border-strong" /> : null}
+                {chips.map((c) => (
+                  <FilterChip key={c.key} label={c.label} onRemove={() => go({ [c.key]: null })} />
                 ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => void runAction()}
-                disabled={!actionKey || selectedIds.length === 0 || running}
-                className="h-7 rounded-md border border-border bg-card px-2.5 text-[13px] font-medium text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Go
-              </button>
-              <span className="tabular-nums text-muted-foreground" aria-live="polite">
-                {selectedIds.length} of {rows?.length ?? 0} selected
-              </span>
-            </div>
+                <Button variant="ghost" size="sm" onClick={() => go(clearChips)}>
+                  Clear all
+                </Button>
+              </>
+            ) : null}
+            {data ? <span className="ml-auto text-[14px] tabular-nums text-ms-fg-2">{countText}</span> : null}
+          </div>
+        ) : null}
+
+        {/* The filter column needs 264 px beside a seven-column table: from 1600 px wide. Narrower,
+            the same filters open in a side sheet, and the chip bar keeps the quick ones in view. */}
+        <div className={cn("grid", filters.length > 0 && "min-[1600px]:grid-cols-[264px_minmax(0,1fr)]")}>
+          {filters.length > 0 ? (
+            <aside aria-label="Filters" className="relative hidden min-h-[28rem] border-r border-ms-border bg-ms-surface min-[1600px]:block">
+              {/* Scrolls within the table's height rather than stretching the card past it. */}
+              <div className="absolute inset-0 overflow-y-auto px-4 pb-5 pt-1">{filterColumn()}</div>
+            </aside>
           ) : null}
 
-          {error ? (
-            <div role="alert" className="border border-border bg-card px-3 py-4 text-[13px] text-foreground">
-              Couldn&apos;t load {noun.plural}.{" "}
-              <button
-                type="button"
-                onClick={onRetry}
-                className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          <div className="min-w-0">
+            {error ? (
+              <div className="p-5">
+                <ErrorState what={noun.plural} onRetry={onRetry} />
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  // Its own scroll pane from md up, so the header row can stick while the rows scroll
+                  // (a sticky header cannot stick to the page through a horizontal-scroll wrapper).
+                  "overflow-x-auto transition-opacity md:max-h-[calc(100dvh-17rem)] md:overflow-y-auto",
+                  fetching && "opacity-60",
+                  mobileCard && "hidden sm:block",
+                )}
+                aria-busy={loading || fetching || undefined}
               >
-                Retry
-              </button>
-            </div>
-          ) : (
-            <div
-              className={cn(
-                // Its own scroll pane from md up, so the header row can stick while the rows scroll
-                // (a sticky header cannot stick to the page through a horizontal-scroll wrapper).
-                "overflow-x-auto border border-border bg-card transition-opacity md:max-h-[calc(100dvh-15rem)] md:overflow-y-auto",
-                fetching && "opacity-60",
-                mobileCard && "hidden sm:block",
-              )}
-              aria-busy={loading || fetching || undefined}
-            >
-              <table className="w-full border-separate border-spacing-0 text-[13px]">
-                <thead>
-                  <tr>
-                    {hasActions ? (
-                      <th scope="col" className="sticky top-0 z-10 w-8 border-b border-border bg-card px-2 text-left">
-                        <input
-                          type="checkbox"
-                          aria-label="Select all on this page"
-                          checked={allSelected}
-                          ref={(el) => {
-                            if (el) el.indeterminate = someSelected;
-                          }}
-                          onChange={toggleAll}
-                          disabled={!rows || rows.length === 0}
-                          className="h-3.5 w-3.5 cursor-pointer align-middle accent-primary"
-                        />
-                      </th>
-                    ) : null}
-                    {columns.map((col) => {
-                      const keys = sortKeysOf(col);
-                      const dir = keys ? (ordering === keys.asc ? "asc" : ordering === keys.desc ? "desc" : null) : null;
-                      return (
-                        <th
-                          key={col.key}
-                          scope="col"
-                          aria-sort={keys ? (dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none") : undefined}
-                          className={cn(
-                            "sticky top-0 z-10 h-8 whitespace-nowrap border-b border-border bg-card px-2 text-left text-[12px] font-semibold text-muted-foreground",
-                            col.className,
-                          )}
-                        >
-                          {keys ? (
-                            <button
-                              type="button"
-                              onClick={() => go({ o: nextOrdering(keys, ordering) })}
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                                dir && "text-foreground",
-                              )}
-                            >
-                              {col.label}
-                              <span aria-hidden className="text-[10px]">
-                                {dir === "asc" ? "▲" : dir === "desc" ? "▼" : ""}
-                              </span>
-                            </button>
-                          ) : (
-                            col.label
-                          )}
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading && !rows ? (
-                    Array.from({ length: 8 }, (_, i) => (
-                      <tr key={i} data-skeleton>
-                        {Array.from({ length: colSpan }, (_, j) => (
-                          <td key={j} className="h-[34px] border-b border-border px-2">
-                            <div className="h-2.5 w-full max-w-[8rem] animate-pulse rounded-sm bg-surface-2" />
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  ) : !rows || rows.length === 0 ? (
+                <table className="w-full border-separate border-spacing-0 text-(length:--ms-fs-row)">
+                  <thead>
                     <tr>
-                      <td colSpan={colSpan} className="px-2 py-6 text-muted-foreground">
-                        No {noun.plural} match.
-                      </td>
+                      {hasActions ? (
+                        <th scope="col" className="sticky top-0 z-10 w-px border-b border-ms-border bg-ms-card pl-5 pr-1 text-left">
+                          <Checkbox
+                            label="Select all on this page"
+                            checked={allSelected}
+                            indeterminate={someSelected}
+                            onChange={toggleAll}
+                            disabled={!rows || rows.length === 0}
+                          />
+                        </th>
+                      ) : null}
+                      {columns.map((col, i) => {
+                        const keys = sortKeysOf(col);
+                        const dir = keys ? (ordering === keys.asc ? "asc" : ordering === keys.desc ? "desc" : null) : null;
+                        return (
+                          <th
+                            key={col.key}
+                            scope="col"
+                            aria-sort={keys ? (dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none") : undefined}
+                            className={cn(
+                              "sticky top-0 z-10 h-11 whitespace-nowrap border-b border-ms-border bg-ms-card px-3 text-left text-[13px] font-medium text-ms-fg-3",
+                              i === 0 && !hasActions && "pl-5",
+                              i === columns.length - 1 && "pr-5",
+                              col.className,
+                            )}
+                          >
+                            {keys ? (
+                              <button
+                                type="button"
+                                data-dir={dir ?? undefined}
+                                onClick={() => go({ o: nextOrdering(keys, ordering) })}
+                                className={cn("ms-transition inline-flex items-center gap-1 rounded-[6px] hover:text-ms-fg", dir && "text-ms-fg")}
+                              >
+                                {col.label}
+                                <Icon
+                                  name={dir ? "up" : "sort"}
+                                  size="sm"
+                                  className={cn("ms-transition size-3.5", dir === "desc" && "rotate-180", !dir && "opacity-50")}
+                                />
+                              </button>
+                            ) : (
+                              col.label
+                            )}
+                          </th>
+                        );
+                      })}
                     </tr>
-                  ) : (
-                    rows.map((row, index) => {
-                      const group = groupBy?.(row);
-                      const newGroup = group !== undefined && (index === 0 || groupBy?.(rows[index - 1]) !== group);
-                      const isSelected = selected.has(row.id);
-                      const href = rowHref?.(row);
-                      const openRow = href
-                        ? (e: MouseEvent<HTMLTableRowElement>) => {
-                            // A held modifier asks for a new tab: that is the first cell's link,
-                            // never a navigation in place that throws the list away.
-                            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                            router.push(href);
-                          }
-                        : onRowClick
-                          ? () => onRowClick(row)
-                          : undefined;
-                      return (
-                        <Fragment key={row.id}>
-                        {newGroup ? (
-                          <tr>
-                            <td
-                              colSpan={colSpan}
-                              data-group-header
-                              className="sticky top-8 z-[1] border-b border-border bg-surface-2 px-2 py-1 text-[12px] font-semibold text-muted-foreground"
-                            >
-                              {groupLabel ? groupLabel(group!) : group}
-                            </td>
-                          </tr>
-                        ) : null}
-                        <tr
-                          onClick={openRow}
-                          className={cn(
-                            "[&:last-child>td]:border-b-0",
-                            openRow && "cursor-pointer",
-                            isSelected ? "bg-primary-soft" : "hover:bg-surface-2",
-                          )}
-                        >
-                          {hasActions ? (
-                            <td className="h-[34px] w-8 border-b border-border px-2" onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                aria-label={`Select ${rowLabel ? rowLabel(row) : row.id}`}
-                                checked={isSelected}
-                                onChange={() => toggleOne(row.id)}
-                                className="h-3.5 w-3.5 cursor-pointer align-middle accent-primary"
-                              />
-                            </td>
-                          ) : null}
-                          {columns.map((col, i) => (
-                            <td
-                              key={col.key}
-                              className={cn("h-[34px] whitespace-nowrap border-b border-border px-2 text-foreground", col.className)}
-                            >
-                              {/* The first column opens the row, as Django links it to the change form —
-                                  and gives the keyboard a way in, which a clickable <tr> does not.
-                                  With `rowHref` it is a real link: cmd-click and middle-click open
-                                  a new tab, and its click stops here so the row does not navigate
-                                  a second time. */}
-                              {i === 0 && href ? (
-                                <Link
-                                  href={href}
-                                  // A page of 50–100 rows would otherwise prefetch every change form on view.
-                                  prefetch={false}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="block max-w-full truncate rounded-sm text-left font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover"
-                                >
-                                  {col.render(row)}
-                                </Link>
-                              ) : i === 0 && onRowClick ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onRowClick(row);
-                                  }}
-                                  className="block max-w-full truncate rounded-sm text-left font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover"
-                                >
-                                  {col.render(row)}
-                                </button>
-                              ) : (
-                                col.render(row)
-                              )}
+                  </thead>
+                  <tbody>
+                    {loading && !rows ? (
+                      Array.from({ length: 8 }, (_, i) => (
+                        <tr key={i} data-skeleton>
+                          {Array.from({ length: colSpan }, (_, j) => (
+                            <td key={j} className={cn("h-(--ms-h-row) border-b border-ms-line px-3", j === 0 && "pl-5")}>
+                              <div className="animate-ms-shimmer h-3 rounded-[6px]" style={{ width: j === 0 && hasActions ? 20 : `${[70, 55, 80, 45, 60][(i + j) % 5]}%` }} />
                             </td>
                           ))}
                         </tr>
-                        </Fragment>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {mobileCard && !error && (!rows || rows.length === 0) ? (
-            <p data-mobile-state className="border border-border bg-card px-3 py-6 text-[13px] text-muted-foreground sm:hidden">
-              {loading && !rows ? "Loading…" : `No ${noun.plural} match.`}
-            </p>
-          ) : null}
-          {mobileCard && rows && rows.length > 0 && !error ? (
-            <ul className={cn("divide-y divide-border border border-border bg-card sm:hidden", fetching && "opacity-60")}>
-              {rows.map((row, index) => {
-                const group = groupBy?.(row);
-                const newGroup = group !== undefined && (index === 0 || groupBy?.(rows[index - 1]) !== group);
-                return (
-                  <Fragment key={row.id}>
-                    {newGroup ? (
-                      <li className="sticky top-0 z-[1] bg-surface-2 px-3 py-1 text-[12px] font-semibold text-muted-foreground">
-                        {groupLabel ? groupLabel(group!) : group}
-                      </li>
-                    ) : null}
-                    <li data-mobile-card>
-                      {onRowClick ? (
-                        <button type="button" onClick={() => onRowClick(row)} className="block w-full px-3 py-2 text-left">
-                          {mobileCard(row)}
-                        </button>
-                      ) : (
-                        <div className="px-3 py-2">{mobileCard(row)}</div>
-                      )}
-                    </li>
-                  </Fragment>
-                );
-              })}
-            </ul>
-          ) : null}
-
-          {data && !error ? (
-            <Pagination
-              page={page}
-              pages={pages}
-              count={count}
-              pageSize={params.pageSize}
-              noun={noun}
-              hrefFor={hrefFor}
-              onPage={(p) => go({ p }, true)}
-              onPageSize={(ps) => go({ ps })}
-            />
-          ) : null}
-        </div>
-
-        {filters.length > 0 ? (
-          <aside aria-label="Filters" className="hidden w-56 shrink-0 border border-border bg-card xl:block">
-            {filterPanel()}
-          </aside>
-        ) : null}
-      </div>
-
-      {drawerOpen ? (
-        <div className="fixed inset-0 z-50 xl:hidden">
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label="Close filters"
-            onClick={() => setDrawerOpen(false)}
-            className="absolute inset-0 bg-[var(--overlay-scrim)]"
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Filters"
-            className="absolute inset-y-0 right-0 w-72 max-w-[85vw] overflow-y-auto border-l border-border bg-card"
-          >
-            {filterPanel(
-              () => setDrawerOpen(false),
-              <button
-                type="button"
-                autoFocus
-                onClick={() => setDrawerOpen(false)}
-                aria-label="Close"
-                className="-mr-1.5 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <X className="h-4 w-4" />
-              </button>,
+                      ))
+                    ) : !rows || rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={colSpan}>
+                          <EmptyState
+                            title={`No ${noun.plural} match`}
+                            detail={narrowed ? "Try another search, or clear the filters." : undefined}
+                            action={
+                              chips.length ? (
+                                <Button size="sm" onClick={() => go(clearChips)}>
+                                  Clear filters
+                                </Button>
+                              ) : undefined
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ) : (
+                      rows.map((row, index) => {
+                        const group = groupBy?.(row);
+                        const newGroup = group !== undefined && (index === 0 || groupBy?.(rows[index - 1]) !== group);
+                        const isSelected = selected.has(row.id);
+                        const href = rowHref?.(row);
+                        const openRow = href
+                          ? (e: MouseEvent<HTMLTableRowElement>) => {
+                              // A held modifier asks for a new tab: that is the first cell's link,
+                              // never a navigation in place that throws the list away.
+                              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                              router.push(href);
+                            }
+                          : onRowClick
+                            ? () => onRowClick(row)
+                            : undefined;
+                        const cell = cn(
+                          "h-(--ms-h-row) border-b border-ms-line px-3 py-1.5 align-middle text-ms-fg",
+                          isSelected ? "bg-ms-primary-soft" : "group-hover/row:bg-ms-surface",
+                        );
+                        return (
+                          <Fragment key={row.id}>
+                            {newGroup ? (
+                              <tr>
+                                <td
+                                  colSpan={colSpan}
+                                  data-group-header
+                                  className="sticky top-11 z-[1] border-b border-ms-border bg-ms-surface px-5 py-1.5 text-[13px] font-semibold text-ms-fg-2"
+                                >
+                                  {groupLabel ? groupLabel(group!) : group}
+                                </td>
+                              </tr>
+                            ) : null}
+                            <tr
+                              onClick={openRow}
+                              className={cn("group/row animate-ms-fade-in [&:last-child>td]:border-b-0", openRow && "cursor-pointer")}
+                              style={{ animationDelay: `${Math.min(index, 12) * 18}ms` }}
+                            >
+                              {hasActions ? (
+                                <td className={cn(cell, "w-px pl-5 pr-1")} onClick={(e) => e.stopPropagation()}>
+                                  <Checkbox
+                                    label={`Select ${rowLabel ? rowLabel(row) : row.id}`}
+                                    checked={isSelected}
+                                    onChange={() => toggleOne(row.id)}
+                                  />
+                                </td>
+                              ) : null}
+                              {columns.map((col, i) => (
+                                <td
+                                  key={col.key}
+                                  className={cn(
+                                    cell,
+                                    "whitespace-nowrap",
+                                    i === 0 && !hasActions && "pl-5",
+                                    i === columns.length - 1 && "pr-5",
+                                    col.className,
+                                  )}
+                                >
+                                  {/* The first column opens the row, as Django links it to the change form —
+                                      and gives the keyboard a way in, which a clickable <tr> does not.
+                                      With `rowHref` it is a real link: cmd-click and middle-click open
+                                      a new tab, and its click stops here so the row does not navigate
+                                      a second time. */}
+                                  {i === 0 && href ? (
+                                    <Link
+                                      href={href}
+                                      // A page of 50–100 rows would otherwise prefetch every change form on view.
+                                      prefetch={false}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="block max-w-full truncate rounded-[6px] text-left font-semibold text-ms-fg hover:text-ms-primary-text hover:underline"
+                                    >
+                                      {col.render(row)}
+                                    </Link>
+                                  ) : i === 0 && onRowClick ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onRowClick(row);
+                                      }}
+                                      className="block max-w-full truncate rounded-[6px] text-left font-semibold text-ms-fg hover:text-ms-primary-text hover:underline"
+                                    >
+                                      {col.render(row)}
+                                    </button>
+                                  ) : (
+                                    col.render(row)
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          </Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
+
+            {mobileCard && !error && (!rows || rows.length === 0) ? (
+              <p data-mobile-state className="px-5 py-8 text-center text-[15px] text-ms-fg-2 sm:hidden">
+                {loading && !rows ? "Loading…" : `No ${noun.plural} match.`}
+              </p>
+            ) : null}
+            {mobileCard && rows && rows.length > 0 && !error ? (
+              <ul className={cn("divide-y divide-ms-line sm:hidden", fetching && "opacity-60")}>
+                {rows.map((row, index) => {
+                  const group = groupBy?.(row);
+                  const newGroup = group !== undefined && (index === 0 || groupBy?.(rows[index - 1]) !== group);
+                  return (
+                    <Fragment key={row.id}>
+                      {newGroup ? (
+                        <li className="sticky top-0 z-[1] bg-ms-surface px-5 py-1.5 text-[13px] font-semibold text-ms-fg-2">
+                          {groupLabel ? groupLabel(group!) : group}
+                        </li>
+                      ) : null}
+                      <li data-mobile-card>
+                        {onRowClick ? (
+                          <button type="button" onClick={() => onRowClick(row)} className="ms-transition block w-full px-5 py-3 text-left hover:bg-ms-surface">
+                            {mobileCard(row)}
+                          </button>
+                        ) : (
+                          <div className="px-5 py-3">{mobileCard(row)}</div>
+                        )}
+                      </li>
+                    </Fragment>
+                  );
+                })}
+              </ul>
+            ) : null}
+
+            {data && !error ? (
+              <div className="border-t border-ms-border">
+                <Pagination
+                  page={page}
+                  pages={pages}
+                  count={count}
+                  // The size the server applied, so "1–25 of 219" counts the rows actually shown.
+                  pageSize={data.page_size || params.pageSize}
+                  pageSizes={PAGE_SIZES}
+                  noun={noun}
+                  hrefFor={(p) => hrefFor({ p }, true)}
+                  onPage={(p) => go({ p }, true)}
+                  onPageSize={(ps) => go({ ps })}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
+      </section>
+
+      {/* ── bulk bar: floats at the bottom of the screen while rows are ticked ── */}
+      {hasActions && selectedIds.length > 0 ? (
+        <div className="pointer-events-none sticky bottom-4 z-30 mt-3 flex justify-center px-4">
+          <BulkBar count={selectedIds.length} onClear={() => setSelected(new Set())}>
+            {actions!.map((a) => (
+              <button
+                key={a.key}
+                type="button"
+                aria-label={a.label}
+                title={a.label}
+                disabled={running}
+                onClick={() => void runAction(a)}
+                className={bulkButtonClass}
+              >
+                {a.icon ? <Icon name={a.icon} size="sm" /> : null}
+                {a.short ?? a.label}
+              </button>
+            ))}
+          </BulkBar>
+        </div>
       ) : null}
+
+      {/* ── filters as a side sheet below xl. In a portal: a transformed ancestor would trap `fixed`. ── */}
+      {sheetOpen
+        ? createPortal(
+            <div className="ms fixed inset-0 z-50 min-[1600px]:hidden">
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label="Close filters"
+                onClick={() => setSheetOpen(false)}
+                className="animate-ms-scrim-in absolute inset-0 bg-ms-scrim"
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Filters"
+                className="animate-ms-sheet-in-right absolute inset-y-0 right-0 w-80 max-w-[88vw] overflow-y-auto bg-ms-card px-4 pb-6 pt-3 shadow-ms-3"
+              >
+                {filterColumn(
+                  () => setSheetOpen(false),
+                  <Button variant="ghost" size="sm" icon="x" aria-label="Close" autoFocus onClick={() => setSheetOpen(false)} />,
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
 
-// ─── Search ──────────────────────────────────────────────────────────────────
+// ─── Filter column ───────────────────────────────────────────────────────────
 
-/** Searches 300 ms after typing stops, or at once on Enter. */
-function SearchBox({ value, placeholder, onSearch }: { value: string; placeholder: string; onSearch: (q: string) => void }) {
-  const [text, setText] = useState(value);
-  // What was last sent to the address — so the address catching up with our own search does not
-  // overwrite what has been typed since, while back/forward (a different value) still does.
-  const committed = useRef(value);
-  const onSearchRef = useRef(onSearch);
-  useEffect(() => {
-    onSearchRef.current = onSearch;
-  });
+/** A long group shows its first choices and "Show N more" (the chosen one always shows). */
+const GROUP_SHOWN = 6;
 
-  useEffect(() => {
-    if (value === committed.current) return;
-    committed.current = value;
-    setText(value);
-  }, [value]);
-
-  const commit = (raw: string) => {
-    const next = raw.trim();
-    if (next === committed.current) return;
-    committed.current = next;
-    onSearchRef.current(next);
-  };
-
-  useEffect(() => {
-    if (text.trim() === committed.current) return;
-    const t = window.setTimeout(() => commit(text), 300);
-    return () => window.clearTimeout(t);
-  }, [text]);
-
-  return (
-    <form
-      role="search"
-      className="relative w-full max-w-sm"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        commit(text);
-      }}
-    >
-      <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-      <input
-        type="search"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        className="h-8 w-full rounded-md border border-border bg-card pl-8 pr-2.5 text-[13px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-      />
-    </form>
-  );
-}
-
-// ─── Filters ─────────────────────────────────────────────────────────────────
-
-function FilterPanel({
+function FilterColumn({
   filters,
   active,
   hrefFor,
@@ -621,133 +628,84 @@ function FilterPanel({
   active: Record<string, string>;
   hrefFor: (patch: ChangeListPatch) => string;
   onPick: (patch: ChangeListPatch) => void;
-  /** Beside the heading — the drawer's close button. */
+  /** The sheet's heading and close button. */
   trailing?: ReactNode;
 }) {
-  const anyActive = filters.some((f) => active[f.key]);
-  const clearAll: ChangeListPatch = Object.fromEntries(filters.map((f) => [f.key, null]));
-
   return (
-    <div className="text-[13px]">
-      <div className="flex min-h-10 items-center gap-2 border-b border-border px-3 py-1.5">
-        <h2 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Filter</h2>
-        {anyActive ? (
-          <a
-            href={hrefFor(clearAll)}
-            onClick={(e) => follow(e, () => onPick(clearAll))}
-            className="ml-auto text-[12px] text-primary hover:underline dark:text-primary-hover"
-          >
-            Clear all filters
-          </a>
-        ) : null}
-        {trailing ? <div className={anyActive ? undefined : "ml-auto"}>{trailing}</div> : null}
-      </div>
-      {filters.map((f) => {
-        const current = active[f.key] ?? null;
-        const items: Array<{ value: string | null; label: string; count?: number }> = [
-          { value: null, label: "All" },
-          ...f.options,
-        ];
-        return (
-          <section key={f.key} className="border-b border-border px-3 py-2 last:border-b-0">
-            <h3 className="mb-1 text-[12px] font-semibold text-foreground">By {f.label.toLowerCase()}</h3>
-            <ul className="space-y-px">
-              {items.map((item) => {
-                const on = item.value === current;
-                const patch = { [f.key]: item.value };
-                return (
-                  <li key={item.value ?? "__all"}>
-                    <a
-                      href={hrefFor(patch)}
-                      aria-current={on ? "true" : undefined}
-                      onClick={(e) => follow(e, () => onPick(patch))}
-                      className={cn(
-                        "flex items-baseline justify-between gap-2 rounded-sm px-1.5 py-0.5 hover:bg-surface-2",
-                        on ? "font-semibold text-foreground" : "text-primary dark:text-primary-hover",
-                      )}
-                    >
-                      <span className="min-w-0 truncate">{item.label}</span>
-                      {item.count !== undefined ? (
-                        <span className="shrink-0 font-normal tabular-nums text-muted-foreground">{item.count}</span>
-                      ) : null}
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        );
-      })}
+    <div className="text-[14px]">
+      {trailing ? (
+        <div className="flex items-center justify-between border-b border-ms-border px-2 pb-3">
+          <h2 className="text-[17px] font-semibold text-ms-fg">Filters</h2>
+          {trailing}
+        </div>
+      ) : null}
+      {filters.map((f) => (
+        <FilterGroup key={f.key} filter={f} current={active[f.key] ?? null} hrefFor={hrefFor} onPick={onPick} />
+      ))}
     </div>
   );
 }
 
-// ─── Pagination ──────────────────────────────────────────────────────────────
-
-function Pagination({
-  page,
-  pages,
-  count,
-  pageSize,
-  noun,
+function FilterGroup({
+  filter: f,
+  current,
   hrefFor,
-  onPage,
-  onPageSize,
+  onPick,
 }: {
-  page: number;
-  pages: number;
-  count: number;
-  pageSize: number;
-  noun: { singular: string; plural: string };
-  hrefFor: (patch: ChangeListPatch, keepPage?: boolean) => string;
-  onPage: (page: number) => void;
-  onPageSize: (size: number) => void;
+  filter: ChangeListFilter;
+  current: string | null;
+  hrefFor: (patch: ChangeListPatch) => string;
+  onPick: (patch: ChangeListPatch) => void;
 }) {
-  const link = "grid h-7 min-w-7 place-items-center rounded-md px-1.5 text-primary hover:bg-surface-2 dark:text-primary-hover";
-  const pageLink = (p: number, label: ReactNode, aria?: string) => (
-    <a href={hrefFor({ p }, true)} aria-label={aria} onClick={(e) => follow(e, () => onPage(p))} className={link}>
-      {label}
-    </a>
-  );
+  const [open, setOpen] = useState(false);
+  const items: Array<{ value: string | null; label: string; count?: number }> = [{ value: null, label: "All" }, ...f.options];
+  const shown = open || items.length <= GROUP_SHOWN + 1 ? items : items.filter((it, i) => i < GROUP_SHOWN || it.value === current);
+  const hidden = items.length - shown.length;
 
   return (
-    <nav aria-label="Pagination" className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
-      {pages > 1 ? (
-        <div className="flex items-center gap-0.5">
-          {page > 1 ? pageLink(page - 1, "‹", "Previous page") : <span aria-hidden className={cn(link, "text-muted-foreground opacity-40 hover:bg-transparent")}>‹</span>}
-          {pageWindow(page, pages).map((n, i) =>
-            n === "…" ? (
-              <span key={`gap-${i}`} aria-hidden className="px-1 text-muted-foreground">
-                …
-              </span>
-            ) : n === page ? (
-              <span key={n} aria-current="page" className="grid h-7 min-w-7 place-items-center rounded-md border border-border px-1.5 font-semibold text-foreground">
-                {n}
-              </span>
-            ) : (
-              <span key={n}>{pageLink(n, n, `Page ${n}`)}</span>
-            ),
-          )}
-          {page < pages ? pageLink(page + 1, "›", "Next page") : <span aria-hidden className={cn(link, "text-muted-foreground opacity-40 hover:bg-transparent")}>›</span>}
-        </div>
-      ) : null}
-      <span className="tabular-nums text-muted-foreground">
-        {count.toLocaleString("en-US")} {count === 1 ? noun.singular : noun.plural}
-      </span>
-      <label className="ml-auto flex items-center gap-1.5 text-muted-foreground">
-        Per page
-        <select
-          value={pageSize}
-          onChange={(e) => onPageSize(Number(e.target.value))}
-          className="h-7 rounded-md border border-border bg-card px-1.5 text-[13px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    <section className="border-b border-ms-border py-3.5 last:border-b-0">
+      <h3 className="px-2 pb-1.5 text-[14px] font-semibold text-ms-fg">{f.label}</h3>
+      <ul className="flex flex-col gap-px">
+        {shown.map((item) => {
+          const on = item.value === current;
+          const zero = item.count === 0;
+          const patch = { [f.key]: item.value };
+          return (
+            <li key={item.value ?? "__all"}>
+              <a
+                href={hrefFor(patch)}
+                aria-current={on ? "true" : undefined}
+                onClick={(e) => follow(e, () => onPick(patch))}
+                className={cn(
+                  "ms-transition flex min-h-9 items-center gap-2.5 rounded-[8px] px-2",
+                  on
+                    ? "bg-ms-primary-soft font-semibold text-ms-primary-text"
+                    : zero
+                      ? "text-ms-fg-disabled hover:bg-ms-surface-2"
+                      : "text-ms-fg-2 hover:bg-ms-surface-2 hover:text-ms-fg",
+                )}
+              >
+                {on ? <Icon name="check" size="sm" className="shrink-0" /> : null}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                {item.count !== undefined ? (
+                  <span className={cn("shrink-0 text-[13px] font-medium tabular-nums", on ? "text-ms-primary-text" : zero ? "text-ms-fg-disabled" : "text-ms-fg-3")}>
+                    {item.count.toLocaleString("en-US")}
+                  </span>
+                ) : null}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      {hidden > 0 ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="ms-press mt-px flex min-h-9 w-full items-center rounded-[8px] px-2 text-left font-semibold text-ms-primary-text hover:bg-ms-surface-2"
         >
-          {PAGE_SIZES.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </label>
-    </nav>
+          Show {hidden} more
+        </button>
+      ) : null}
+    </section>
   );
 }

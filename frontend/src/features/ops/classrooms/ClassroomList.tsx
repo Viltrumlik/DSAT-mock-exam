@@ -9,6 +9,7 @@ import { ChangeList, type ChangeListColumn } from "@/features/ops/changelist/Cha
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import { withListFilters } from "@/features/ops/changelist/backLink";
 import { Truncated } from "@/features/ops/users/peopleColumns";
+import { Button } from "@/features/console/ui";
 import { CLASSROOM_FILTER_KEYS, classroomKeys, useClassrooms, type ClassroomRow } from "./classroomsApi";
 import { CreateClassroomModal } from "./CreateClassroomModal";
 
@@ -107,13 +108,9 @@ function ClassroomListInner() {
         searchPlaceholder="Search class, room or teacher"
         rowLabel={(row) => row.name}
         headerAction={
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="h-8 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-          >
+          <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>
             Add classroom
-          </button>
+          </Button>
         }
       />
 
