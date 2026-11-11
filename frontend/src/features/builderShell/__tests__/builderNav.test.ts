@@ -18,7 +18,7 @@ const section = (path: string) => sectionFor(path, BUILDER_CONSOLE.groups, BUILD
 describe("BUILDER_NAV_GROUPS", () => {
   it("keeps the builder's groups, with the clearer names and the old bank below the line", () => {
     expect(BUILDER_NAV_GROUPS.map((g) => g.caption)).toEqual([null, "Learning", "Simulation", null]);
-    expect(labels(0)).toEqual(["Dashboard"]);
+    expect(labels(0)).toEqual(["Studio home"]);
     expect(labels(1)).toEqual([
       "Question bank",
       "Review queue",
@@ -56,7 +56,7 @@ describe("the current item", () => {
   });
 
   it("matches the dashboard exactly and nothing for a look-alike", () => {
-    expect(active("/builder")).toBe("Dashboard");
+    expect(active("/builder")).toBe("Studio home");
     expect(active("/builder/settings")).toBeNull();
     expect(active("/builder/setsx")).toBeNull();
   });

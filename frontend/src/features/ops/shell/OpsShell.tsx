@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { CommandPalette } from "@/features/console/CommandPalette";
 import { consoleCommands } from "@/features/console/commands";
+import { entityScope } from "@/features/console/entitySearch";
 import { canOpenConsole, consoleHref } from "@/features/console/consoleHref";
 import { isScopedOpsAdmin } from "@/features/ops/adminScope";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
@@ -73,7 +74,9 @@ export function OpsShell({
     [other, mayOpenOther],
   );
 
-  // ⌘K: every page in the menu this person sees, then a few actions.
+  // ⌘K: the students, classes or questions this person may look up here, every page in their menu,
+  // and a few actions.
+  const entityKinds = useMemo(() => entityScope(config.temp, me), [config.temp, me]);
   const [searchOpen, setSearchOpen] = useState(false);
   const { setTheme } = useTheme();
   const commands = useMemo(
@@ -195,7 +198,7 @@ export function OpsShell({
           <div className="mx-auto w-full max-w-(--ms-content-max)">{children}</div>
         </main>
       </div>
-      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} commands={commands} />
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} commands={commands} entityKinds={entityKinds} />
     </div>
   );
 }

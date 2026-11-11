@@ -6,6 +6,18 @@ import { useRouter } from "next/navigation";
 
 import { Icon } from "@/components/ui/Icon";
 import { filterCommands, type Command } from "./commands";
+import { useEntitySearch, type EntityKind, type HitBadge } from "./entitySearch";
+
+const BADGE: Record<HitBadge["tone"], string> = {
+  critical: "bg-ms-critical-soft text-ms-critical-fg",
+  attention: "bg-ms-attention-soft text-ms-attention-fg",
+  positive: "bg-ms-positive-soft text-ms-positive-fg",
+  info: "bg-ms-info-soft text-ms-info-fg",
+  frozen: "bg-ms-frozen-soft text-ms-frozen-fg",
+  neutral: "bg-ms-neutral-soft text-ms-neutral-fg",
+};
+
+const NOUN: Record<EntityKind, string> = { Students: "students", Classes: "classes", Questions: "questions" };
 
 function Highlight({ text, query }: { text: string; query: string }): ReactNode {
   const q = query.trim();
@@ -33,11 +45,14 @@ export function CommandPalette({
   open,
   onOpenChange,
   commands,
-  placeholder = "Search pages and actions…",
+  entityKinds = [],
+  placeholder,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   commands: readonly Command[];
+  /** What else this person may search on the server, in this console (see `entityScope`). */
+  entityKinds?: readonly EntityKind[];
   placeholder?: string;
 }) {
   const router = useRouter();
@@ -73,7 +88,17 @@ export function CommandPalette({
     }
   }, [open]);
 
-  const results = useMemo(() => filterCommands(commands, query), [commands, query]);
+  const { groups: entityGroups, retry } = useEntitySearch(open ? query : "", entityKinds);
+  // Found students, classes and questions first (the person at the desk), then pages and actions.
+  const results = useMemo(() => {
+    const found: Command[] = entityGroups.flatMap((g) =>
+      g.status === "done"
+        ? g.hits.map((h) => ({ id: h.id, label: h.label, group: g.kind, icon: h.icon, href: h.href, hint: h.hint, badge: h.badge }))
+        : [],
+    );
+    return [...found, ...filterCommands(commands, query)];
+  }, [entityGroups, commands, query]);
+  const pending = entityGroups.filter((g) => g.status !== "done");
   const groups = useMemo(() => {
     const out: { name: Command["group"]; items: { command: Command; index: number }[] }[] = [];
     results.forEach((command, index) => {
@@ -147,9 +172,9 @@ export function CommandPalette({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={results.length ? optionId(current) : undefined}
-            aria-label="Search pages and actions"
+            aria-label={entityKinds.length ? `Search ${entityKinds.map((k) => NOUN[k]).join(", ")}, pages and actions` : "Search pages and actions"}
             value={query}
-            placeholder={placeholder}
+            placeholder={placeholder ?? (entityKinds.length ? `Search ${entityKinds.map((k) => NOUN[k]).join(", ")}, pages…` : "Search pages and actions…")}
             onChange={(e) => {
               setQuery(e.target.value);
               setActive(0);
@@ -167,7 +192,27 @@ export function CommandPalette({
         </div>
 
         <div id={listId} role="listbox" aria-label="Results" className="min-h-0 flex-1 overflow-y-auto p-1.5">
-          {results.length === 0 ? (
+          {pending.map((g) => (
+            <div key={g.kind} role="none" aria-live="polite" className="flex min-h-11 items-center gap-3 px-2.5 text-[14px] text-ms-fg-3">
+              {g.status === "loading" ? (
+                <>
+                  <span className="animate-ms-spin inline-flex">
+                    <Icon name="loader" size="sm" />
+                  </span>
+                  Searching {NOUN[g.kind]}…
+                </>
+              ) : (
+                <>
+                  <Icon name="alert" size="sm" className="text-ms-critical-fg" />
+                  <span className="text-ms-critical-fg">Couldn’t search {NOUN[g.kind]}.</span>
+                  <button type="button" onClick={retry} className="ms-transition ml-auto min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-surface-2">
+                    Retry
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+          {results.length === 0 && pending.length === 0 ? (
             <p className="px-4 py-10 text-center text-[14px] text-ms-fg-3">
               Nothing called “{query.trim()}”. Try a page name — Students, Finance, Full mocks.
             </p>
@@ -192,7 +237,14 @@ export function CommandPalette({
                       <span className="min-w-0 truncate">
                         <Highlight text={command.label} query={query} />
                       </span>
-                      {command.hint ? <span className="ml-auto shrink-0 text-[13px] text-ms-fg-3">{command.hint}</span> : null}
+                      {command.hint ? (
+                        <span className={`min-w-0 truncate text-[13px] text-ms-fg-3 ${command.badge ? "" : "ml-auto shrink-0"}`}>{command.hint}</span>
+                      ) : null}
+                      {command.badge ? (
+                        <span className={`ml-auto inline-flex h-6 shrink-0 items-center rounded-full px-2 text-[12px] font-semibold ${BADGE[command.badge.tone]}`}>
+                          {command.badge.text}
+                        </span>
+                      ) : null}
                     </div>
                   );
                 })}
