@@ -27,9 +27,12 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 /** The one line under "Lessons": the lesson most were missing from, or that attendance held. Oldest first in. */
 export function lessonsFinding(lessons: readonly Lesson[]): string {
   if (!lessons.length) return "";
+  // A register opened but not marked yet says nothing about who came: it is not a lesson nobody missed.
+  const marked = lessons.filter((l) => markedIn(l) > 0);
+  if (!marked.length) return "Nothing is marked in these registers yet.";
   // The latest of the worst: a tie goes to the most recent lesson.
-  const worst = lessons.reduce((w, l) => (l.absent >= w.absent ? l : w));
-  if (worst.absent === 0) return `No one was absent in the last ${plural(lessons.length, "lesson")}.`;
+  const worst = marked.reduce((w, l) => (l.absent >= w.absent ? l : w));
+  if (worst.absent === 0) return `No one was absent in the last ${plural(marked.length, "marked lesson")}.`;
   const total = markedIn(worst);
   if (worst.absent * 4 >= total) return `Most missed: ${fullDay(worst.date)}, ${worst.absent} of ${total} absent.`;
   return `Attendance held: at most ${worst.absent} absent in a lesson.`;
@@ -40,9 +43,12 @@ type Assignment = ClassroomHomework["assignments"][number];
 /** The one line under "Handed in": how many assignments had under half handed in. */
 export function homeworkFinding(rows: readonly Pick<Assignment, "turned_in" | "students">[]): string {
   if (!rows.length) return "";
-  const under = rows.filter((r) => r.students > 0 && r.turned_in * 2 < r.students).length;
-  if (under === 0) return rows.length === 1 ? "At least half handed it in." : `All ${rows.length} had at least half handed in.`;
-  return `${under} of ${plural(rows.length, "assignment")} had under half handed in.`;
+  // With nobody sitting in the class there is no share to judge: an empty class did not "hand it in".
+  const judged = rows.filter((r) => r.students > 0);
+  if (!judged.length) return "No students in the class to hand these in.";
+  const under = judged.filter((r) => r.turned_in * 2 < r.students).length;
+  if (under === 0) return judged.length === 1 ? "At least half handed it in." : `All ${judged.length} had at least half handed in.`;
+  return `${under} of ${plural(judged.length, "assignment")} had under half handed in.`;
 }
 
 const LESSON_SERIES: BarSeries[] = [

@@ -31,8 +31,16 @@ describe("lessonsFinding", () => {
   });
 
   it("says so when nobody was absent", () => {
-    expect(lessonsFinding([lesson("2026-11-03", 14, 0, 1)])).toBe("No one was absent in the last 1 lesson.");
+    expect(lessonsFinding([lesson("2026-11-03", 14, 0, 1)])).toBe("No one was absent in the last 1 marked lesson.");
     expect(lessonsFinding([])).toBe("");
+  });
+
+  it("leaves a register nobody has marked yet out of it", () => {
+    // Today's register is open and empty: it is not "no one was absent".
+    expect(lessonsFinding([lesson("2026-11-09", 12, 2), lesson("2026-11-11", 0, 0)])).toBe(
+      "Attendance held: at most 2 absent in a lesson.",
+    );
+    expect(lessonsFinding([lesson("2026-11-11", 0, 0)])).toBe("Nothing is marked in these registers yet.");
   });
 });
 
@@ -46,6 +54,15 @@ describe("homeworkFinding", () => {
   it("says when every one reached half", () => {
     expect(homeworkFinding([{ turned_in: 7, students: 14 }, { turned_in: 9, students: 14 }])).toBe("All 2 had at least half handed in.");
     expect(homeworkFinding([{ turned_in: 9, students: 14 }])).toBe("At least half handed it in.");
+  });
+
+  it("does not call an empty class's homework handed in", () => {
+    expect(homeworkFinding([{ turned_in: 0, students: 0 }, { turned_in: 0, students: 0 }])).toBe(
+      "No students in the class to hand these in.",
+    );
+    expect(homeworkFinding([{ turned_in: 0, students: 0 }, { turned_in: 2, students: 14 }])).toBe(
+      "1 of 1 assignment had under half handed in.",
+    );
   });
 });
 
