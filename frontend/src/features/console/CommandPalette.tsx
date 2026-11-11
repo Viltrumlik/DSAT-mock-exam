@@ -191,27 +191,27 @@ export function CommandPalette({
           </button>
         </div>
 
+        {pending.map((g) => (
+          <div key={g.kind} role="status" className="flex min-h-11 items-center gap-3 px-4 text-[14px] text-ms-fg-3">
+            {g.status === "loading" ? (
+              <>
+                <span className="animate-ms-spin inline-flex">
+                  <Icon name="loader" size="sm" />
+                </span>
+                Searching {NOUN[g.kind]}…
+              </>
+            ) : (
+              <>
+                <Icon name="alert" size="sm" className="text-ms-critical-fg" />
+                <span className="text-ms-critical-fg">Couldn’t search {NOUN[g.kind]}.</span>
+                <button type="button" onClick={retry} className="ms-transition ml-auto min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-surface-2">
+                  Retry
+                </button>
+              </>
+            )}
+          </div>
+        ))}
         <div id={listId} role="listbox" aria-label="Results" className="min-h-0 flex-1 overflow-y-auto p-1.5">
-          {pending.map((g) => (
-            <div key={g.kind} role="none" aria-live="polite" className="flex min-h-11 items-center gap-3 px-2.5 text-[14px] text-ms-fg-3">
-              {g.status === "loading" ? (
-                <>
-                  <span className="animate-ms-spin inline-flex">
-                    <Icon name="loader" size="sm" />
-                  </span>
-                  Searching {NOUN[g.kind]}…
-                </>
-              ) : (
-                <>
-                  <Icon name="alert" size="sm" className="text-ms-critical-fg" />
-                  <span className="text-ms-critical-fg">Couldn’t search {NOUN[g.kind]}.</span>
-                  <button type="button" onClick={retry} className="ms-transition ml-auto min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-surface-2">
-                    Retry
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
           {results.length === 0 && pending.length === 0 ? (
             <p className="px-4 py-10 text-center text-[14px] text-ms-fg-3">
               Nothing called “{query.trim()}”. Try a page name — Students, Finance, Full mocks.
