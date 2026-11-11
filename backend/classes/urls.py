@@ -105,6 +105,7 @@ from .views_ops_classrooms import (
     ClassroomDetailView,
     ClassroomPartView,
     ClassroomTelegramRemoveView,
+    LessonsTodayView,
 )
 from .views_seats import SeatActionView, SeatAddView, SeatNewStudentView
 from .views_teacher import TeacherTodayView
@@ -152,6 +153,8 @@ urlpatterns = [
     # The /ops Classrooms changelist. A literal "admin" segment up here with the others, so the router's
     # <pk> classroom routes below never read it as a classroom id.
     path("admin/classrooms/", ClassroomChangeListView.as_view(), name="ops-classrooms"),
+    # The ops Today board's "Lessons today": every active class that meets on a day, and its register.
+    path("admin/lessons/today/", LessonsTodayView.as_view(), name="ops-lessons-today"),
     path("admin/classrooms/<int:pk>/", ClassroomDetailView.as_view(), name="ops-classroom"),
     path("admin/classrooms/<int:pk>/seats/", SeatAddView.as_view(), name="ops-classroom-seat-add"),
     path("admin/classrooms/<int:pk>/seats/new-student/", SeatNewStudentView.as_view(), name="ops-classroom-seat-new"),
