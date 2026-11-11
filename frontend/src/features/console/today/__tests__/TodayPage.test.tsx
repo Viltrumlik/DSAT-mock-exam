@@ -21,14 +21,14 @@ const LESSON = (id: number, name: string, phase: string, register: Record<string
   starts_at: "2026-11-11T10:00:00+05:00",
   ends_at: "2026-11-11T11:30:00+05:00",
   phase,
-  register: { roster: 8, marked: 0, present: 0, late: 0, absent: 0, excused: 0, taken: false, state: "OPEN", closes_at: null, ...register },
+  register: { roster: 8, marked: 0, present: 0, late: 0, absent: 0, excused: 0, taken: false, state: "open", closes_at: null, ...register },
 });
 const DATA: Record<string, unknown> = {
   "/classes/admin/lessons/today/": {
     date: "2026-11-11",
     lessons: [
       LESSON(6, "Junior J6 · Math", "ended", {}),
-      LESSON(3, "Foundation F3 · Math", "ended", { marked: 8, present: 8, taken: true, state: "LOCKED" }),
+      LESSON(3, "Foundation F3 · Math", "ended", { marked: 8, present: 8, taken: true, state: "closed" }),
     ],
     counts: { lessons: 2, now: 0, not_marked: 1, no_teacher: 0 },
   },

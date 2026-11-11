@@ -10,7 +10,7 @@ const row = (phase: LessonRow["phase"], register: Partial<LessonRow["register"]>
   starts_at: "2026-11-11T13:30:00+05:00",
   ends_at: "2026-11-11T15:00:00+05:00",
   phase,
-  register: { roster: 8, marked: 0, present: 0, late: 0, absent: 0, excused: 0, taken: false, state: "OPEN", closes_at: null, ...register },
+  register: { roster: 8, marked: 0, present: 0, late: 0, absent: 0, excused: 0, taken: false, state: "open", closes_at: null, ...register },
 });
 
 describe("a lesson's verdict", () => {
@@ -20,14 +20,14 @@ describe("a lesson's verdict", () => {
     expect(lessonVerdict(row("ended", { taken: true, marked: 8 })).text).toBe("8 / 8 marked");
     expect(lessonVerdict(row("upcoming", {}, null)).text).toBe("No teacher");
     expect(lessonVerdict(row("upcoming")).text).toBe("Starts 13:30");
-    expect(lessonVerdict(row("ended", { state: "LOCKED" })).text).toBe("Closed unmarked");
+    expect(lessonVerdict(row("ended", { state: "closed" })).text).toBe("Closed unmarked");
     expect(lessonVerdict({ ...row("unknown"), starts_at: null }).text).toBe("Time not set");
   });
 
   it("counts a register as fixable only when ended, unmarked and still open", () => {
     expect(isNotMarked(row("ended"))).toBe(true);
     expect(isNotMarked(row("ended", { state: "open" }))).toBe(true);
-    expect(isNotMarked(row("ended", { state: "LOCKED" }))).toBe(false);
+    expect(isNotMarked(row("ended", { state: "closed" }))).toBe(false);
     expect(isNotMarked(row("ended", { taken: true }))).toBe(false);
     expect(isNotMarked(row("now"))).toBe(false);
   });

@@ -16,7 +16,7 @@ export type LessonRow = {
     absent: number;
     excused: number;
     taken: boolean;
-    /** classes.attendance_window.marking_state: PENDING / OPEN / LOCKED. */
+    /** The register window: "not_yet" / "open" / "closed" (classes.lessons_today). */
     state: string;
     closes_at: string | null;
   };
