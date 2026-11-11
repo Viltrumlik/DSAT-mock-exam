@@ -50,12 +50,13 @@ def attendance_part(user) -> dict:
                 "weekdays": sorted(lesson_weekdays(room)), "lesson_time": room.lesson_time or "",
             })
 
-    # Nine weeks (this one and the eight before): the pattern's span. A learner in three classes meeting
-    # three times a week holds 81 marks in it; 200 leaves room and still bounds the reply.
+    # Nine weeks (this one and the eight before): the pattern's span. No row cap: a cap shared by every class
+    # dropped the oldest marks of a learner in many classes, and the pattern read them as unmarked (Codex,
+    # #380). The window bounds the reply anyway — at most one mark per class per day.
     since = timezone.localdate() - timedelta(days=62)
     rows = list(
         AttendanceRecord.objects.filter(student=user, session__date__gte=since)
-        .select_related("session__classroom").order_by("-session__date", "-pk")[:200]
+        .select_related("session__classroom").order_by("-session__date", "-pk")
     )
     reasons = dict(LcupAbsenceReason.objects.values_list("lcup_reason_id", "title"))
     pushes = {

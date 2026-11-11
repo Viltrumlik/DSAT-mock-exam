@@ -204,6 +204,7 @@ export function PersonHeader({
           </Button>
           <Menu
             label="More actions"
+            disabled={busy}
             items={[
               { label: "Log out everywhere", icon: "logout", onSelect: onRevoke },
               { label: "Delete account", icon: "trash", danger: true, onSelect: onDelete },

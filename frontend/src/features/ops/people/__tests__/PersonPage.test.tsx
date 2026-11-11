@@ -565,6 +565,20 @@ describe("the page around the tabs", () => {
     expect(toast).toHaveBeenCalledWith({ tone: "success", message: "Account frozen." });
   });
 
+  it("keeps ⋯ shut while an action is in flight (Codex, #380)", async () => {
+    route(core());
+    let release!: () => void;
+    post.mockImplementation(() => new Promise((r) => (release = () => r({ data: { results: [{ id: 7, ok: true }] } }))));
+    await renderPage();
+    const more = host.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!;
+    expect(more.disabled).toBe(false);
+    await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Freeze")!.click());
+    expect(more.disabled).toBe(true);
+    await act(async () => release());
+    for (let i = 0; i < 3; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(more.disabled).toBe(false);
+  });
+
   it("asks before logging out everywhere, then says how many devices", async () => {
     route(core());
     post.mockResolvedValue({ data: { revoked: 2 } });

@@ -152,6 +152,31 @@ class PersonCoreTests(TestCase):
         [paired] = [c for c in body["classes"] if c["id"] == self.paired.pk]
         self.assertEqual((paired["weekdays"], paired["lesson_time"]), ([0, 2, 4], "15:00"))
 
+    def test_the_nine_weeks_keep_every_mark_however_many_classes(self):
+        """No shared row cap (Codex, #380): a learner in many classes keeps the oldest marks of the window."""
+        from datetime import date, timedelta
+        from unittest import mock
+
+        from classes.models_attendance import AttendanceRecord, AttendanceSession
+
+        wednesday = date(2026, 11, 11)
+        rooms = [self.paired] + [
+            Classroom.objects.create(name=f"Extra {i}", subject="MATH", created_by=self.teacher, teacher=self.teacher)
+            for i in range(4)
+        ]
+        for room in rooms[1:]:
+            ClassroomMembership.objects.create(classroom=room, user=self.aziz, role="STUDENT")
+        for room in rooms:
+            for back in range(0, 62, 1):  # every day of the window: 5 × 62 = 310 marks
+                s = AttendanceSession.objects.create(classroom=room, date=wednesday - timedelta(days=back))
+                AttendanceRecord.objects.create(session=s, student=self.aziz, status="PRESENT")
+        api = APIClient()
+        api.force_authenticate(self.admin)
+        with mock.patch("users.people_parts.timezone.localdate", return_value=wednesday):
+            body = api.get(f"/api/users/admin/people/{self.aziz.pk}/attendance/", HTTP_HOST=HOST).json()
+        self.assertEqual(len(body["recent"]), 310)
+        self.assertEqual(body["recent"][-1]["date"], "2026-09-11")
+
     def test_out_of_scope_or_missing_is_404_and_learners_are_403(self):
         self.assertEqual(self.get(999999).status_code, 404)
         self.assertEqual(self.get(self.aziz.pk, user=self.aziz).status_code, 403)
