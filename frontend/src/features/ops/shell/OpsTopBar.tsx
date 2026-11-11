@@ -3,6 +3,8 @@
 import { useEffect, useState, type RefObject } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
+import { AttentionBell } from "@/features/console/AttentionBell";
+import type { AttentionSource } from "@/features/console/attention";
 import { UserMenu } from "@/features/console/UserMenu";
 import { cn } from "@/lib/cn";
 import { OPS_SIDEBAR_ID } from "./OpsSidebar";
@@ -24,6 +26,7 @@ export function OpsTopBar({
   menuButtonRef,
   onOpenSearch,
   otherConsole,
+  attention = [],
   config = OPS_CONSOLE,
 }: {
   pathname: string;
@@ -35,6 +38,8 @@ export function OpsTopBar({
   onOpenSearch: () => void;
   /** The other console's name and address, for the switch; `null` when this person may not open it. */
   otherConsole: { label: string; href: string } | null;
+  /** "Needs you" for the bell; empty for a role that reads none of it (no bell then). */
+  attention?: readonly AttentionSource[];
   /** Which console this bar belongs to — its home, its first crumb, its nav. */
   config?: Pick<ConsoleConfig, "root" | "crumb" | "groups">;
 }) {
@@ -127,6 +132,7 @@ export function OpsTopBar({
         </div>
       ) : null}
 
+      <AttentionBell sources={attention} />
       <UserMenu me={me} />
     </header>
   );

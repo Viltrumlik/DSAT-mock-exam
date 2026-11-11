@@ -1,0 +1,73 @@
+"use client";
+
+import Link from "next/link";
+
+import { Icon } from "@/components/ui/Icon";
+import type { AttentionSource } from "./attention";
+
+const TONE = {
+  critical: "bg-ms-critical-soft text-ms-critical-fg",
+  attention: "bg-ms-attention-soft text-ms-attention-fg",
+  info: "bg-ms-info-soft text-ms-info-fg",
+} as const;
+
+/**
+ * The "Needs you" list — the dashboard's card and the bell's panel show the same rows. Items first,
+ * most urgent first (the sources' order); then a line for each source still loading or failed.
+ * "Nothing needs you" is said only when every source answered and none has anything.
+ */
+export function AttentionList({ sources, onNavigate }: { sources: readonly AttentionSource[]; onNavigate?: () => void }) {
+  const items = sources.flatMap((s) => (s.item ? [s.item] : []));
+  const loading = sources.filter((s) => s.status === "loading");
+  const failed = sources.filter((s) => s.status === "error");
+
+  return (
+    <div className="flex flex-col">
+      {items.map((item) => (
+        <div key={item.id} className="flex items-center gap-3.5 border-b border-ms-line py-3 last:border-b-0">
+          <span className={`grid size-10 shrink-0 place-items-center rounded-full ${TONE[item.tone]}`}>
+            <Icon name={item.icon} />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-[15px] font-semibold leading-5 text-ms-fg">{item.title}</span>
+            {item.detail ? <span className="truncate text-[13px] leading-[18px] text-ms-fg-3">{item.detail}</span> : null}
+          </span>
+          <Link
+            href={item.action.href}
+            onClick={onNavigate}
+            className="ms-transition ms-press inline-flex min-h-10 shrink-0 items-center gap-1 rounded-ms-btn bg-ms-surface-2 px-3.5 text-[14px] font-semibold text-ms-fg hover:bg-ms-surface-3"
+          >
+            {item.action.label}
+            <Icon name="right" size="sm" />
+          </Link>
+        </div>
+      ))}
+      {loading.length ? (
+        <div aria-live="polite" className="flex flex-col gap-2.5 py-3">
+          {loading.map((s) => (
+            <span key={s.id} className="flex items-center gap-3.5">
+              <span aria-hidden="true" className="animate-ms-shimmer size-10 shrink-0 rounded-full" />
+              <span aria-hidden="true" className="animate-ms-shimmer h-3.5 w-1/2 rounded-[6px]" />
+              <span className="sr-only">Checking {s.label}…</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {failed.map((s) => (
+        <div key={s.id} className="flex items-center gap-3 py-2.5 text-[14px]">
+          <Icon name="alert" size="sm" className="text-ms-critical-fg" />
+          <span className="flex-1 text-ms-critical-fg">Couldn’t check {s.label}.</span>
+          <button type="button" onClick={s.retry} className="ms-transition min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-surface-2">
+            Retry
+          </button>
+        </div>
+      ))}
+      {items.length === 0 && loading.length === 0 && failed.length === 0 ? (
+        <p className="flex items-center gap-2.5 py-4 text-[15px] text-ms-fg-2">
+          <Icon name="ok" className="text-ms-positive-fg" />
+          Nothing needs you right now.
+        </p>
+      ) : null}
+    </div>
+  );
+}
