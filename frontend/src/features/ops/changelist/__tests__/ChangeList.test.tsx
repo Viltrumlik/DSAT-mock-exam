@@ -20,6 +20,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const { ChangeList, pageWindow } = await import("../ChangeList");
+const { toast } = await import("@/features/console/toast");
 
 type Row = { id: number; name: string; joined: string };
 
@@ -417,6 +418,36 @@ describe("ChangeList chip bar and filter column", () => {
     expect(typed.defaultPrevented).toBe(false);
     expect(document.activeElement).toBe(other);
     other.remove();
+  });
+});
+
+describe("ChangeList motion", () => {
+  it("lights up, once, the row you come back to from its page", () => {
+    window.sessionStorage.setItem("ms-flash", "/ops/students#2");
+    render({ rowHref: (r) => "/ops/students/" + r.id });
+    const flashing = [...host.querySelectorAll("tbody tr")].filter((tr) => tr.querySelector(".animate-ms-flash"));
+    expect(flashing.map((tr) => tr.getAttribute("data-row-id"))).toEqual(["2"]);
+    expect(window.sessionStorage.getItem("ms-flash")).toBeNull();
+  });
+
+  it("notes the row it opens, so coming back finds it", () => {
+    render({ rowHref: (r) => "/ops/students/" + r.id });
+    click(host.querySelectorAll("tbody tr")[2].querySelectorAll("td")[1]);
+    expect(window.sessionStorage.getItem("ms-flash")).toBe("/ops/students#3");
+    window.sessionStorage.clear();
+  });
+
+  it("clears the filters at once and offers Undo, which puts them back", () => {
+    const show = vi.spyOn(toast, "show");
+    search = "status=frozen_debt&q=ali";
+    render();
+    click(buttons("Clear all")[0]);
+    expect(lastAddress().params.has("status")).toBe(false);
+    const shown = show.mock.calls.at(-1)![0];
+    expect(shown.message).toBe("Cleared 1 filter");
+    act(() => void shown.undo!());
+    expect(lastAddress().params.get("status")).toBe("frozen_debt");
+    show.mockRestore();
   });
 });
 

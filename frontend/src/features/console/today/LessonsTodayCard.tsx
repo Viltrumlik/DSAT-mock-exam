@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 
 import { Icon } from "@/components/ui/Icon";
+import { Burst } from "../Burst";
 import { fetchLessonsToday, lessonsTodayKey } from "../lessonsToday";
 import { LessonsTimeline, LiveDot } from "./LessonsTimeline";
 
@@ -74,9 +75,11 @@ export function LessonsTodayCard({ style }: { style?: CSSProperties }) {
           </span>
         ) : null}
         {allMarked ? (
-          <span className={`animate-ms-fade-in ${BADGE} bg-ms-positive-soft text-ms-positive-fg`}>
+          <span className={`animate-ms-fade-in relative ${BADGE} bg-ms-positive-soft text-ms-positive-fg`}>
             <Icon name="check" size="sm" className="animate-ms-check-pop" />
             All registers marked
+            {/* A whole job done: the Motion board's small celebration, once a day. */}
+            <Burst id="registers-marked" />
           </span>
         ) : null}
         <Link

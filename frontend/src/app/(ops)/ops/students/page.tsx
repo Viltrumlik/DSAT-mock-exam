@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import type { ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import type { StudentRow } from "@/features/ops/changelist/peopleApi";
 import { formatSom } from "@/features/console/entitySearch";
+import { RollNumber } from "@/features/console/RollNumber";
 import { PeopleList } from "@/features/ops/users/PeopleList";
 import {
   joinedColumn,
@@ -48,7 +49,7 @@ const COLUMNS: ChangeListColumn<StudentRow>[] = [
     className: "text-right",
     render: (r) =>
       r.lcup.balance !== null && r.lcup.balance < 0 ? (
-        <span className="font-semibold tabular-nums text-ms-critical-fg">{formatSom(-r.lcup.balance)}</span>
+        <RollNumber value={formatSom(-r.lcup.balance)} className="font-semibold tabular-nums text-ms-critical-fg" />
       ) : (
         <span className="text-ms-fg-3">—</span>
       ),

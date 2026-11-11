@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { CommandPalette } from "@/features/console/CommandPalette";
+import { ShortcutsDialog } from "@/features/console/ShortcutsDialog";
+import { Toaster } from "@/features/console/toast";
+import { usePresence } from "@/features/console/ui/presence";
 import { useAdminAttention, useBuilderAttention } from "@/features/console/attention";
 import { consoleCommands } from "@/features/console/commands";
 import { entityScope } from "@/features/console/entitySearch";
@@ -141,6 +144,8 @@ export function OpsShell({
     return () => document.removeEventListener("keydown", onKey);
   }, [mobileOpen]);
 
+  const scrim = usePresence(mobileOpen);
+
   // Focus follows the drawer: into it on open, back to the hamburger on close.
   useEffect(() => {
     if (mobileOpen) {
@@ -161,15 +166,17 @@ export function OpsShell({
         Skip to content
       </a>
 
-      {mobileOpen ? (
+      {scrim.mounted ? (
         <button
           type="button"
           tabIndex={-1}
           aria-label="Close menu"
           onClick={() => setMobileOpen(false)}
-          className="animate-ms-scrim-in fixed inset-0 z-30 bg-ms-scrim lg:hidden"
+          className={cn("fixed inset-0 z-30 bg-ms-scrim lg:hidden", scrim.closing ? "animate-ms-scrim-out pointer-events-none" : "animate-ms-scrim-in")}
         />
       ) : null}
+      <Toaster />
+      <ShortcutsDialog />
 
       <OpsSidebar
         groups={groups}

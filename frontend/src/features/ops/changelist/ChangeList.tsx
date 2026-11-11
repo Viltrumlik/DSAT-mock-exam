@@ -1,12 +1,13 @@
 "use client";
 
 import { Fragment, useEffect, useState, type MouseEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { RollNumber } from "@/features/console/RollNumber";
+import { clearFlash, markReturn, peekFlash } from "@/features/console/flash";
+import { toast } from "@/features/console/toast";
 import {
   BulkBar,
   Button,
@@ -17,9 +18,11 @@ import {
   FilterChip,
   Pagination,
   SearchField,
+  Sheet,
   bulkButtonClass,
   chipClass,
   follow,
+  usePresence,
 } from "@/features/console/ui";
 import { cn } from "@/lib/cn";
 import { PAGE_SIZES, useChangeListParams, type ChangeListPatch } from "./useChangeListParams";
@@ -152,6 +155,7 @@ export function ChangeList<R extends { id: number }>({
   filterChips,
 }: ChangeListProps<R>) {
   const router = useRouter();
+  const pathname = usePathname();
   const { params, queryString, hrefFor, update } = useChangeListParams(filterKeys);
   const rows = data?.results;
   const filters = data?.filters ?? [];
@@ -195,14 +199,24 @@ export function ChangeList<R extends { id: number }>({
 
   // ── Filters sheet (below 1600 px, where the column does not fit) ──
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // ── The bulk bar sinks out after the last tick is cleared, still saying how many it held ──
+  const barOpen = hasActions && selectedIds.length > 0;
+  const bar = usePresence(barOpen, 120);
+  const [barCount, setBarCount] = useState(0);
+  if (selectedIds.length > 0 && selectedIds.length !== barCount) setBarCount(selectedIds.length);
+
+  // ── "You are here": the row you open is noted; coming back to this list, it glows once ──
+  const [flashId] = useState(() => peekFlash(pathname));
+  const [flashLive, setFlashLive] = useState(true);
+  const rowsShown = rows?.length ?? 0;
   useEffect(() => {
-    if (!sheetOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSheetOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [sheetOpen]);
+    if (!flashId || !rowsShown) return;
+    clearFlash();
+    [...document.querySelectorAll<HTMLElement>("[data-row-id]")].find((el) => el.dataset.rowId === flashId)?.scrollIntoView?.({ block: "nearest" });
+    const t = window.setTimeout(() => setFlashLive(false), 1600);
+    return () => window.clearTimeout(t);
+  }, [flashId, rowsShown]);
 
   const go = (patch: ChangeListPatch, keepPage = false) => update(patch, keepPage);
   const colSpan = columns.length + (hasActions ? 1 : 0);
@@ -221,6 +235,13 @@ export function ChangeList<R extends { id: number }>({
       return [{ key: f.key, label: `${f.label}: ${option?.label ?? value}` }];
     });
   const clearChips: ChangeListPatch = Object.fromEntries(chips.map((c) => [c.key, null]));
+  // Clearing filters is exactly reversible, so it runs at once and offers Undo (Overlays board).
+  const clearAll = () => {
+    const before: ChangeListPatch = Object.fromEntries(chips.map((c) => [c.key, active[c.key] ?? null]));
+    const n = chips.length;
+    go(clearChips);
+    toast.show({ icon: "filter", message: `Cleared ${n} ${n === 1 ? "filter" : "filters"}`, undo: () => go(before) });
+  };
   const quick = filters[0] && filters[0].options.length <= QUICK_MAX ? filters[0] : null;
   const narrowed = Boolean(params.q) || chips.length > 0;
 
@@ -296,7 +317,7 @@ export function ChangeList<R extends { id: number }>({
                 {chips.map((c) => (
                   <FilterChip key={c.key} label={c.label} onRemove={() => go({ [c.key]: null })} />
                 ))}
-                <Button variant="ghost" size="sm" onClick={() => go(clearChips)}>
+                <Button variant="ghost" size="sm" onClick={clearAll}>
                   Clear all
                 </Button>
               </>
@@ -401,7 +422,7 @@ export function ChangeList<R extends { id: number }>({
                             detail={narrowed ? "Try another search, or clear the filters." : undefined}
                             action={
                               chips.length ? (
-                                <Button size="sm" onClick={() => go(clearChips)}>
+                                <Button size="sm" onClick={clearAll}>
                                   Clear filters
                                 </Button>
                               ) : undefined
@@ -420,6 +441,7 @@ export function ChangeList<R extends { id: number }>({
                               // A held modifier asks for a new tab: that is the first cell's link,
                               // never a navigation in place that throws the list away.
                               if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                              markReturn(pathname, row.id);
                               router.push(href);
                             }
                           : onRowClick
@@ -428,6 +450,7 @@ export function ChangeList<R extends { id: number }>({
                         const cell = cn(
                           "h-(--ms-h-row) border-b border-ms-line px-3 py-1.5 align-middle text-ms-fg",
                           isSelected ? "bg-ms-primary-soft" : "group-hover/row:bg-ms-surface",
+                          flashLive && flashId === String(row.id) && "animate-ms-flash",
                         );
                         return (
                           <Fragment key={row.id}>
@@ -443,6 +466,7 @@ export function ChangeList<R extends { id: number }>({
                               </tr>
                             ) : null}
                             <tr
+                              data-row-id={row.id}
                               onClick={openRow}
                               className={cn("group/row animate-ms-fade-in [&:last-child>td]:border-b-0", openRow && "cursor-pointer")}
                               style={{ animationDelay: `${Math.min(index, 12) * 18}ms` }}
@@ -477,7 +501,10 @@ export function ChangeList<R extends { id: number }>({
                                       href={href}
                                       // A page of 50–100 rows would otherwise prefetch every change form on view.
                                       prefetch={false}
-                                      onClick={(e) => e.stopPropagation()}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        markReturn(pathname, row.id);
+                                      }}
                                       className="block max-w-full truncate rounded-[6px] text-left font-semibold text-ms-fg hover:text-ms-primary-text hover:underline"
                                     >
                                       {col.render(row)}
@@ -561,9 +588,9 @@ export function ChangeList<R extends { id: number }>({
       </section>
 
       {/* ── bulk bar: floats at the bottom of the screen while rows are ticked ── */}
-      {hasActions && selectedIds.length > 0 ? (
+      {bar.mounted ? (
         <div className="pointer-events-none sticky bottom-4 z-30 mt-3 flex justify-center px-4">
-          <BulkBar count={selectedIds.length} onClear={() => setSelected(new Set())}>
+          <BulkBar count={selectedIds.length || barCount} closing={bar.closing} onClear={() => setSelected(new Set())}>
             {actions!.map((a) => (
               <button
                 key={a.key}
@@ -582,32 +609,10 @@ export function ChangeList<R extends { id: number }>({
         </div>
       ) : null}
 
-      {/* ── filters as a side sheet below xl. In a portal: a transformed ancestor would trap `fixed`. ── */}
-      {sheetOpen
-        ? createPortal(
-            <div className="ms fixed inset-0 z-50 min-[1600px]:hidden">
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-label="Close filters"
-                onClick={() => setSheetOpen(false)}
-                className="animate-ms-scrim-in absolute inset-0 bg-ms-scrim"
-              />
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-label="Filters"
-                className="animate-ms-sheet-in-right absolute inset-y-0 right-0 w-80 max-w-[88vw] overflow-y-auto bg-ms-card px-4 pb-6 pt-3 shadow-ms-3"
-              >
-                {filterColumn(
-                  () => setSheetOpen(false),
-                  <Button variant="ghost" size="sm" icon="x" aria-label="Close" autoFocus onClick={() => setSheetOpen(false)} />,
-                )}
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      {/* ── filters as a side sheet below 1600 px (in a portal: a transformed ancestor would trap `fixed`) ── */}
+      <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Filters" className="min-[1600px]:hidden">
+        {filterColumn(() => setSheetOpen(false))}
+      </Sheet>
     </div>
   );
 }

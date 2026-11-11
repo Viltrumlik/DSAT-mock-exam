@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { usePresence } from "./ui/presence";
 import { useRouter } from "next/navigation";
 
 import { Icon } from "@/components/ui/Icon";
@@ -109,7 +110,9 @@ export function CommandPalette({
     return out;
   }, [results]);
 
-  if (!open || typeof document === "undefined") return null;
+  // Mounted while it plays its exit (Motion board: things leave the way they came).
+  const { mounted, closing } = usePresence(open);
+  if (!mounted || typeof document === "undefined") return null;
 
   // A modal dialog keeps focus: Tab and Shift+Tab cycle through its own controls, never the page
   // behind the scrim.
@@ -154,14 +157,18 @@ export function CommandPalette({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] font-ms-sans text-[15px] text-ms-fg">
-      <div aria-hidden="true" className="animate-ms-scrim-in absolute inset-0 bg-ms-scrim" onClick={() => onOpenChange(false)} />
+    <div className={`fixed inset-0 z-[70] font-ms-sans text-[15px] text-ms-fg${closing ? " pointer-events-none" : ""}`}>
+      <div
+        aria-hidden="true"
+        className={`${closing ? "animate-ms-scrim-out" : "animate-ms-scrim-in"} absolute inset-0 bg-ms-scrim`}
+        onClick={() => onOpenChange(false)}
+      />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search"
         onKeyDown={trapTab}
-        className="animate-ms-dialog-in absolute inset-0 flex flex-col overflow-hidden bg-ms-card shadow-ms-3 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-[12vh] sm:max-h-[min(560px,76vh)] sm:w-[min(640px,calc(100vw-32px))] sm:-translate-x-1/2 sm:rounded-ms-pop"
+        className={`${closing ? "animate-ms-dialog-out" : "animate-ms-dialog-in"} absolute inset-0 flex flex-col overflow-hidden bg-ms-card shadow-ms-3 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-[12vh] sm:max-h-[min(560px,76vh)] sm:w-[min(640px,calc(100vw-32px))] sm:-translate-x-1/2 sm:rounded-ms-pop`}
       >
         <div className="flex h-14 shrink-0 items-center gap-3 border-b border-ms-border px-4">
           <Icon name="search" size="lg" className="text-ms-fg-3" />

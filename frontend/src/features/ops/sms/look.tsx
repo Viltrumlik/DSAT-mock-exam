@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon } from "@/components/ui/Icon";
+import { useChanged } from "@/features/console/useChanged";
 import type { ReactNode } from "react";
 
 import { reasonOf } from "./format";
@@ -22,10 +24,10 @@ export function toneOf(status: SmsStatus | string): Tone {
 }
 
 const TONE_CLASS: Record<Tone, string> = {
-  delivered: "bg-success-soft text-success",
-  undelivered: "bg-warning-soft text-warning",
-  rejected: "bg-danger-soft text-danger",
-  pending: "bg-surface-2 text-muted-foreground",
+  delivered: "bg-ms-positive-soft text-ms-positive-fg",
+  undelivered: "bg-ms-attention-soft text-ms-attention-fg",
+  rejected: "bg-ms-critical-soft text-ms-critical-fg",
+  pending: "bg-ms-neutral-soft text-ms-neutral-fg",
 };
 
 /** The fill each state wears in a chart. */
@@ -53,15 +55,32 @@ export function operatorColor(operator: string): string {
 
 type PillMessage = Pick<SmsMessage, "status" | "eskiz_status" | "error" | "attempts" | "checked_at">;
 
+/**
+ * Delivery ticks (design handoff v0.3, Motion board): sent = one tick, delivered = two — the second
+ * slides in when a delivery lands while you watch; a failure turns them into "!".
+ */
+function Ticks({ tone, fresh }: { tone: Tone; fresh: boolean }) {
+  if (tone === "undelivered" || tone === "rejected") return <Icon name="alert" size="sm" className="size-3.5 shrink-0" />;
+  return (
+    <span aria-hidden="true" data-ticks={tone === "delivered" ? 2 : 1} className="relative inline-flex h-3.5 w-[19px] shrink-0">
+      <Icon name="check" size="sm" className="absolute left-0 top-0 size-3.5" />
+      {tone === "delivered" ? (
+        <Icon name="check" size="sm" className={`absolute left-[5px] top-0 size-3.5 ${fresh ? "animate-ms-tick-in" : ""}`} />
+      ) : null}
+    </span>
+  );
+}
+
 /** Where an SMS stands, in words, in its state's colour. */
 export function StatusPill({ message }: { message: PillMessage }) {
   const tone = toneOf(message.status);
+  const fresh = useChanged(tone);
   return (
     <span
       data-tone={tone}
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[12px] font-medium ${TONE_CLASS[tone]}`}
+      className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-[12px] font-semibold ${TONE_CLASS[tone]}`}
     >
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
+      <Ticks tone={tone} fresh={fresh} />
       {reasonOf(message)}
     </span>
   );

@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { ControlsSection } from "./ControlsSection";
 import { IconSection } from "./IconSection";
 import { MotionSection } from "./MotionSection";
+import { OverlaysSection } from "./OverlaysSection";
 import { TokenSection } from "./TokenSection";
 
 function Section({ id, over, title, children }: { id: string; over: string; title: string; children: ReactNode }) {
@@ -142,6 +143,10 @@ export default function DesignPreview() {
 
         <Section id="controls" over="6 · Controls" title="Buttons, badges, chips and the list’s parts">
           <ControlsSection />
+        </Section>
+
+        <Section id="overlays" over="7 · Overlays" title="Dialogs, sheets, menus, tooltips and toasts — coming and going">
+          <OverlaysSection />
         </Section>
       </div>
       <Probes />
