@@ -110,7 +110,7 @@ export default function TriageQueuePage() {
       </Link>
 
       <div>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">Triage Queue</h1>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Review queue</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Classify imported questions with real taxonomy, then approve. Metadata is never fabricated —
           AI suggestions are advisory and must be confirmed by a person.

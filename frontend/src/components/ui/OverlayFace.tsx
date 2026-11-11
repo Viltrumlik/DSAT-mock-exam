@@ -13,10 +13,10 @@ import { createContext, useContext, type ReactNode } from "react";
  * `:root`, where next/font's `--font-geist-sans` is not defined, and so resolves to nothing.
  *
  * An overlay therefore wears `ds-app`, the UI sans, unless it opens inside a surface set in the body's
- * face. The staff consoles are: their pages never took `ds-app` and read in Georgia top to bottom —
- * nav, headings, labels, inputs — so a sans dialog would be the one sans thing in them. Each console
- * wraps its pages in `<OverlayFaceProvider face="body">`, and its overlays match the page they open
- * over. A console that moves to the sans deletes its provider in the same change.
+ * face. The staff consoles moved to the sans with the redesign's shell (`.ms`) and deleted their
+ * providers; what still reads in Georgia — the Builder's full-screen editors, which show a question
+ * as the student sees it — wraps itself in `<OverlayFaceProvider face="body">`, so its overlays match
+ * the page they open over.
  *
  * Reading text that must stay serif inside an overlay says so itself (`font-[Georgia]`, as the
  * question review does), and wins over the inherited sans.

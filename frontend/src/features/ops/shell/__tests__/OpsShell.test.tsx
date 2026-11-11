@@ -100,7 +100,7 @@ describe("OpsShell", () => {
     expect(sidebar().querySelector('a[href="/ops/students"]')).not.toBeNull();
   });
 
-  it("shows the breadcrumb, the user's name and Log out in the top bar", () => {
+  it("shows the breadcrumb and the person in the top bar, with Log out in their menu", () => {
     render("/ops/classrooms/12", SUPER_ADMIN);
     const crumb = container.querySelector('nav[aria-label="Breadcrumb"]') as HTMLElement;
     expect(crumb.textContent).toBe("AdminClassrooms");
@@ -108,8 +108,31 @@ describe("OpsShell", () => {
     expect(crumb.querySelector('a[href="/ops/classrooms"]')).not.toBeNull();
     expect(container.querySelector("header")?.textContent).toContain("Aziza Karimova");
 
+    // Log out moved into the person's menu (Shell board).
+    const person = container.querySelector<HTMLButtonElement>('header button[aria-haspopup="menu"]')!;
+    act(() => person.click());
     act(() => button("Log out")!.click());
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens ⌘K from the search pill, offering the pages of this person's menu", () => {
+    render("/ops/students", ADMIN);
+    const pill = [...container.querySelectorAll("header button")].find((b) => b.textContent?.includes("Search pages"))!;
+    act(() => (pill as HTMLButtonElement).click());
+    const options = [...document.body.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? "");
+    expect(options.some((o) => o.includes("Students"))).toBe(true);
+    expect(options.some((o) => o.includes("Broadcast"))).toBe(false);
+    act(() => {
+      document.body.querySelector('[role="combobox"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+  });
+
+  it("offers the other console in the switch", () => {
+    render("/ops/students", SUPER_ADMIN);
+    const group = container.querySelector('[role="group"][aria-label="Console"]') as HTMLElement;
+    expect(group.querySelector('[aria-current="page"]')?.textContent).toBe("Admin");
+    expect(group.querySelector("a")?.textContent).toBe("Builder");
+    expect(group.querySelector("a")?.getAttribute("href")).toBe("/builder");
   });
 
   it("falls back to the username when there is no name", () => {
@@ -119,17 +142,39 @@ describe("OpsShell", () => {
 
   it("collapses to an icon rail and remembers it", () => {
     render("/ops/students", SUPER_ADMIN);
-    expect(sidebar().className).toContain("lg:w-60");
+    expect(sidebar().className).toContain("lg:w-(--ms-sidebar)");
     act(() => button("Collapse sidebar")!.click());
-    expect(sidebar().className).toContain("lg:w-16");
+    expect(sidebar().className).toContain("lg:w-(--ms-rail)");
     expect(window.localStorage.getItem("mastersat.ops.sidebar.collapsed")).toBe("1");
 
     // A fresh mount reads the choice back.
     act(() => root.unmount());
     root = createRoot(container);
     render("/ops/students", SUPER_ADMIN);
-    expect(sidebar().className).toContain("lg:w-16");
+    expect(sidebar().className).toContain("lg:w-(--ms-rail)");
     expect(button("Expand sidebar")).toBeTruthy();
+  });
+
+  it("folds the rail with [ — but not while the person is typing", () => {
+    render("/ops/students", SUPER_ADMIN);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "[" }));
+    });
+    expect(sidebar().className).toContain("lg:w-(--ms-rail)");
+
+    const input = document.createElement("input");
+    container.appendChild(input);
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "[", bubbles: true }));
+    });
+    expect(sidebar().className).toContain("lg:w-(--ms-rail)");
+  });
+
+  it("is the console surface: the redesign's tokens and face, Admin temperature", () => {
+    render("/ops/students", SUPER_ADMIN);
+    const shell = container.firstElementChild as HTMLElement;
+    expect(shell.classList.contains("ms")).toBe(true);
+    expect(shell.hasAttribute("data-ms-temp")).toBe(false);
   });
 
   it("still renders when storage throws", () => {
@@ -138,7 +183,7 @@ describe("OpsShell", () => {
     });
     try {
       render("/ops", SUPER_ADMIN);
-      expect(sidebar().className).toContain("lg:w-60");
+      expect(sidebar().className).toContain("lg:w-(--ms-sidebar)");
     } finally {
       spy.mockRestore();
     }
@@ -187,12 +232,29 @@ describe("OpsShell for the builder", () => {
     expect(sidebar().querySelector('a[title="MasterSAT builder"]')?.getAttribute("href")).toBe("/builder");
     const captions = [...sidebar().querySelectorAll("p")].map((p) => p.textContent);
     expect(captions).toEqual(["Learning", "Simulation"]);
-    // Only Triage Queue is current — not Question Bank, which it nests under.
+    // Only the Review queue is current — not the Question bank, which it nests under.
     const current = [...sidebar().querySelectorAll('[aria-current="page"]')].map((a) => a.getAttribute("href"));
     expect(current).toEqual(["/builder/question-bank/triage"]);
     const crumb = container.querySelector('nav[aria-label="Breadcrumb"]') as HTMLElement;
-    expect(crumb.textContent).toBe("BuilderTriage Queue");
+    expect(crumb.textContent).toBe("BuilderReview queue");
     expect(crumb.querySelector('a[href="/builder"]')).not.toBeNull();
+  });
+
+  it("wears the Builder temperature", () => {
+    render("/builder", SUPER_ADMIN, BUILDER_CONSOLE);
+    expect((container.firstElementChild as HTMLElement).getAttribute("data-ms-temp")).toBe("builder");
+  });
+
+  it("gives a test admin no switch to Admin, where AuthGuard would turn them away", () => {
+    render("/builder", { role: "test_admin", permissions: ["*"], username: "author1" }, BUILDER_CONSOLE);
+    expect(container.querySelector('[role="group"][aria-label="Console"]')).toBeNull();
+    const pill = [...container.querySelectorAll("header button")].find((b) => b.textContent?.includes("Search pages"))!;
+    act(() => (pill as HTMLButtonElement).click());
+    const options = [...document.body.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? "");
+    expect(options.some((o) => o.includes("Switch to Admin"))).toBe(false);
+    act(() => {
+      document.body.querySelector('[role="combobox"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
   });
 
   it("remembers its own collapsed rail, apart from the ops console's", () => {

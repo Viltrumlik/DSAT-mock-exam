@@ -26,7 +26,7 @@ export default function OpsLcupPage() {
   return (
     <div className="space-y-3">
       <header>
-        <h1 className="text-lg font-semibold text-foreground">lc-up</h1>
+        <h1 className="text-lg font-semibold text-foreground">lc-up (CRM link)</h1>
         <p className="text-[13px] text-muted-foreground">
           Groups and their members follow the centre&apos;s CRM. Pair lc-up groups with our classes, link students and
           teachers the sync could not match, and keep an eye on each sync.

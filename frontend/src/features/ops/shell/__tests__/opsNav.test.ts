@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ICON_NAMES } from "@/components/ui/Icon";
 import { ADMIN_OPS_SECTIONS } from "@/features/ops/adminScope";
 import { OPS_NAV_GROUPS, sectionFor, sectionLabel, visibleNav, type OpsNavGroup } from "../opsNav";
 
@@ -12,7 +13,7 @@ const hrefs = (groups: OpsNavGroup[]) => groups.flatMap((g) => g.items.map((i) =
 const captions = (groups: OpsNavGroup[]) => groups.map((g) => g.caption);
 
 describe("OPS_NAV_GROUPS", () => {
-  it("is grouped Django-admin style, in order", () => {
+  it("is grouped as before, with the redesign's clearer names and the Centre in desk order", () => {
     expect(captions([...OPS_NAV_GROUPS])).toEqual([null, "People", "Teaching", "Centre", "Content", "System"]);
     expect(OPS_NAV_GROUPS[0].items.map((i) => i.label)).toEqual(["Dashboard"]);
     expect(OPS_NAV_GROUPS[1].items.map((i) => i.label)).toEqual(["Students", "Public users", "Staff", "Access"]);
@@ -20,13 +21,24 @@ describe("OPS_NAV_GROUPS", () => {
       "Classrooms",
       "Branches",
       "Journals",
-      "Midterms",
+      "Midterm results",
       "Mock sittings",
       "Exam dates",
     ]);
-    expect(OPS_NAV_GROUPS[3].items.map((i) => i.label)).toEqual(["lc-up", "Trials", "Finance", "SMS", "Support", "Shop"]);
+    expect(OPS_NAV_GROUPS[3].items.map((i) => i.label)).toEqual([
+      "Trials",
+      "Finance",
+      "SMS",
+      "lc-up (CRM link)",
+      "Support hours",
+      "Reward shop",
+    ]);
     expect(OPS_NAV_GROUPS[4].items.map((i) => i.label)).toEqual(["Events", "Telegram posts", "Stories", "Surveys"]);
     expect(OPS_NAV_GROUPS[5].items.map((i) => i.label)).toEqual(["Mobile app", "Broadcast"]);
+  });
+
+  it("draws every item with an icon from the design's set", () => {
+    for (const item of OPS_NAV_GROUPS.flatMap((g) => g.items)) expect(ICON_NAMES).toContain(item.icon);
   });
 
   it("no longer lists the old single Users page", () => {
@@ -69,10 +81,10 @@ describe("visibleNav", () => {
       "/ops/access",
       "/ops/classrooms",
       "/ops/branches",
-      "/ops/lcup",
       "/ops/trials",
       "/ops/finance",
       "/ops/sms",
+      "/ops/lcup",
       "/ops/support",
       "/ops/shop",
       "/ops/events",

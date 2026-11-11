@@ -61,7 +61,7 @@ export default function OpsSupportPage() {
     <div className="space-y-5">
       <OpsPageHeader
         section="Support"
-        title="Support teaching"
+        title="Support hours"
         description={
           tab === "hours"
             ? "Who teaches support, and the weekly hours students can book them for. Set once — they keep applying every week."
