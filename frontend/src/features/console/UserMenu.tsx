@@ -9,17 +9,9 @@ import { useTheme } from "next-themes";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { authApi } from "@/lib/api";
 import { avatarTone, displayName, initials, isReadOnly, roleLabel, type MeLike } from "./person";
+import { Avatar } from "./ui";
 
 /** Literal class names so Tailwind sees them: the six muted avatar tones. */
-const TONE = {
-  1: "bg-ms-av1-bg text-ms-av1-fg",
-  2: "bg-ms-av2-bg text-ms-av2-fg",
-  3: "bg-ms-av3-bg text-ms-av3-fg",
-  4: "bg-ms-av4-bg text-ms-av4-fg",
-  5: "bg-ms-av5-bg text-ms-av5-fg",
-  6: "bg-ms-av6-bg text-ms-av6-fg",
-} as const;
-
 const THEMES: { value: "light" | "dark" | "system"; label: string; icon: IconName }[] = [
   { value: "light", label: "Light", icon: "sun" },
   { value: "dark", label: "Dark", icon: "moon" },
@@ -110,9 +102,7 @@ export function UserMenu({ me }: { me: MeLike }) {
         onClick={() => setOpen((o) => !o)}
         className="ms-transition flex min-h-11 items-center gap-2.5 rounded-full py-1 pl-1 pr-1 hover:bg-ms-surface-2 md:pr-2.5"
       >
-        <span className={`grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-semibold tracking-[.02em] ${TONE[avatarTone(me)]}`}>
-          {initials(me)}
-        </span>
+        <Avatar name={name || initials(me)} tone={avatarTone(me)} className="size-9 text-[13px]" />
         <span className="hidden min-w-0 flex-col text-left leading-tight md:flex">
           <span className="max-w-[14rem] truncate text-[14px] font-semibold text-ms-fg">{name}</span>
           <span className="text-[12px] text-ms-fg-3">{role}</span>
