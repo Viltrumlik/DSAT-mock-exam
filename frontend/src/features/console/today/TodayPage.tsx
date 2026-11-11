@@ -13,6 +13,8 @@ import { usersAdminApi } from "@/lib/usersAdminApi";
 import { attentionCount, tashkentMonth, useAdminAttention } from "../attention";
 import { AttentionList } from "../AttentionList";
 import { formatSom } from "../entitySearch";
+import { fetchLessonsToday, lessonsTodayKey } from "../lessonsToday";
+import { RollNumber } from "../RollNumber";
 import { LessonsTodayCard } from "./LessonsTodayCard";
 
 const SHORTCUTS: { href: string; icon: IconName; title: string; cta: string }[] = [
@@ -34,9 +36,10 @@ export function todayHeading(now = new Date()): { greeting: string; date: string
   return { greeting: hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening", date: `${weekday}, ${day}` };
 }
 
-function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+/** A page card; `delay` puts it in reading order as the page arrives. */
+function Card({ title, children, action, delay = 0 }: { title: string; children: React.ReactNode; action?: React.ReactNode; delay?: number }) {
   return (
-    <section className="flex flex-col gap-3 rounded-ms-card bg-ms-card p-5 shadow-ms-1">
+    <section className="animate-ms-card-in flex flex-col gap-3 rounded-ms-card bg-ms-card p-5 shadow-ms-1" style={{ animationDelay: `${delay}ms` }}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-ms-h text-ms-fg">{title}</h2>
         {action}
@@ -51,7 +54,7 @@ function Failed({ what, retry }: { what: string; retry: () => void }) {
     <div className="flex items-center gap-3 rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3.5 py-3 text-[14px]">
       <Icon name="alert" className="text-ms-critical-fg" />
       <span className="flex-1 text-ms-fg">Couldn’t load {what}. This is not zero.</span>
-      <button type="button" onClick={retry} className="ms-transition min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-card">
+      <button type="button" onClick={retry} className="ms-press min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-card">
         Retry
       </button>
     </div>
@@ -68,7 +71,7 @@ function Skeleton({ rows = 3 }: { rows?: number }) {
   );
 }
 
-function Learners({ enabled }: { enabled: boolean }) {
+function Learners({ enabled, delay }: { enabled: boolean; delay?: number }) {
   const q = useQuery({ queryKey: ["users", "population"], queryFn: usersAdminApi.population, enabled });
   if (!enabled) return null;
   const p = q.data;
@@ -80,9 +83,9 @@ function Learners({ enabled }: { enabled: boolean }) {
       ]
     : [];
   return (
-    <Card title="Learners">
+    <Card title="Learners" delay={delay}>
       {q.isPending ? <Skeleton /> : q.isError ? <Failed what="learners" retry={() => void q.refetch()} /> : (
-        <div className="flex flex-col">
+        <div className="animate-ms-fade-in flex flex-col">
           {tiles.map((t) => (
             <Link key={t.href} href={t.href} className="ms-transition -mx-2 flex items-center gap-3 rounded-[12px] px-2 py-2.5 hover:bg-ms-surface">
               <span className="flex min-w-0 flex-1 flex-col">
@@ -92,7 +95,7 @@ function Learners({ enabled }: { enabled: boolean }) {
                 </span>
                 <span className="text-[13px] text-ms-fg-3">{t.sub}</span>
               </span>
-              <span className="text-ms-num tabular-nums text-ms-fg">{t.value}</span>
+              <RollNumber value={t.value} className="text-ms-num tabular-nums text-ms-fg" />
             </Link>
           ))}
         </div>
@@ -101,7 +104,7 @@ function Learners({ enabled }: { enabled: boolean }) {
   );
 }
 
-function DebtByGroup({ enabled }: { enabled: boolean }) {
+function DebtByGroup({ enabled, delay }: { enabled: boolean; delay?: number }) {
   const month = tashkentMonth();
   const q = useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month), enabled, staleTime: 60_000 });
   if (!enabled) return null;
@@ -111,6 +114,7 @@ function DebtByGroup({ enabled }: { enabled: boolean }) {
   return (
     <Card
       title="Where debt sits"
+      delay={delay}
       action={<Link href="/ops/finance" className="text-[14px] font-semibold text-ms-primary-text hover:underline">Open Finance</Link>}
     >
       {q.isPending ? <Skeleton rows={4} /> : q.isError ? <Failed what="debts from lc-up" retry={() => void q.refetch()} /> : groups.length === 0 ? (
@@ -119,7 +123,7 @@ function DebtByGroup({ enabled }: { enabled: boolean }) {
           No one owes this month.
         </p>
       ) : (
-        <div className="flex flex-col gap-2.5">
+        <div className="animate-ms-fade-in flex flex-col gap-2.5">
           <span className="text-[13px] text-ms-fg-3">This month · {formatSom(q.data!.total_debt)}</span>
           {top.map((g) => (
             <div key={g.group}>
@@ -151,6 +155,9 @@ export function TodayPage() {
   const role = String(me?.role ?? "").toLowerCase();
   const desk = isOpsSuperAdmin(me) || isScopedOpsAdmin(me);
   const attention = useAdminAttention(desk);
+  // The same query as the lessons card (one request): the header says how many lessons today.
+  const lessons = useQuery({ queryKey: lessonsTodayKey, queryFn: fetchLessonsToday, enabled: desk, staleTime: 60_000 });
+  const lessonCount = lessons.data?.counts.lessons;
   const settled = attention.every((s) => s.status === "done");
   const count = attentionCount(attention);
   const { greeting, date } = todayHeading();
@@ -159,33 +166,48 @@ export function TodayPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-1">
+      <header className="animate-ms-fade-in flex flex-col gap-1">
         <h1 className="text-ms-display text-ms-fg">{first ? `${greeting}, ${first}` : greeting}</h1>
         <p className="text-ms-body text-ms-fg-2">
           {date}
-          {desk && settled ? (count ? ` · ${count} ${count === 1 ? "thing needs" : "things need"} you` : " · nothing needs you right now") : ""}
+          {desk && lessonCount !== undefined ? ` · ${lessonCount} ${lessonCount === 1 ? "lesson" : "lessons"} today` : ""}
+          {desk && settled ? (
+            count ? (
+              <>
+                {" · "}
+                <b className="font-semibold text-ms-fg">
+                  {count} {count === 1 ? "thing needs" : "things need"} you
+                </b>
+              </>
+            ) : (
+              " · nothing needs you right now"
+            )
+          ) : null}
         </p>
       </header>
 
+      {/* The day at a glance, full width, before anything else (AdminToday board). */}
+      {desk ? <LessonsTodayCard style={{ animationDelay: "60ms" }} /> : null}
+
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
         <div className="flex min-w-0 flex-col gap-5">
-          {desk ? <LessonsTodayCard /> : null}
           {desk ? (
-            <Card title="Needs you" action={count ? <span className="text-[13px] text-ms-fg-3">Most urgent first</span> : undefined}>
+            <Card title="Needs you" delay={140} action={count ? <span className="text-[13px] text-ms-fg-3">Most urgent first</span> : undefined}>
               <AttentionList sources={attention} />
             </Card>
           ) : null}
-          <DebtByGroup enabled={desk} />
+          <DebtByGroup enabled={desk} delay={260} />
         </div>
         <div className="flex min-w-0 flex-col gap-5">
-          <Learners enabled={desk || role === "teacher"} />
-          <Card title="Shortcuts" action={<span className="text-[13px] text-ms-fg-3">⌘K finds these too</span>}>
+          <Learners enabled={desk || role === "teacher"} delay={200} />
+          <Card title="Shortcuts" delay={320} action={<span className="text-[13px] text-ms-fg-3">⌘K finds these too</span>}>
             <div className="grid grid-cols-2 gap-2">
-              {links.map((l) => (
+              {links.map((l, i) => (
                 <Link
                   key={l.href}
                   href={l.href}
-                  className="ms-transition ms-hover-lift flex min-h-[72px] flex-col justify-between gap-2 rounded-[14px] bg-ms-surface p-3 text-ms-fg"
+                  className="animate-ms-fade-in ms-hover-lift flex min-h-[72px] flex-col justify-between gap-2 rounded-[14px] bg-ms-surface p-3 text-ms-fg"
+                  style={{ animationDelay: `${380 + i * 40}ms` }}
                 >
                   <Icon name={l.icon} className="text-ms-fg-2" />
                   <span className="flex flex-col leading-tight">

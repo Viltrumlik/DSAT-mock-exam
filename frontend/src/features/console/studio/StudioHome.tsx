@@ -10,6 +10,7 @@ import api from "@/lib/api";
 import { readStudioSession, sessionContinueHref, sessionContinueLabel, type StudioSession } from "@/lib/studioSession";
 import { attentionCount, useBuilderAttention } from "../attention";
 import { AttentionList } from "../AttentionList";
+import { RollNumber } from "../RollNumber";
 
 type Facet = { key: string; label?: string; options: { value: string; label: string; count: number }[] };
 type QbPage = {
@@ -68,9 +69,10 @@ function ago(iso?: string): string {
   return d === 1 ? "yesterday" : `${d} days ago`;
 }
 
-function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+/** A page card; `delay` puts it in reading order as the page arrives. */
+function Card({ title, children, action, delay = 0 }: { title: string; children: React.ReactNode; action?: React.ReactNode; delay?: number }) {
   return (
-    <section className="flex flex-col gap-3 rounded-ms-card bg-ms-card p-5 shadow-ms-1">
+    <section className="animate-ms-card-in flex flex-col gap-3 rounded-ms-card bg-ms-card p-5 shadow-ms-1" style={{ animationDelay: `${delay}ms` }}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-ms-h text-ms-fg">{title}</h2>
         {action}
@@ -85,7 +87,7 @@ function Failed({ what, retry }: { what: string; retry: () => void }) {
     <div className="flex items-center gap-3 rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3.5 py-3 text-[14px]">
       <Icon name="alert" className="text-ms-critical-fg" />
       <span className="flex-1 text-ms-fg">Couldn’t load {what}. This is not zero.</span>
-      <button type="button" onClick={retry} className="ms-transition min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-card">
+      <button type="button" onClick={retry} className="ms-press min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-card">
         Retry
       </button>
     </div>
@@ -122,7 +124,8 @@ function BankTable() {
   return (
     <Card
       title="Question bank"
-      action={all.data ? <span className="text-[14px] tabular-nums text-ms-fg-3">{all.data.count} questions</span> : undefined}
+      delay={120}
+      action={all.data ? <span className="text-[14px] tabular-nums text-ms-fg-3"><RollNumber value={all.data.count} /> questions</span> : undefined}
     >
       {failed ? <Failed what="the question bank" retry={retry} /> : pending ? <Shimmer /> : all.data!.count === 0 ? (
         <p className="text-[15px] text-ms-fg-2">
@@ -130,7 +133,7 @@ function BankTable() {
           or <Link href="/builder/question-bank/imports" className="font-semibold text-ms-primary-text hover:underline">import a CSV</Link>.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="animate-ms-fade-in overflow-x-auto">
           <table className="w-full border-separate border-spacing-0 text-[14px]">
             <thead>
               <tr>
@@ -182,17 +185,19 @@ function RecentlyEdited() {
   return (
     <Card
       title="Recently edited"
+      delay={200}
       action={<Link href="/builder/question-bank?o=-updated" className="text-[14px] font-semibold text-ms-primary-text hover:underline">All</Link>}
     >
       {q.isError ? <Failed what="recent questions" retry={() => void q.refetch()} /> : q.isPending ? <Shimmer rows={4} /> : rows.length === 0 ? (
         <p className="text-[15px] text-ms-fg-2">No questions yet.</p>
       ) : (
         <div className="flex flex-col">
-          {rows.map((r) => (
+          {rows.map((r, i) => (
             <Link
               key={r.id}
               href={`/builder/question-bank/${r.id}`}
-              className="ms-transition -mx-2 flex items-center gap-3 rounded-[12px] px-2 py-2.5 hover:bg-ms-surface"
+              style={{ animationDelay: `${i * 50}ms` }}
+              className="animate-ms-fade-in ms-transition -mx-2 flex items-center gap-3 rounded-[12px] px-2 py-2.5 hover:bg-ms-surface"
             >
               <Icon name="ms-question" className="text-ms-fg-2" />
               <span className="flex min-w-0 flex-1 flex-col">
@@ -230,7 +235,7 @@ export function StudioHome() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="animate-ms-fade-in flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="font-ms-display text-ms-b-display text-ms-fg">{first ? `Welcome back, ${first}` : "Studio home"}</h1>
           <p className="text-ms-body text-ms-fg-2">
@@ -255,7 +260,9 @@ export function StudioHome() {
         </div>
       </header>
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-ms-ctl border border-ms-info-line bg-ms-info-soft px-4 py-3 text-[15px] text-ms-fg">
+      <div
+        style={{ animationDelay: "40ms" }}
+        className="animate-ms-card-in flex flex-wrap items-center gap-x-5 gap-y-2 rounded-ms-ctl border border-ms-info-line bg-ms-info-soft px-4 py-3 text-[15px] text-ms-fg">
         <span className="flex items-center gap-2 font-semibold">
           <Icon name="info" className="text-ms-info-fg" />
           Content is live.
@@ -269,7 +276,7 @@ export function StudioHome() {
       </div>
 
       {continueHref && continueLabel ? (
-        <Link href={continueHref} className="ms-transition ms-hover-lift flex items-center gap-4 rounded-ms-card bg-ms-card px-5 py-4 shadow-ms-1">
+        <Link href={continueHref} style={{ animationDelay: "80ms" }} className="animate-ms-card-in ms-hover-lift flex items-center gap-4 rounded-ms-card bg-ms-card px-5 py-4 shadow-ms-1">
           <span className="grid size-11 shrink-0 place-items-center rounded-full bg-ms-primary-soft text-ms-primary-text">
             <Icon name="pencil" />
           </span>
@@ -286,17 +293,21 @@ export function StudioHome() {
           <BankTable />
           <RecentlyEdited />
         </div>
-        <Card title="Needs you" action={attentionCount(attention) ? <span className="text-[13px] text-ms-fg-3">Most urgent first</span> : undefined}>
+        <Card title="Needs you" delay={160} action={attentionCount(attention) ? <span className="text-[13px] text-ms-fg-3">Most urgent first</span> : undefined}>
           <AttentionList sources={attention} />
         </Card>
       </div>
 
-      {LIBRARY.map((group) => (
-        <section key={group.caption} className="flex flex-col gap-3">
+      {LIBRARY.map((group, g) => (
+        <section key={group.caption} className="animate-ms-fade-in flex flex-col gap-3" style={{ animationDelay: `${280 + g * 100}ms` }}>
           <h2 className="text-ms-h text-ms-fg">{group.caption}</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {group.links.map((l) => (
-              <Link key={l.href} href={l.href} className="ms-transition ms-hover-lift flex min-h-[96px] flex-col justify-between gap-3 rounded-ms-card bg-ms-card p-4 shadow-ms-1">
+            {group.links.map((l, i) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                style={{ animationDelay: `${320 + g * 100 + i * 35}ms` }}
+                className="animate-ms-card-in ms-hover-lift flex min-h-[96px] flex-col justify-between gap-3 rounded-ms-card bg-ms-card p-4 shadow-ms-1">
                 <Icon name={l.icon} size="lg" className="text-ms-fg-2" />
                 <span className="flex flex-col leading-tight">
                   <span className="text-[15px] font-semibold text-ms-fg">{l.title}</span>

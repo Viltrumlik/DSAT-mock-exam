@@ -53,7 +53,7 @@ export function AttentionBell({ sources }: { sources: readonly AttentionSource[]
       >
         <Icon name="bell" size="lg" />
         {count ? (
-          <span className="absolute right-1 top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ms-danger-btn px-1 text-[12px] font-semibold tabular-nums text-white">
+          <span key={count} className="animate-ms-pop absolute right-1 top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ms-danger-btn px-1 text-[12px] font-semibold tabular-nums text-white">
             {count}
           </span>
         ) : null}
@@ -64,7 +64,7 @@ export function AttentionBell({ sources }: { sources: readonly AttentionSource[]
           id={panelId}
           role="dialog"
           aria-label="Needs you"
-          className="animate-ms-fade-in absolute right-0 top-full z-50 mt-2 w-[min(420px,calc(100vw-24px))] rounded-ms-pop border border-ms-border bg-ms-card px-4 pb-2 pt-3 shadow-ms-2"
+          className="animate-ms-dialog-in absolute right-0 top-full z-50 origin-top-right mt-2 w-[min(420px,calc(100vw-24px))] rounded-ms-pop border border-ms-border bg-ms-card px-4 pb-2 pt-3 shadow-ms-2"
         >
           <div className="pb-1 text-[13px] font-semibold text-ms-fg-3">Needs you</div>
           <AttentionList sources={sources} onNavigate={() => setOpen(false)} />
