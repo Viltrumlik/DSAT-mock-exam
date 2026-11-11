@@ -2,7 +2,8 @@
  * The one line under each data graphic (design handoff v0.3, Graphics board · 2): what the shape says that
  * the numbers alone do not. Pure functions, so every sentence is tested.
  */
-export type Mark = "present" | "late" | "absent" | "excused" | "coming";
+/** "none": a lesson day that passed with no mark (not held, or not marked) — not counted either way. */
+export type Mark = "present" | "late" | "absent" | "excused" | "coming" | "none";
 export type WeekdayRow = { day: string; marks: Mark[] };
 
 const PLURAL_DAY: Record<string, string> = {
@@ -24,7 +25,7 @@ const and = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1)
  */
 export function attendanceFinding(rows: readonly WeekdayRow[]): { line: string; note?: string } {
   const stats = rows.map((r) => {
-    const held = r.marks.filter((m) => m !== "coming");
+    const held = r.marks.filter((m) => m !== "coming" && m !== "none");
     const missed = held.filter((m) => m === "absent").length;
     return { day: r.day, held: held.length, missed, rate: held.length ? missed / held.length : 0 };
   });

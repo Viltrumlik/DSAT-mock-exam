@@ -21,6 +21,7 @@ import { cn } from "@/lib/cn";
 import { Fieldset, IconSquare, PartBody, StatTile, Table, Td, TONE_TEXT, WIDE_ONLY, type Column, type Tone } from "../Fieldset";
 import { rateTone } from "../PersonHeader";
 import { usePersonPart, type PersonResults } from "../personApi";
+import { MockScores } from "../graphics";
 
 /**
  * Everything a learner has been graded on, one card per kind that has any, newest first, with
@@ -302,7 +303,8 @@ function ResultCards({ kinds: list }: { kinds: Kind[] }) {
   );
 }
 
-export function ResultsSection({ id, section }: { id: number; section: PeopleSection }) {
+/** `target`: the SAT total the student set for themself (the mock scores' target line). */
+export function ResultsSection({ id, section, target = null }: { id: number; section: PeopleSection; target?: number | null }) {
   const query = usePersonPart<PersonResults>(id, "results");
   const centre = section !== "public";
 
@@ -317,6 +319,7 @@ export function ResultsSection({ id, section }: { id: number; section: PeopleSec
               <StatTile label="XP" value={num(d.rewards.xp)} icon={Zap} tone="accent" sub="earned in total" />
               <StatTile label="Coins" value={num(d.rewards.coins)} icon={Coins} tone="warning" sub="to spend in the shop" />
             </div>
+            <MockScores mocks={d.mocks} target={target} />
             <ResultCards kinds={kinds(d, centre)} />
           </div>
         )}

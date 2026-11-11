@@ -6,6 +6,7 @@ import { cn } from "@/lib/cn";
 import { Fieldset, PartBody, SubHeading, Table, Td, TONE_TEXT, WIDE_ONLY } from "../Fieldset";
 import { formatDay } from "../format";
 import { rateTone } from "../PersonHeader";
+import { AttendancePatterns } from "../graphics";
 import { usePersonPart, type PersonAttendance } from "../personApi";
 
 /** Each class's attendance, one card each, and the last 30 days' marks — each mark in its colour, with what lc-up was sent. */
@@ -63,13 +64,14 @@ export function AttendanceSection({ id }: { id: number }) {
       title="Attendance"
       icon={CalendarCheck}
       tone="success"
-      description="Each class over all its lessons · marks from the last 30 days"
+      description="Each class over all its lessons · marks from the last 9 weeks"
     >
       <PartBody
         query={query}
         isEmpty={(d) => d.classes.length === 0 && d.recent.length === 0}
         render={(d) => (
           <>
+            <AttendancePatterns data={d} />
             {d.classes.length > 0 ? (
               <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {d.classes.map((c) => (

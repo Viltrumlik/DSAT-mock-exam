@@ -113,6 +113,7 @@ const MARK: Record<Mark, { glyph: string; word: string; cls: string }> = {
   absent: { glyph: "✕", word: "Absent", cls: "bg-ms-critical-soft text-ms-critical-fg" },
   excused: { glyph: "–", word: "Excused", cls: "bg-ms-neutral-soft text-ms-neutral-fg" },
   coming: { glyph: "·", word: "Coming", cls: "bg-ms-surface text-ms-fg-3" },
+  none: { glyph: "", word: "Not marked", cls: "bg-ms-surface-2 text-ms-fg-3" },
 };
 
 /** Weeks × weekdays: the weekday a learner keeps missing shows as a row of crosses. */
@@ -150,7 +151,7 @@ export function AttendancePattern({ title, sub, weeks, rows, link }: { title: Re
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[12.5px] text-ms-fg-3">
-        {(Object.keys(MARK) as Mark[]).map((k) => (
+        {(Object.keys(MARK) as Mark[]).filter((k) => k !== "none" || rows.some((r) => r.marks.includes("none"))).map((k) => (
           <span key={k} className="inline-flex items-center gap-1.5">
             <span className={cn("grid size-4 place-items-center rounded-[4px] text-[10px] font-semibold", MARK[k].cls)}>{MARK[k].glyph}</span>
             {MARK[k].word}

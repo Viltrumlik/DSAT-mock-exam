@@ -34,6 +34,7 @@ export function Tabs<T extends string>({
   value,
   onChange,
   idPrefix = "tab",
+  ids,
   className,
 }: {
   /** The row's name for a screen reader: "Student sections". */
@@ -43,11 +44,15 @@ export function Tabs<T extends string>({
   onChange: (id: T) => void;
   /** Tab `i` is `${idPrefix}-${id}`; its panel should carry `aria-labelledby` with that id. */
   idPrefix?: string;
+  /** A page that already names its tabs and panels its own way (the detail pages' `person-tab-…`). */
+  ids?: { tab: (id: T) => string; panel: (id: T) => string };
   className?: string;
 }) {
+  const tabDom = (id: T) => (ids ? ids.tab(id) : `${idPrefix}-${id}`);
+  const panelDom = (id: T) => (ids ? ids.panel(id) : `${idPrefix}-${id}-panel`);
   const row = useRef<HTMLDivElement | null>(null);
   const enabled = tabs.filter((t) => !t.disabled);
-  const tabEl = (id: string) => [...(row.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].find((el) => el.id === `${idPrefix}-${id}`);
+  const tabEl = (id: T) => [...(row.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].find((el) => el.id === tabDom(id));
 
   useEffect(() => {
     const el = row.current?.querySelector<HTMLElement>('[aria-selected="true"]');
@@ -79,11 +84,11 @@ export function Tabs<T extends string>({
         return (
           <button
             key={t.id}
-            id={`${idPrefix}-${t.id}`}
+            id={tabDom(t.id)}
             type="button"
             role="tab"
             aria-selected={on}
-            aria-controls={`${idPrefix}-${t.id}-panel`}
+            aria-controls={panelDom(t.id)}
             tabIndex={on ? 0 : -1}
             disabled={t.disabled}
             onClick={() => onChange(t.id)}
@@ -95,7 +100,7 @@ export function Tabs<T extends string>({
           >
             {t.label}
             {t.count !== undefined && t.count !== null && t.count !== "" ? (
-              <span className={cn("inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[12px] font-semibold tabular-nums", COUNT_TONE[t.tone ?? "neutral"])}>
+              <span data-tab-count className={cn("inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[12px] font-semibold tabular-nums", COUNT_TONE[t.tone ?? "neutral"])}>
                 {t.count}
               </span>
             ) : null}

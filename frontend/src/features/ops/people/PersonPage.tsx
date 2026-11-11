@@ -206,15 +206,14 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
 
       <PersonHeader
         person={person}
-        glance={tab === "overview"}
         busy={busy}
         onToggleFreeze={() => void bulk(person.is_frozen ? "unfreeze" : "freeze")}
         onOneTimePassword={() => setDialog("otp")}
         onRevoke={() => setDialog("revoke")}
         onDelete={() => setDialog("delete")}
-      />
-
-      <TabBar tabs={tabs} active={tab} onSelect={openTab} />
+      >
+        <TabBar tabs={tabs} active={tab} onSelect={openTab} person={person} />
+      </PersonHeader>
 
       {/* Only the open tab is rendered, so only its part is fetched. */}
       <div role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)} className="min-w-0 space-y-5">
@@ -233,7 +232,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         {tab === "groups" ? <GroupsSection person={person} onChanged={refresh} /> : null}
         {tab === "payments" && person.lcup ? <LcupSection lcup={person.lcup} /> : null}
         {tab === "attendance" ? <AttendanceSection id={id} /> : null}
-        {tab === "results" ? <ResultsSection id={id} section={section} /> : null}
+        {tab === "results" ? <ResultsSection id={id} section={section} target={person.sat.target_score} /> : null}
         {tab === "security" ? (
           <SecuritySection id={id} person={person} onOneTimePassword={() => setDialog("otp")} />
         ) : null}
