@@ -24,6 +24,7 @@ export function Badge({
   size = "md",
   children,
   className,
+  iconClassName,
 }: {
   tone?: BadgeTone;
   icon?: IconName;
@@ -31,6 +32,8 @@ export function Badge({
   size?: "md" | "lg";
   children: ReactNode;
   className?: string;
+  /** Motion for the icon, e.g. the snowflake turning in when a status becomes Frozen. */
+  iconClassName?: string;
 }) {
   return (
     <span
@@ -41,7 +44,7 @@ export function Badge({
         className,
       )}
     >
-      {dot ? <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-current" /> : icon ? <Icon name={icon} size="sm" className="size-3.5 shrink-0" /> : null}
+      {dot ? <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-current" /> : icon ? <Icon name={icon} size="sm" className={cn("size-3.5 shrink-0", iconClassName)} /> : null}
       {children}
     </span>
   );

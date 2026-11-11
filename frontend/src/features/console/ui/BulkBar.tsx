@@ -14,12 +14,12 @@ export const bulkButtonClass =
  * The bulk bar (DataDisplay board): it rises in at the bottom of the screen once a row is ticked,
  * says how many, and holds the actions for the ticked rows and an × that clears them.
  */
-export function BulkBar({ count, onClear, children }: { count: number; onClear: () => void; children: ReactNode }) {
+export function BulkBar({ count, onClear, children, closing = false }: { count: number; onClear: () => void; children: ReactNode; closing?: boolean }) {
   return (
     <div
       role="toolbar"
       aria-label="Bulk actions"
-      className="animate-ms-rise-in pointer-events-auto flex min-h-14 max-w-full flex-wrap items-center gap-1 rounded-[28px] bg-ms-inverse-bg py-2 pl-5 pr-2 text-ms-inverse-fg shadow-ms-2"
+      className={cn(closing ? "animate-ms-sink-out pointer-events-none" : "animate-ms-rise-in pointer-events-auto", "flex min-h-14 max-w-full flex-wrap items-center gap-1 rounded-[28px] bg-ms-inverse-bg py-2 pl-5 pr-2 text-ms-inverse-fg shadow-ms-2")}
     >
       <b aria-live="polite" className="text-[15px] tabular-nums">
         {count} selected
