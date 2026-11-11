@@ -121,7 +121,8 @@ function Tile({ href, label, value, sub, tone, icon, delay }: { href: string; la
         {label}
       </span>
       <RollNumber value={value} className={`text-[26px] font-bold leading-8 tabular-nums ${frozen ? "text-ms-frozen-fg" : "text-ms-fg"}`} />
-      <span className="truncate text-[13px] text-ms-fg-3">{sub}</span>
+      {/* items-start sizes children to their text, so truncate never clipped on a phone: wrap to 2 lines instead. */}
+      <span className="line-clamp-2 w-full text-[13px] text-ms-fg-3">{sub}</span>
     </Link>
   );
 }
