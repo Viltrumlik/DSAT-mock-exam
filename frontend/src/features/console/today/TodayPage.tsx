@@ -13,6 +13,7 @@ import { usersAdminApi } from "@/lib/usersAdminApi";
 import { attentionCount, tashkentMonth, useAdminAttention } from "../attention";
 import { AttentionList } from "../AttentionList";
 import { formatSom } from "../entitySearch";
+import { LessonsTodayCard } from "./LessonsTodayCard";
 
 const SHORTCUTS: { href: string; icon: IconName; title: string; cta: string }[] = [
   { href: "/ops/students", icon: "users", title: "Students", cta: "Manage" },
@@ -168,6 +169,7 @@ export function TodayPage() {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
         <div className="flex min-w-0 flex-col gap-5">
+          {desk ? <LessonsTodayCard /> : null}
           {desk ? (
             <Card title="Needs you" action={count ? <span className="text-[13px] text-ms-fg-3">Most urgent first</span> : undefined}>
               <AttentionList sources={attention} />

@@ -11,6 +11,7 @@ import { smsApi, type SmsOverview } from "@/features/ops/sms/smsApi";
 import { smsKeys } from "@/features/ops/sms/smsHooks";
 import api from "@/lib/api";
 import { formatSom } from "./entitySearch";
+import { fetchLessonsToday, lessonsTodayKey, notMarkedItem } from "./lessonsToday";
 
 /**
  * "Needs you" (design handoff v0.3, AdminToday / BuilderHome boards and the top bar's bell): the
@@ -179,6 +180,7 @@ function source<T>(
 
 /** Admin's sources. `enabled` only for super admins and admins: every endpoint here refuses others. */
 export function useAdminAttention(enabled: boolean): AttentionSource[] {
+  const lessons = useQuery({ queryKey: lessonsTodayKey, queryFn: fetchLessonsToday, enabled, staleTime: 60_000, refetchInterval: 120_000 });
   const sms = useQuery({ queryKey: smsKeys.overview, queryFn: () => smsApi.overview(), enabled, staleTime: 60_000 });
   const trials = useQuery({ queryKey: lcupKeys.followups, queryFn: () => lcupApi.followups(), enabled, refetchInterval: 60_000 });
   const month = tashkentMonth();
@@ -192,6 +194,7 @@ export function useAdminAttention(enabled: boolean): AttentionSource[] {
   });
   if (!enabled) return [];
   return [
+    source("lessons", "today's lessons", lessons, notMarkedItem),
     source("sms", "SMS", sms, smsItem),
     source("debt", "debts", debt, debtItem),
     source("trials", "trials", trials, trialsItem),
