@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert } from "@/components/ui";
+import { Alert } from "./consoleKit";
 import { money } from "./format";
 import type { Forecast } from "./smsApi";
 

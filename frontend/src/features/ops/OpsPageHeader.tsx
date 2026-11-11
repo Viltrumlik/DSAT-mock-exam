@@ -35,15 +35,15 @@ export function OpsPageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="animate-ms-fade-in flex flex-wrap items-start justify-between gap-4">
       {/* min-w-0 so a long description wraps instead of pushing the actions off the row. */}
       <div className="min-w-0">
-        <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-primary">
+        <p className="text-ms-over mb-1.5 text-ms-primary-text">
           Admin console · {section}
         </p>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">{title}</h1>
+        <h1 className="text-ms-title text-ms-fg">{title}</h1>
         {description ? (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <p className="mt-1 max-w-3xl text-[14px] text-ms-fg-2">{description}</p>
         ) : null}
       </div>
       {/* Wraps rather than shrink-0. A page with three controls up here — a picker, a

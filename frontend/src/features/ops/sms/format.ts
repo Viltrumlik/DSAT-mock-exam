@@ -1,4 +1,4 @@
-import type { BadgeVariant } from "@/components/ui";
+import type { BadgeVariant } from "./consoleKit";
 import type {
   CampaignStatus,
   EskizTemplate,

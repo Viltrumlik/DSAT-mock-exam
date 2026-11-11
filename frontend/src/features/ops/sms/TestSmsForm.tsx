@@ -9,7 +9,7 @@
 
 import { useId, useMemo, useState } from "react";
 
-import { Alert, Button, Field, Input, Select, type AlertTone } from "@/components/ui";
+import { Alert, Button, Field, Input, Select, type AlertTone } from "./consoleKit";
 import {
   defaultRoles,
   fillPattern,
@@ -87,7 +87,7 @@ export function TestSmsForm({ pricePerPart }: { pricePerPart: number }) {
   return (
     <Section title="Test SMS">
       <div className="space-y-3 px-3 py-3">
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-[13px] text-ms-fg-3">
           A real SMS to any number, billed like any other. The student&apos;s name and the debt are filled with samples.
         </p>
         {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -98,9 +98,9 @@ export function TestSmsForm({ pricePerPart }: { pricePerPart: number }) {
         ) : null}
 
         {templates.isError ? (
-          <p className="text-[13px] text-muted-foreground">The templates didn&apos;t load, so nothing can be sent yet.</p>
+          <p className="text-[13px] text-ms-fg-3">The templates didn&apos;t load, so nothing can be sent yet.</p>
         ) : !templates.isPending && usable.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-[13px] text-ms-fg-3">
             No usable template yet — refresh the list on the Templates tab.
           </p>
         ) : null}
@@ -151,8 +151,8 @@ export function TestSmsForm({ pricePerPart }: { pricePerPart: number }) {
         {template ? (
           <div>
             <p className={`${CAPTION_TEXT} mb-1`}>Sample</p>
-            <p className="whitespace-pre-wrap border border-border bg-surface-2 px-3 py-2 text-[13px]">{sample}</p>
-            <p className="mt-1 text-[12px] text-muted-foreground">
+            <p className="whitespace-pre-wrap rounded-ms-ctl bg-ms-surface-2 px-3 py-2 text-[14px]">{sample}</p>
+            <p className="mt-1 text-[12px] text-ms-fg-3">
               {parts} SMS part{parts === 1 ? "" : "s"} · ~{money(parts * pricePerPart)}
               {isAscii(sample) ? "" : " · not plain Latin: 70 characters a part"}
             </p>

@@ -89,7 +89,7 @@ export function UndeliveredList({
   } else if (list.isError || !list.data) {
     body = <div className="p-2"><LoadError what="list of what did not arrive" onRetry={() => void list.refetch()} /></div>;
   } else if (!rows.length) {
-    body = <p className="px-3 py-3 text-[13px] text-muted-foreground">{emptyText}</p>;
+    body = <p className="px-3 py-3 text-[13px] text-ms-fg-3">{emptyText}</p>;
   } else {
     body = (
       <>
@@ -125,7 +125,7 @@ export function UndeliveredList({
                     onChange={() => toggle(m.id)}
                   />
                 </td>
-                <td className={TD}>{m.user?.name || <span className="text-muted-foreground">—</span>}</td>
+                <td className={TD}>{m.user?.name || <span className="text-ms-fg-3">—</span>}</td>
                 <td className={`${TD} max-w-[14rem] truncate`}>{m.source.label}</td>
                 <td className={TD}>
                   <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -134,14 +134,14 @@ export function UndeliveredList({
                   </span>
                 </td>
                 <td className={TD}><StatusPill message={m} /></td>
-                <td className={`${TD} text-muted-foreground`}>{dateTime(m.created_at)}</td>
+                <td className={`${TD} text-ms-fg-3`}>{dateTime(m.created_at)}</td>
                 <td className={`${TD} text-right`}>
                   {m.can_resend ? (
                     <button type="button" className={TEXT_BUTTON} disabled={resend.isPending} onClick={() => send([m])}>
                       Resend
                     </button>
                   ) : (
-                    <span className="text-[12px] text-muted-foreground" title={NOT_NOW}>
+                    <span className="text-[12px] text-ms-fg-3" title={NOT_NOW}>
                       Only on its day
                     </span>
                   )}
@@ -150,7 +150,7 @@ export function UndeliveredList({
             ))}
           </tbody>
         </table>
-        <ul className="divide-y divide-border sm:hidden">
+        <ul className="divide-y divide-ms-line sm:hidden">
           {rows.map((m) => (
             <li key={m.id} className="flex items-start gap-2 px-3 py-2 text-[13px]">
               <input
@@ -166,7 +166,7 @@ export function UndeliveredList({
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill message={m} />
                   <OperatorDot operator={m.operator} />
-                  <span className="text-muted-foreground">{m.source.label}</span>
+                  <span className="text-ms-fg-3">{m.source.label}</span>
                 </div>
               </div>
             </li>

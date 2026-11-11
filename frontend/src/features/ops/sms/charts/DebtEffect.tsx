@@ -25,8 +25,8 @@ const monthLabel = (month: string) => {
 function Step({ label, count, warned, color, strong }: { label: string; count: number; warned: number; color: string; strong?: string }) {
   return (
     <li className="grid grid-cols-[8rem_1fr_3rem] items-center gap-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="h-2.5 overflow-hidden rounded-full bg-surface-2">
+      <span className="text-ms-fg-3">{label}</span>
+      <span className="h-2.5 overflow-hidden rounded-full bg-ms-surface-2">
         <span
           data-debt-bar
           className="block h-full rounded-full motion-safe:transition-[width] motion-safe:duration-500"
@@ -41,12 +41,12 @@ function Step({ label, count, warned, color, strong }: { label: string; count: n
 export function DebtEffect({ months }: { months: DebtEffectMonth[] }) {
   const [index, setIndex] = useState(months.length - 1);
   const month = months[Math.min(Math.max(index, 0), months.length - 1)];
-  if (!month) return <p className="px-3 py-3 text-[13px] text-muted-foreground">No debt warning in this range.</p>;
+  if (!month) return <p className="px-3 py-3 text-[13px] text-ms-fg-3">No debt warning in this range.</p>;
 
   return (
     <div className="space-y-3 px-3 py-3 text-[13px]">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold text-foreground">{`${month.warned} warned`}</span>
+        <span className="font-semibold text-ms-fg">{`${month.warned} warned`}</span>
         {months.length > 1 ? (
           <span className="inline-flex flex-wrap items-center gap-1" role="group" aria-label="Month">
             {months.map((m, i) => (
@@ -55,26 +55,26 @@ export function DebtEffect({ months }: { months: DebtEffectMonth[] }) {
                 type="button"
                 aria-pressed={m.month === month.month}
                 onClick={() => setIndex(i)}
-                className={`rounded-full border px-2 py-0.5 text-[12px] ${m.month === month.month ? "border-[var(--sms-accent)] text-foreground" : "border-border text-muted-foreground"}`}
+                className={`rounded-full border px-2 py-0.5 text-[12px] ${m.month === month.month ? "border-[var(--sms-accent)] text-ms-fg" : "border-ms-border text-ms-fg-3"}`}
               >
                 {monthLabel(m.month)}
               </button>
             ))}
           </span>
         ) : (
-          <span className="text-muted-foreground">{monthLabel(month.month)}</span>
+          <span className="text-ms-fg-3">{monthLabel(month.month)}</span>
         )}
       </div>
       <ul className="space-y-2">
         {STEPS.map((s) => (
-          <Step key={s.key} label={s.label} count={month[s.key]} warned={month.warned} color="var(--success)" />
+          <Step key={s.key} label={s.label} count={month[s.key]} warned={month.warned} color="var(--ms-positive)" />
         ))}
         {month.open > 0 ? (
           <Step label="Still have time" count={month.open} warned={month.warned} color="var(--text-secondary)" />
         ) : null}
-        <Step label="Did not pay" count={month.unpaid} warned={month.warned} color="var(--danger)" strong="text-danger" />
+        <Step label="Did not pay" count={month.unpaid} warned={month.warned} color="var(--ms-critical)" strong="text-ms-critical-fg" />
       </ul>
-      <p className="text-muted-foreground">
+      <p className="text-ms-fg-3">
         {month.open > 0
           ? `${month.open} still have time · ${month.unpaid} did not pay within their 5 days so far.`
           : `${month.unpaid} did not pay within 5 days of the first warning.`}

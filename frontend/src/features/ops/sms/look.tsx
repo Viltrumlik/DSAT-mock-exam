@@ -32,10 +32,10 @@ const TONE_CLASS: Record<Tone, string> = {
 
 /** The fill each state wears in a chart. */
 export const TONE_COLOR: Record<Tone, string> = {
-  delivered: "var(--success)",
-  undelivered: "var(--warning)",
-  rejected: "var(--danger)",
-  pending: "var(--text-secondary)",
+  delivered: "var(--ms-positive)",
+  undelivered: "var(--ms-attention)",
+  rejected: "var(--ms-critical)",
+  pending: "var(--ms-fg-3)",
 };
 
 /** Each operator's colour, fixed (the chart ramp, so it follows the light and dark themes). */
@@ -109,10 +109,10 @@ export function LiveDot({ label = "Sending now" }: { label?: string }) {
 }
 
 const TILE_TONE: Record<"default" | "good" | "warn" | "bad", string> = {
-  default: "text-foreground",
-  good: "text-success",
-  warn: "text-warning",
-  bad: "text-danger",
+  default: "text-ms-fg",
+  good: "text-ms-positive-fg",
+  warn: "text-ms-attention-fg",
+  bad: "text-ms-critical-fg",
 };
 
 /** One figure the overview leads with; it counts up to its value. */
@@ -131,12 +131,12 @@ export function StatTile({
 }) {
   const shown = useCountUp(value ?? 0);
   return (
-    <div className="border border-border bg-card px-4 py-3">
-      <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-[21px] font-semibold leading-tight tabular-nums sm:text-[26px] ${TILE_TONE[tone]}`}>
+    <div className="animate-ms-card-in flex min-w-0 flex-col gap-1.5 rounded-[16px] bg-ms-surface p-4">
+      <div className="text-[13px] font-medium text-ms-fg-2">{label}</div>
+      <div className={`text-[24px] font-bold leading-7 tabular-nums sm:text-[28px] sm:leading-8 ${TILE_TONE[tone]}`}>
         {value === null ? "—" : format(shown)}
       </div>
-      {hint ? <div className="mt-0.5 text-[12px] text-muted-foreground">{hint}</div> : null}
+      {hint ? <div className="text-[13px] text-ms-fg-3">{hint}</div> : null}
     </div>
   );
 }
