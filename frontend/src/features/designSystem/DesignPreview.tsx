@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 
 import { Icon } from "@/components/ui/Icon";
 import { ControlsSection } from "./ControlsSection";
+import { FormsSection } from "./FormsSection";
 import { IconSection } from "./IconSection";
 import { MotionSection } from "./MotionSection";
 import { OverlaysSection } from "./OverlaysSection";
@@ -147,6 +148,10 @@ export default function DesignPreview() {
 
         <Section id="overlays" over="7 · Overlays" title="Dialogs, sheets, menus, tooltips and toasts — coming and going">
           <OverlaysSection />
+        </Section>
+
+        <Section id="forms" over="8 · Forms" title="Fields, select, combobox, dates, choices, tabs, avatars and keys">
+          <FormsSection />
         </Section>
       </div>
       <Probes />

@@ -23,7 +23,7 @@ import { fetchLessonsToday, isNotMarked, lessonsTodayKey, type LessonsToday } fr
 import { useRecent, type RecentItem } from "../recent";
 import { RollNumber } from "../RollNumber";
 import { toast } from "../toast";
-import { Badge, Button, buttonClass, type ButtonState } from "../ui";
+import { AVATAR_TONE, Avatar, Badge, Button, buttonClass, toneOf, type ButtonState } from "../ui";
 import { Card, Failed, Skeleton } from "./parts";
 
 const TZ = "Asia/Tashkent";
@@ -169,18 +169,6 @@ export function LearnersCard({ enabled, withLessons, delay }: { enabled: boolean
 
 // ─── Recently opened ─────────────────────────────────────────────────────────
 
-const AV = [
-  "bg-ms-av1-bg text-ms-av1-fg",
-  "bg-ms-av2-bg text-ms-av2-fg",
-  "bg-ms-av3-bg text-ms-av3-fg",
-  "bg-ms-av4-bg text-ms-av4-fg",
-  "bg-ms-av5-bg text-ms-av5-fg",
-  "bg-ms-av6-bg text-ms-av6-fg",
-];
-function initials(name: string): string {
-  const parts = name.replace(/[^\p{L}\p{N} ]/gu, " ").trim().split(/\s+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
-}
 function shortName(r: RecentItem): string {
   if (r.kind === "class") return r.name.split(/\s*[|·]\s*/)[0];
   const [first, second] = r.name.trim().split(/\s+/);
@@ -203,9 +191,13 @@ export function RecentlyOpened({ delay }: { delay: number }) {
               style={{ animationDelay: `${delay + 60 + i * 40}ms` }}
               className="animate-ms-fade-in ms-hover-lift flex w-[76px] shrink-0 flex-col items-center gap-1.5 rounded-[14px] p-1 text-center text-[12.5px] font-medium leading-4 text-ms-fg"
             >
-              <span className={`grid size-14 place-items-center text-[18px] font-semibold ${r.kind === "class" ? "rounded-[16px]" : "rounded-full"} ${AV[r.id % AV.length]}`}>
-                {r.kind === "class" ? <Icon name="cap" size="lg" /> : initials(r.name)}
-              </span>
+              {r.kind === "class" ? (
+                <span className={`grid size-14 place-items-center rounded-[16px] ${AVATAR_TONE[toneOf(r.name)]}`}>
+                  <Icon name="cap" size="lg" />
+                </span>
+              ) : (
+                <Avatar name={r.name} className="size-14 text-[18px]" />
+              )}
               <span className="line-clamp-2">{shortName(r)}</span>
             </Link>
           ))}

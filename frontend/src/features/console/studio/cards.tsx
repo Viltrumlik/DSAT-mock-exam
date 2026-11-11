@@ -8,7 +8,7 @@ import { clockOrDay } from "../attention";
 import { useRecent, type RecentItem } from "../recent";
 import { RollNumber } from "../RollNumber";
 import { Failed, Skeleton } from "../today/parts";
-import { Badge, buttonClass, type BadgeTone } from "../ui";
+import { Avatar, Badge, buttonClass, type BadgeTone } from "../ui";
 import type { CoverageSkill, RecentState, StudioSummary, TeamLine } from "./summary";
 
 /**
@@ -174,16 +174,17 @@ export function ContinueRow({ q, delay }: { q: Q; delay: number }) {
 
 // ─── Team today ──────────────────────────────────────────────────────────────
 
-const TEAM_AV = ["bg-ms-primary-soft text-ms-primary-text", "bg-ms-positive-soft text-ms-positive-fg", "bg-ms-info-soft text-ms-info-fg", "bg-ms-attention-soft text-ms-attention-fg"];
-
 function TeamRow({ line, i, delay }: { line: TeamLine; i: number; delay: number }) {
   const sub = [line.detail && line.kind !== "publish" ? line.detail : "", clockOrDay(line.at)].filter(Boolean).join(" · ");
-  const tone = TEAM_AV[(line.who ?? "").length % TEAM_AV.length];
   return (
     <li className="animate-ms-fade-in flex items-center gap-3 py-2" style={{ animationDelay: `${delay + i * 45}ms` }}>
-      <span className={`grid size-9 shrink-0 place-items-center rounded-full text-[14px] font-semibold ${line.who ? tone : "bg-ms-surface-2 text-ms-fg-2"}`}>
-        {line.mine ? <Icon name="user" size="sm" /> : line.who ? line.who.charAt(0).toUpperCase() : <Icon name="send" size="sm" />}
-      </span>
+      {line.who && !line.mine ? (
+        <Avatar name={line.who} className="size-9 text-[14px]" />
+      ) : (
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ms-surface-2 text-ms-fg-2">
+          <Icon name={line.mine ? "user" : "send"} size="sm" />
+        </span>
+      )}
       <span className="flex min-w-0 flex-col">
         <span className="truncate text-[14.5px] text-ms-fg">
           {line.who ? <b className="font-semibold">{line.who} </b> : null}
