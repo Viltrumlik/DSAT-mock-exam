@@ -42,12 +42,20 @@ function Labelled({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** A label above and help below (the console Field's shape) around a native control with a fixed id. */
-function FormField({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
+/**
+ * A label above and help below (the console Field's shape) around a native control with a fixed id. A field the
+ * server refuses blank says so before the save, with the old form's red asterisk.
+ */
+function FormField({ id, label, hint, required = false, children }: { id: string; label: string; hint?: string; required?: boolean; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <label htmlFor={id} className="text-[14px] font-medium leading-5 text-ms-fg">
         {label}
+        {required ? (
+          <span aria-hidden className="ml-0.5 text-ms-critical-fg">
+            *
+          </span>
+        ) : null}
       </label>
       {children}
       {hint ? <p className="text-[13px] leading-[18px] text-ms-fg-3">{hint}</p> : null}
@@ -348,11 +356,11 @@ export function NewStudentDialog({
             ) : null}
           </div>
         ) : null}
-        <FormField id="new-student-name" label="Full name">
-          <input id="new-student-name" data-autofocus value={form.full_name} onChange={set("full_name")} autoComplete="off" className={INPUT} />
+        <FormField id="new-student-name" label="Full name" required>
+          <input id="new-student-name" data-autofocus required value={form.full_name} onChange={set("full_name")} autoComplete="off" className={INPUT} />
         </FormField>
-        <FormField id="new-student-phone" label="Phone" hint="Their login. They first sign in with this and its last four digits.">
-          <input id="new-student-phone" type="tel" value={form.phone} onChange={set("phone")} placeholder="90 123 45 67" autoComplete="off" className={INPUT} />
+        <FormField id="new-student-phone" label="Phone" hint="Their login. They first sign in with this and its last four digits." required>
+          <input id="new-student-phone" type="tel" required value={form.phone} onChange={set("phone")} placeholder="90 123 45 67" autoComplete="off" className={INPUT} />
         </FormField>
         <div className="grid grid-cols-2 gap-3">
           <FormField id="new-student-parent" label="Parent's name">

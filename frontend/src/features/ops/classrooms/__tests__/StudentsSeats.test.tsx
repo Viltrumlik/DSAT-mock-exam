@@ -366,6 +366,18 @@ describe("a new student", () => {
     setValue(by("new-student-date"), "2026-10-21");
   }
 
+  it("marks the fields the server refuses blank", async () => {
+    route();
+    await mount();
+    await click(button(host, "New student"));
+    const label = (id: string) => dialog()!.querySelector(`label[for="${id}"]`)!.textContent;
+    expect(label("new-student-name")).toBe("Full name*");
+    expect(label("new-student-phone")).toBe("Phone*");
+    expect(label("new-student-parent")).toBe("Parent's name");
+    const field = (id: string) => dialog()!.querySelector(`#${id}`) as HTMLInputElement;
+    expect([field("new-student-name").required, field("new-student-phone").required, field("new-student-parent").required]).toEqual([true, true, false]);
+  });
+
   it("sends what the admin entered and says how they first sign in", async () => {
     route();
     post.mockResolvedValue({ data: { login: { phone: "998905550011", code: "0011" } } });
