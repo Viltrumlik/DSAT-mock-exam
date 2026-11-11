@@ -107,7 +107,8 @@ describe("TodayPage", () => {
     await render();
     const text = host.textContent ?? "";
     expect(text).toContain("Couldn’t check debts.");
-    expect(text).toContain("Couldn’t load debts from lc-up. This is not zero.");
+    expect(text).toContain("Couldn’t load debts from lc-up");
+    expect(text).toContain("This is not zero.");
     expect(text).toContain("22 SMS did not arrive today");
     expect(text).not.toContain("No one owes");
   });

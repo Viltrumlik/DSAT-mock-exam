@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { recordRecent } from "@/features/console/recent";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronLeft } from "lucide-react";
 import api from "@/lib/api";
@@ -79,6 +80,10 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
   const query = usePerson(id);
   const person = query.data;
   const backHref = listHrefFrom(search, `/ops/${section}`);
+  // Today's "Recently opened" (this browser only): the person moves to the front.
+  useEffect(() => {
+    if (person) recordRecent({ kind: "person", id: person.id, name: person.name || person.username || `User ${person.id}`, href: `/ops/${section}/${person.id}` });
+  }, [person, section]);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [otpGiven, setOtpGiven] = useState<{ login: string; code: string; expires_at: string | null } | null>(null);

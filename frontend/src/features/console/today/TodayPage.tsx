@@ -3,29 +3,17 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 
-import { Icon, type IconName } from "@/components/ui/Icon";
-import { financeApi } from "@/features/finance/financeApi";
-import { financeKeys } from "@/features/finance/financeHooks";
+import { Icon } from "@/components/ui/Icon";
 import { isAdminOpsPath, isScopedOpsAdmin } from "@/features/ops/adminScope";
 import { isOpsSuperAdmin } from "@/features/ops/shell/opsNav";
 import { useMe } from "@/hooks/useMe";
-import { usersAdminApi } from "@/lib/usersAdminApi";
-import { attentionCount, tashkentMonth, useAdminAttention } from "../attention";
+import { attentionCount, useAdminAttention } from "../attention";
 import { AttentionList } from "../AttentionList";
-import { formatSom } from "../entitySearch";
 import { fetchLessonsToday, lessonsTodayKey } from "../lessonsToday";
-import { RollNumber } from "../RollNumber";
+import { buttonClass } from "../ui";
+import { DebtCard, IncomeCard, LearnersCard, PlatformCard, RecentlyOpened, ShortcutsCard, SmsCard, markAttendanceHref } from "./cards";
 import { LessonsTodayCard } from "./LessonsTodayCard";
-
-const SHORTCUTS: { href: string; icon: IconName; title: string; cta: string }[] = [
-  { href: "/ops/students", icon: "users", title: "Students", cta: "Manage" },
-  { href: "/ops/public", icon: "user", title: "Public users", cta: "Manage" },
-  { href: "/ops/staff", icon: "shield", title: "Staff", cta: "Manage" },
-  { href: "/ops/classrooms", icon: "cap", title: "Classrooms", cta: "View" },
-  { href: "/ops/midterms", icon: "ms-midterm", title: "Midterm results", cta: "Report" },
-  { href: "/ops/access", icon: "key", title: "Access", cta: "Manage" },
-  { href: "/ops/journals", icon: "ms-journal", title: "Journals", cta: "Open" },
-];
+import { Card } from "./parts";
 
 /** "Good afternoon" and "Wednesday, 11 November", by the learning center's clock. */
 export function todayHeading(now = new Date()): { greeting: string; date: string } {
@@ -36,189 +24,96 @@ export function todayHeading(now = new Date()): { greeting: string; date: string
   return { greeting: hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening", date: `${weekday}, ${day}` };
 }
 
-/** A page card; `delay` puts it in reading order as the page arrives. */
-function Card({ title, children, action, delay = 0 }: { title: string; children: React.ReactNode; action?: React.ReactNode; delay?: number }) {
-  return (
-    <section className="animate-ms-card-in flex flex-col gap-3 rounded-ms-card bg-ms-card p-5 shadow-ms-1" style={{ animationDelay: `${delay}ms` }}>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-ms-h text-ms-fg">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Failed({ what, retry }: { what: string; retry: () => void }) {
-  return (
-    <div className="flex items-center gap-3 rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3.5 py-3 text-[14px]">
-      <Icon name="alert" className="text-ms-critical-fg" />
-      <span className="flex-1 text-ms-fg">Couldn’t load {what}. This is not zero.</span>
-      <button type="button" onClick={retry} className="ms-press min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-card">
-        Retry
-      </button>
-    </div>
-  );
-}
-
-function Skeleton({ rows = 3 }: { rows?: number }) {
-  return (
-    <div aria-hidden="true" className="flex flex-col gap-3 py-1">
-      {Array.from({ length: rows }, (_, i) => (
-        <span key={i} className="animate-ms-shimmer h-4 rounded-[6px]" style={{ width: `${80 - i * 15}%` }} />
-      ))}
-    </div>
-  );
-}
-
-function Learners({ enabled, delay }: { enabled: boolean; delay?: number }) {
-  const q = useQuery({ queryKey: ["users", "population"], queryFn: usersAdminApi.population, enabled });
-  if (!enabled) return null;
-  const p = q.data;
-  const tiles = p
-    ? [
-        { href: "/ops/students", label: "Learning center", value: p.centre, sub: "students in active classes" },
-        { href: "/ops/public", label: "Public users", value: p.public, sub: `+${p.signups_7d} this week` },
-        { href: "/ops/students?status=frozen_debt", label: "Frozen — debt", value: p.frozen_debt, sub: "access paused, seats kept", frozen: true },
-      ]
-    : [];
-  return (
-    <Card title="Learners" delay={delay}>
-      {q.isPending ? <Skeleton /> : q.isError ? <Failed what="learners" retry={() => void q.refetch()} /> : (
-        <div className="animate-ms-fade-in flex flex-col">
-          {tiles.map((t) => (
-            <Link key={t.href} href={t.href} className="ms-transition -mx-2 flex items-center gap-3 rounded-[12px] px-2 py-2.5 hover:bg-ms-surface">
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex items-center gap-1.5 text-[14px] font-medium text-ms-fg-2">
-                  {t.frozen ? <Icon name="ms-freeze" size="sm" className="text-ms-frozen-fg" /> : null}
-                  {t.label}
-                </span>
-                <span className="text-[13px] text-ms-fg-3">{t.sub}</span>
-              </span>
-              <RollNumber value={t.value} className="text-ms-num tabular-nums text-ms-fg" />
-            </Link>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function DebtByGroup({ enabled, delay }: { enabled: boolean; delay?: number }) {
-  const month = tashkentMonth();
-  const q = useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month), enabled, staleTime: 60_000 });
-  if (!enabled) return null;
-  const groups = (q.data?.by_group ?? []).filter((g) => g.debt > 0).sort((a, b) => b.debt - a.debt);
-  const top = groups.slice(0, 4);
-  const rest = groups.slice(4);
-  return (
-    <Card
-      title="Where debt sits"
-      delay={delay}
-      action={<Link href="/ops/finance" className="text-[14px] font-semibold text-ms-primary-text hover:underline">Open Finance</Link>}
-    >
-      {q.isPending ? <Skeleton rows={4} /> : q.isError ? <Failed what="debts from lc-up" retry={() => void q.refetch()} /> : groups.length === 0 ? (
-        <p className="flex items-center gap-2.5 text-[15px] text-ms-fg-2">
-          <Icon name="ok" className="text-ms-positive-fg" />
-          No one owes this month.
-        </p>
-      ) : (
-        <div className="animate-ms-fade-in flex flex-col gap-2.5">
-          <span className="text-[13px] text-ms-fg-3">This month · {formatSom(q.data!.total_debt)}</span>
-          {top.map((g) => (
-            <div key={g.group}>
-              <span className="flex items-baseline justify-between gap-3 text-[14px]">
-                <span className="truncate text-ms-fg">{g.group}</span>
-                <span className="shrink-0 tabular-nums font-semibold text-ms-critical-fg">{formatSom(g.debt)}</span>
-              </span>
-            </div>
-          ))}
-          {rest.length ? (
-            <span className="flex justify-between text-[14px] text-ms-fg-3">
-              <span>{rest.length} more {rest.length === 1 ? "group" : "groups"}</span>
-              <span className="tabular-nums">{formatSom(rest.reduce((s, g) => s + g.debt, 0))}</span>
-            </span>
-          ) : null}
-        </div>
-      )}
-    </Card>
-  );
-}
-
 /**
- * /ops — Today (design handoff v0.3, AdminToday board): it opens on what needs someone now. Super
- * admins and admins get "Needs you" (the bell's items) and where the debt sits; anyone the people
- * API admits gets the learner numbers; everyone gets the shortcuts (⌘K finds all of these too).
+ * /ops — Today (design handoff v0.3, AdminToday board): it opens on what needs someone now. The day's
+ * lessons on a strip; what needs you, the learners and what you opened last; where the debt sits,
+ * the SMS balance and the month's income; for a super admin the platform's state; shortcuts with
+ * their counts. Each card asks only what its reader's role may read, and says so when it failed.
  */
 export function TodayPage() {
   const { me } = useMe();
   const role = String(me?.role ?? "").toLowerCase();
-  const desk = isOpsSuperAdmin(me) || isScopedOpsAdmin(me);
+  const superAdmin = isOpsSuperAdmin(me);
+  const scoped = isScopedOpsAdmin(me);
+  const desk = superAdmin || scoped;
+  const may = (path: string) => superAdmin || (scoped && isAdminOpsPath(path));
   const attention = useAdminAttention(desk);
-  // The same query as the lessons card (one request): the header says how many lessons today.
+  // The same query as the lessons card (one request): the header counts the lessons, and the one
+  // primary button opens the register that needs marking.
   const lessons = useQuery({ queryKey: lessonsTodayKey, queryFn: fetchLessonsToday, enabled: desk, staleTime: 60_000 });
   const lessonCount = lessons.data?.counts.lessons;
   const settled = attention.every((s) => s.status === "done");
   const count = attentionCount(attention);
   const { greeting, date } = todayHeading();
   const first = typeof me?.first_name === "string" && me.first_name.trim() ? me.first_name.trim() : "";
-  const links = isScopedOpsAdmin(me) ? SHORTCUTS.filter((l) => isAdminOpsPath(l.href)) : SHORTCUTS;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="animate-ms-fade-in flex flex-col gap-1">
-        <h1 className="text-ms-display text-ms-fg">{first ? `${greeting}, ${first}` : greeting}</h1>
-        <p className="text-ms-body text-ms-fg-2">
-          {date}
-          {desk && lessonCount !== undefined ? ` · ${lessonCount} ${lessonCount === 1 ? "lesson" : "lessons"} today` : ""}
-          {desk && settled ? (
-            count ? (
-              <>
-                {" · "}
-                <b className="font-semibold text-ms-fg">
-                  {count} {count === 1 ? "thing needs" : "things need"} you
-                </b>
-              </>
-            ) : (
-              " · nothing needs you right now"
-            )
-          ) : null}
-        </p>
+    <div className="flex flex-col gap-5">
+      <header className="animate-ms-fade-in flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-ms-display text-ms-fg">{first ? `${greeting}, ${first}` : greeting}</h1>
+          <p className="text-ms-body text-ms-fg-2">
+            {date}
+            {desk && lessonCount !== undefined ? ` · ${lessonCount} ${lessonCount === 1 ? "lesson" : "lessons"} today` : ""}
+            {desk && settled ? (
+              count ? (
+                <>
+                  {" · "}
+                  <b className="font-semibold text-ms-fg">
+                    {count} {count === 1 ? "thing needs" : "things need"} you
+                  </b>
+                </>
+              ) : (
+                " · nothing needs you right now"
+              )
+            ) : null}
+          </p>
+        </div>
+        {desk ? (
+          <Link href={markAttendanceHref(lessons.data)} className={buttonClass({ variant: "primary" })}>
+            <Icon name="calcheck" />
+            Mark attendance
+          </Link>
+        ) : null}
       </header>
 
       {/* The day at a glance, full width, before anything else (AdminToday board). */}
       {desk ? <LessonsTodayCard style={{ animationDelay: "60ms" }} /> : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
-        <div className="flex min-w-0 flex-col gap-5">
-          {desk ? (
-            <Card title="Needs you" delay={140} action={count ? <span className="text-[13px] text-ms-fg-3">Most urgent first</span> : undefined}>
-              <AttentionList sources={attention} />
-            </Card>
-          ) : null}
-          <DebtByGroup enabled={desk} delay={260} />
-        </div>
-        <div className="flex min-w-0 flex-col gap-5">
-          <Learners enabled={desk || role === "teacher"} delay={200} />
-          <Card title="Shortcuts" delay={320} action={<span className="text-[13px] text-ms-fg-3">⌘K finds these too</span>}>
-            <div className="grid grid-cols-2 gap-2">
-              {links.map((l, i) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className="animate-ms-fade-in ms-hover-lift flex min-h-[72px] flex-col justify-between gap-2 rounded-[14px] bg-ms-surface p-3 text-ms-fg"
-                  style={{ animationDelay: `${380 + i * 40}ms` }}
-                >
-                  <Icon name={l.icon} className="text-ms-fg-2" />
-                  <span className="flex flex-col leading-tight">
-                    <span className="text-[14px] font-semibold">{l.title}</span>
-                    <span className="text-[12px] text-ms-fg-3">{l.cta}</span>
-                  </span>
-                </Link>
-              ))}
-            </div>
+      <div className={`grid items-start gap-5 ${desk ? "lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]" : ""}`}>
+        {desk ? (
+          <Card
+            title="Needs you"
+            delay={140}
+            aside={
+              count ? (
+                <span key={count} className="animate-ms-pop inline-flex h-5 min-w-[22px] items-center justify-center rounded-full bg-ms-danger-btn px-1.5 text-[12px] font-semibold tabular-nums text-white">
+                  {count}
+                </span>
+              ) : undefined
+            }
+            action={count ? <span className="text-[13px] text-ms-fg-3">most urgent first</span> : undefined}
+          >
+            <AttentionList sources={attention} />
           </Card>
+        ) : null}
+        <div className="flex min-w-0 flex-col gap-5">
+          <LearnersCard enabled={desk || role === "teacher"} withLessons={desk} delay={200} />
+          <RecentlyOpened delay={260} />
         </div>
+      </div>
+
+      {desk ? (
+        <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
+          <DebtCard enabled={desk} delay={300} />
+          <SmsCard enabled={may("/ops/sms")} delay={340} />
+          <IncomeCard enabled={may("/ops/finance")} delay={380} />
+        </div>
+      ) : null}
+
+      <div className={`grid items-start gap-5 ${superAdmin ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]" : ""}`}>
+        {superAdmin ? <PlatformCard delay={420} /> : null}
+        <ShortcutsCard desk={desk} scoped={scoped} delay={460} />
       </div>
     </div>
   );

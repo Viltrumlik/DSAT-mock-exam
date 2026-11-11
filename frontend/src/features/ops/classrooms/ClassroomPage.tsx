@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { recordRecent } from "@/features/console/recent";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   BookCheck,
@@ -147,6 +148,8 @@ export function ClassroomPage({ id }: { id: number }) {
 
   useEffect(() => {
     if (room) document.title = `${room.name} · Classrooms`;
+    // Today's "Recently opened" (this browser only).
+    if (room) recordRecent({ kind: "class", id: room.id, name: room.name, href: `/ops/classrooms/${room.id}` });
   }, [room]);
 
   if (query.isPending) return <p className="p-4 text-sm text-muted-foreground md:p-6">Loading…</p>;
