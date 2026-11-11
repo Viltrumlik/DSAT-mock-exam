@@ -1,7 +1,7 @@
 """Question Bank admin API routes (read-only, Phase A). Mounted at api/questionbank/."""
 from django.urls import path
 
-from . import views, views_changelist
+from . import studio, views, views_changelist
 
 app_name = "questionbank"
 
@@ -12,6 +12,7 @@ urlpatterns = [
     path("questions/bulk/", views.BankQuestionBulkView.as_view(), name="question-bulk"),
     # The builder's Question Bank changelist: facet counts, ordering, pages (views_changelist).
     path("questions/changelist/", views_changelist.BankQuestionChangeListView.as_view(), name="question-changelist"),
+    path("studio/summary/", studio.StudioSummaryView.as_view(), name="studio-summary"),
     path("questions/<int:pk>/", views.BankQuestionDetailView.as_view(), name="question-detail"),
     path("questions/<int:pk>/archive/", views.BankQuestionArchiveView.as_view(), name="question-archive"),
     path("questions/<int:pk>/restore/", views.BankQuestionRestoreView.as_view(), name="question-restore"),

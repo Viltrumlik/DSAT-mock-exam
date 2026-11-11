@@ -7,6 +7,7 @@ import ModuleQuestionsPanel from "@/features/questionsAdmin/ModuleQuestionsPanel
 import { examsAdminApi } from "@/features/examsAdmin/api";
 import type { AdminPastpaperSection } from "@/lib/api";
 import { writeStudioSession } from "@/lib/studioSession";
+import { recordRecent } from "@/features/console/recent";
 
 // ─── Context loader ───────────────────────────────────────────────────────────
 
@@ -33,6 +34,13 @@ function PastpaperModuleEditor({
 
   const moduleEntry = section?.modules?.find((m) => m.id === moduleId) ?? null;
   const collectionTitle = (section?.collection_name && section.collection_name.trim()) || section?.title || undefined;
+
+  // Studio home's "Continue where you left off" (BuilderHome board): the test, opened at this module.
+  useEffect(() => {
+    if (!section) return;
+    const base = inPracticeLibrary ? "/builder/practice-tests" : "/builder/pastpapers";
+    recordRecent({ kind: "pastpaper", id: testId, name: collectionTitle || `Test ${testId}`, href: `${base}/${testId}/${moduleId}` });
+  }, [section, testId, moduleId, collectionTitle, inPracticeLibrary]);
 
   // ── Session continuity: persist last-viewed pastpaper module ─────────────
   useEffect(() => {

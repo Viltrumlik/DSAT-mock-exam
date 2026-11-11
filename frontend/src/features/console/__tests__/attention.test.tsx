@@ -11,7 +11,6 @@ import {
   attentionCount,
   debtItem,
   noTeacherCount,
-  reviewItem,
   smsItem,
   tashkentMonth,
   trialsItem,
@@ -45,12 +44,6 @@ describe("the items", () => {
     const p = page(14, [{ key: "teacher", options: [{ value: "1", label: "A", count: 8 }, { value: "2", label: "B", count: 5 }] }]);
     expect(noTeacherCount(p)).toBe(1);
     expect(noTeacherCount(page(3, []))).toBe(0);
-  });
-
-  it("reads the review queue from the status facet", () => {
-    expect(reviewItem(page(69, [{ key: "status", options: [{ value: "TRIAGE", label: "Triage", count: 12 }] }]))?.title).toBe(
-      "12 questions waiting for review",
-    );
   });
 
   it("knows the month by the learning center's clock", () => {
