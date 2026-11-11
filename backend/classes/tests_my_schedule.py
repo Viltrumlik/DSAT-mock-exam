@@ -62,6 +62,26 @@ class MyScheduleTests(TestCase):
         # The EVEN classroom the student isn't enrolled in must be excluded.
         self.assertFalse(any(e.get("classroom_id") == self.other.id for e in ev))
 
+    def _class_dates(self):
+        return {e["date"] for e in self._events() if e["type"] == "class"}
+
+    def test_a_class_moved_up_a_level_keeps_its_lessons_before_the_new_course(self):
+        from classes.models_attendance import AttendanceSession
+
+        self.cls.start_date = date(2026, 6, 12)  # lc-up's new course, a Friday inside the range
+        self.cls.save(update_fields=["start_date"])
+        AttendanceSession.objects.create(classroom=self.cls, date=date(2026, 5, 29))
+        dates = self._class_dates()
+        self.assertIn("2026-06-01", dates)
+        self.assertIn("2026-06-10", dates)
+
+    def test_a_class_that_has_not_begun_shows_from_its_start(self):
+        self.cls.start_date = date(2026, 6, 12)
+        self.cls.save(update_fields=["start_date"])
+        dates = self._class_dates()
+        self.assertNotIn("2026-06-10", dates)
+        self.assertIn("2026-06-12", dates)
+
     def test_range_cap_enforced(self):
         r = self.client.get("/api/classes/my-schedule/?from=2026-06-01&to=2026-12-31")
         self.assertEqual(r.status_code, 200, r.content)

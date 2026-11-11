@@ -129,6 +129,12 @@ class SelectionTests(LessonsFixture):
         self.assertEqual(set(self.ids()), {today.pk, running.pk, undated.pk})
         self.assertNotIn(later.pk, self.ids())
 
+    def test_a_class_moved_up_a_level_still_meets_before_its_new_course(self):
+        moved = self.room("Moved up", start_date=MONDAY + timedelta(days=3))
+        AttendanceSession.objects.create(classroom=moved, date=MONDAY - timedelta(days=3), created_by=self.teacher)
+        self.room("Never met", start_date=MONDAY + timedelta(days=3))
+        self.assertEqual(self.ids(), [moved.pk])
+
     def test_an_inactive_class_is_left_out(self):
         active, archived = self.room("Active"), self.room("Archived", is_active=False)
         self.assertEqual(self.ids(), [active.pk])
@@ -355,6 +361,22 @@ class QueryCountTests(LessonsFixture):
 class LcupAgreementTests(LessonsFixture):
     """``lcup.followups._meeting_classes`` (the lc-up lesson-end beat) keeps its own, narrower rule; the
     paired classes it finds and the ones Today finds must still be the same, with the same lesson."""
+
+    def test_a_paired_class_moved_up_a_level_is_found_by_both(self):
+        moved = self.pair(self.room("Paired moved up", start_date=MONDAY + timedelta(days=3))).classroom
+        AttendanceSession.objects.create(classroom=moved, date=MONDAY - timedelta(days=3), created_by=self.teacher)
+        self.pair(self.room("Paired never met", start_date=MONDAY + timedelta(days=3)))
+        self.assertEqual([room.pk for room, _ in _meeting_classes(MONDAY)], [moved.pk])
+        self.assertEqual(self.ids(), [moved.pk])
+
+    def test_the_lesson_end_beat_decides_it_in_one_query(self):
+        for n in range(3):
+            moved = self.pair(self.room(f"Moved up {n}", start_date=MONDAY + timedelta(days=3))).classroom
+            AttendanceSession.objects.create(classroom=moved, date=MONDAY - timedelta(days=3), created_by=self.teacher)
+            self.pair(self.room(f"Never met {n}", start_date=MONDAY + timedelta(days=3)))
+        with self.assertNumQueries(1):
+            found = list(_meeting_classes(MONDAY))
+        self.assertEqual(len(found), 3)
 
     def test_the_paired_classes_agree_with_the_lesson_end_beat(self):
         rooms = {

@@ -787,7 +787,7 @@ class ClassroomViewSet(ModelViewSet):
 
         # Weekday mapping lives in classes.lesson_schedule so the calendar and the
         # homework-deadline derivation can never drift apart.
-        from .lesson_schedule import lesson_weekdays
+        from .lesson_schedule import began_on, lesson_weekdays
 
         SUBJECT_LABEL = {"MATH": "Math", "ENGLISH": "English"}
 
@@ -806,7 +806,10 @@ class ClassroomViewSet(ModelViewSet):
             wd = lesson_weekdays(c)
             if not wd:
                 continue
-            start = c.start_date or frm
+            start = c.start_date
+            if start and start > frm:
+                start = began_on(c)  # a class lc-up moved up a level began before its start_date
+            start = start or frm
             subj = SUBJECT_LABEL.get(str(c.subject).upper(), str(c.subject or ""))
             d = frm
             while d <= to:

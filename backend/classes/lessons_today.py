@@ -7,8 +7,8 @@ keeps it; a test holds the paired classes both find in agreement.
 
 Each rule is borrowed from where it already lives, so Today cannot disagree with the register:
 
-- **Meets on ``day``**: its ``lesson_days`` covers the weekday (``lesson_schedule.LESSON_WEEKDAYS``), its
-  ``start_date`` is not after ``day``, and it ``is_active``.
+- **Meets on ``day``**: its ``lesson_days`` covers the weekday (``lesson_schedule.LESSON_WEEKDAYS``), it has
+  begun by ``day`` (``lesson_schedule.begun_by``), and it ``is_active``.
 - **The lesson**: ``lesson_schedule.lesson_interval``. A class whose ``lesson_time`` cannot be read is still
   listed, with no times and phase ``unknown``, so a lesson never goes silently missing from Today.
 - **The roster**: the register's own rule (``views_attendance._active_students``): active student seats
@@ -30,7 +30,7 @@ from django.utils import timezone
 from users.people_detail import display_name
 
 from .attendance_window import STATE_LOCKED, STATE_OPEN, STATE_PENDING, marking_state, marking_window
-from .lesson_schedule import LESSON_WEEKDAYS, lesson_interval
+from .lesson_schedule import LESSON_WEEKDAYS, begun_by, lesson_interval
 from .models import Classroom, ClassroomMembership
 from .models_attendance import AttendanceRecord, AttendanceSession
 
@@ -60,7 +60,7 @@ def meeting_classrooms(day: date) -> list[Classroom]:
         return []
     return list(
         Classroom.objects.filter(is_active=True, lesson_days__in=codes)
-        .filter(Q(start_date__isnull=True) | Q(start_date__lte=day))
+        .filter(begun_by(day))
         .select_related("teacher", "branch")
         .order_by("pk")
     )
