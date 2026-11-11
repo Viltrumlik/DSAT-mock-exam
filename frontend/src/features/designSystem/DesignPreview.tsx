@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 
 import { Icon } from "@/components/ui/Icon";
 import { ControlsSection } from "./ControlsSection";
+import { DataSection } from "./DataSection";
 import { FormsSection } from "./FormsSection";
 import { IconSection } from "./IconSection";
 import { MotionSection } from "./MotionSection";
@@ -152,6 +153,10 @@ export default function DesignPreview() {
 
         <Section id="forms" over="8 · Forms" title="Fields, select, combobox, dates, choices, tabs, avatars and keys">
           <FormsSection />
+        </Section>
+
+        <Section id="data" over="9 · Data display" title="Stat tiles, the header card, the timeline, charts and the drawings">
+          <DataSection />
         </Section>
       </div>
       <Probes />

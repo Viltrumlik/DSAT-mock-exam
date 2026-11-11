@@ -174,7 +174,7 @@ export function StudioHome() {
           }
           action={count ? <span className="text-[13px] text-ms-fg-3">most urgent first</span> : undefined}
         >
-          <AttentionList sources={attention} />
+          <AttentionList sources={attention} illustrate />
         </Card>
         <BankTable delay={200} />
       </div>

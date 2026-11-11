@@ -419,6 +419,7 @@ export function ChangeList<R extends { id: number }>({
                         <td colSpan={colSpan}>
                           <EmptyState
                             title={`No ${noun.plural} match`}
+                            art={narrowed ? "magnifier" : undefined}
                             detail={narrowed ? "Try another search, or clear the filters." : undefined}
                             action={
                               chips.length ? (
