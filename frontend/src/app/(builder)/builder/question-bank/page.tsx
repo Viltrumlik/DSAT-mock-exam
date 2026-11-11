@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { Suspense, useState } from "react";
-import { ListChecks, Loader2, Plus, Upload } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { useToast } from "@/components/ToastProvider";
+import { Icon } from "@/components/ui/Icon";
+import { buttonClass } from "@/features/console/ui";
 import { ChangeList, type ChangeListAction, type ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import { Truncated } from "@/features/ops/users/peopleColumns";
@@ -12,7 +14,6 @@ import { QB_FILTER_KEYS, useQbChangeList } from "@/domains/questionBank/changeli
 import { useQbBulk } from "@/domains/questionBank/hooks";
 import { QbStatusBadge } from "@/domains/questionBank/components/QbStatusBadge";
 import { difficultyLabel } from "@/domains/questionBank/utils";
-import "@/features/builderShell/studioChangelist.css";
 import type { QbQuestionListItem } from "@/domains/questionBank/types";
 
 /**
@@ -85,9 +86,6 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
 /** Approve only: rejecting stays in the Triage Queue, where a question is looked at before it goes. */
 type Pending = { ids: number[]; resolve: (done: boolean) => void };
 
-const HEADER_LINK =
-  "inline-flex h-10 items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 text-sm font-bold text-foreground shadow-sm transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
-
 export default function QuestionBankListPage() {
   // useSearchParams needs a Suspense boundary above it, or the production build's prerender fails.
   return (
@@ -108,6 +106,8 @@ function QuestionBankChangeList() {
     {
       key: "approve",
       label: "Approve selected questions",
+      short: "Approve",
+      icon: "check",
       run: (ids) => new Promise<boolean>((resolve) => setPending({ ids, resolve })),
     },
   ];
@@ -142,8 +142,8 @@ function QuestionBankChangeList() {
   };
 
   return (
-    // The builder's soft skin on the shared /ops changelist — see studioChangelist.css.
-    <div className="studio-changelist">
+    // The builder's rounded look now comes from the console tokens' Builder temperature.
+    <div>
       <ChangeList<QbQuestionListItem>
         title="Question Bank"
         noun={{ singular: "question", plural: "questions" }}
@@ -159,19 +159,16 @@ function QuestionBankChangeList() {
         rowLabel={(q) => q.qb_id}
         headerAction={
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/builder/question-bank/triage" className={HEADER_LINK}>
-              <ListChecks aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+            <Link href="/builder/question-bank/triage" className={buttonClass()}>
+              <Icon name="review" />
               Triage Queue
             </Link>
-            <Link href="/builder/question-bank/imports" className={HEADER_LINK}>
-              <Upload aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+            <Link href="/builder/question-bank/imports" className={buttonClass()}>
+              <Icon name="ms-import" />
               Imports
             </Link>
-            <Link
-              href="/builder/question-bank/new"
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-            >
-              <Plus aria-hidden className="h-3.5 w-3.5" />
+            <Link href="/builder/question-bank/new" className={buttonClass({ variant: "primary" })}>
+              <Icon name="plus" />
               New question
             </Link>
           </div>

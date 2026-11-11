@@ -1,8 +1,12 @@
 import { Avatar } from "@/components/ui";
+import { Badge } from "@/features/console/ui";
 import type { ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import type { PeopleRowBase } from "@/features/ops/changelist/peopleApi";
 
-/** Cells the three people lists share. Plain text throughout — no badges, no tints. */
+/**
+ * Cells the three people lists share (design handoff v0.3, DataDisplay board): the person first,
+ * the username under the name, the status as a verdict badge (icon + word), dates quiet.
+ */
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -54,7 +58,7 @@ export function nameColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
         <span className="min-w-0 leading-tight">
           <span className="block truncate">{r.name || r.username || `User ${r.id}`}</span>
           {r.name && r.username ? (
-            <span className="block truncate text-xs font-normal text-muted-foreground">{r.username}</span>
+            <span className="block truncate text-[13px] font-normal text-ms-fg-3">{r.username}</span>
           ) : null}
         </span>
       </span>
@@ -66,9 +70,18 @@ export function statusColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
   return {
     key: "status",
     label: "Status",
-    render: (r) => (
-      <span className={r.is_frozen ? "text-foreground" : "text-muted-foreground"}>{statusLabel(r.status, r.is_frozen)}</span>
-    ),
+    render: (r) => {
+      const label = statusLabel(r.status, r.is_frozen);
+      return r.is_frozen || label.startsWith("Frozen") ? (
+        <Badge tone="frozen" icon="snow">
+          {label}
+        </Badge>
+      ) : (
+        <Badge tone="positive" dot>
+          {label}
+        </Badge>
+      );
+    },
   };
 }
 
@@ -77,7 +90,7 @@ export function joinedColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
     key: "joined",
     label: "Joined",
     sortKey: "joined",
-    render: (r) => <span className="tabular-nums text-muted-foreground">{formatDate(r.date_joined)}</span>,
+    render: (r) => <span className="tabular-nums text-ms-fg-2">{formatDate(r.date_joined)}</span>,
   };
 }
 
@@ -87,7 +100,7 @@ export function lastSeenColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
     label: "Last seen",
     sortKey: "last_seen",
     render: (r) => (
-      <span className="tabular-nums text-muted-foreground" title={r.last_seen ? new Date(r.last_seen).toLocaleString("en-US") : undefined}>
+      <span className="tabular-nums text-ms-fg-2" title={r.last_seen ? new Date(r.last_seen).toLocaleString("en-US") : undefined}>
         {formatLastSeen(r.last_seen)}
       </span>
     ),
@@ -96,7 +109,7 @@ export function lastSeenColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
 
 /** One line, cut with an ellipsis; the whole text on hover. */
 export function Truncated({ text, className }: { text: string; className?: string }) {
-  if (!text) return <span className="text-muted-foreground">—</span>;
+  if (!text) return <span className="text-ms-fg-3">—</span>;
   return (
     <span title={text} className={`block truncate ${className ?? "max-w-[11rem]"}`}>
       {text}

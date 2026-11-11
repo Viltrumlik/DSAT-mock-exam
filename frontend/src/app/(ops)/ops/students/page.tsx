@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon } from "@/components/ui/Icon";
 import type { ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import type { StudentRow } from "@/features/ops/changelist/peopleApi";
-import { formatUzs } from "@/features/finance/financeApi";
+import { formatSom } from "@/features/console/entitySearch";
 import { PeopleList } from "@/features/ops/users/PeopleList";
 import {
   joinedColumn,
@@ -29,11 +30,12 @@ const COLUMNS: ChangeListColumn<StudentRow>[] = [
     className: "hidden min-[1440px]:table-cell",
     render: (r) =>
       r.lcup.linked ? (
-        <span title="Linked to lc-up" aria-label="Linked">
-          ✓
+        <span title="Linked to lc-up" className="inline-flex items-center gap-1.5 text-ms-fg-2">
+          <Icon name="link" size="sm" />
+          Linked
         </span>
       ) : (
-        <span className="text-muted-foreground" aria-label="Not linked">
+        <span className="text-ms-fg-3" aria-label="Not linked">
           —
         </span>
       ),
@@ -46,9 +48,9 @@ const COLUMNS: ChangeListColumn<StudentRow>[] = [
     className: "text-right",
     render: (r) =>
       r.lcup.balance !== null && r.lcup.balance < 0 ? (
-        <span className="tabular-nums text-danger">{formatUzs(-r.lcup.balance)}</span>
+        <span className="font-semibold tabular-nums text-ms-critical-fg">{formatSom(-r.lcup.balance)}</span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-ms-fg-3">—</span>
       ),
   },
   statusColumn<StudentRow>(),
