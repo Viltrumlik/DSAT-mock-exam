@@ -54,6 +54,13 @@ export function formatDay(iso: string | null | undefined): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)} ${d.getUTCFullYear()}`;
 }
 
+/** The day kept inside [min, max] (either may be missing), so keyboard focus never lands on a day that can't be picked. */
+export function clampIso(iso: string, min?: string, max?: string): string {
+  if (min && iso < min) return min;
+  if (max && iso > max) return max;
+  return iso;
+}
+
 /** The weeks a month's grid shows, Monday first, whole weeks only: [{ iso, inMonth }…]. */
 export function calendarDays(year: number, month0: number): { iso: string; day: number; inMonth: boolean }[] {
   const first = new Date(Date.UTC(year, month0, 1));
@@ -97,6 +104,7 @@ function Calendar({
   const month0 = d.getUTCMonth();
   const days = calendarDays(year, month0);
   const out = (iso: string) => Boolean((min && iso < min) || (max && iso > max));
+  const go = (iso: string) => setFocus(clampIso(iso, min, max));
 
   useEffect(() => {
     grid.current?.querySelector<HTMLElement>(`[data-day="${focus}"]`)?.focus();
@@ -116,7 +124,7 @@ function Calendar({
     };
     if (to[e.key]) {
       e.preventDefault();
-      setFocus(to[e.key]());
+      go(to[e.key]());
     } else if (e.key === "Escape") {
       e.preventDefault();
       onClose();
@@ -130,10 +138,10 @@ function Calendar({
           {MONTHS[month0]} {year}
         </span>
         <span className="flex gap-1">
-          <button type="button" aria-label="Previous month" onClick={() => setFocus(addMonthsIso(focus, -1))} className="grid size-8 place-items-center rounded-full text-ms-fg-2 hover:bg-ms-surface-2 focus-visible:outline-2 focus-visible:outline-ms-ring">
+          <button type="button" aria-label="Previous month" disabled={Boolean(min && min.slice(0, 7) >= focus.slice(0, 7))} onClick={() => go(addMonthsIso(focus, -1))} className="grid size-8 place-items-center rounded-full text-ms-fg-2 hover:bg-ms-surface-2 focus-visible:outline-2 focus-visible:outline-ms-ring disabled:cursor-not-allowed disabled:opacity-40">
             <Icon name="left" size="sm" />
           </button>
-          <button type="button" aria-label="Next month" onClick={() => setFocus(addMonthsIso(focus, 1))} className="grid size-8 place-items-center rounded-full text-ms-fg-2 hover:bg-ms-surface-2 focus-visible:outline-2 focus-visible:outline-ms-ring">
+          <button type="button" aria-label="Next month" disabled={Boolean(max && max.slice(0, 7) <= focus.slice(0, 7))} onClick={() => go(addMonthsIso(focus, 1))} className="grid size-8 place-items-center rounded-full text-ms-fg-2 hover:bg-ms-surface-2 focus-visible:outline-2 focus-visible:outline-ms-ring disabled:cursor-not-allowed disabled:opacity-40">
             <Icon name="right" size="sm" />
           </button>
         </span>
@@ -210,7 +218,7 @@ export function DateField({
   const today = todayProp ?? tashkentToday();
   const [open, setOpen] = useState(false);
   const { mounted, closing } = usePresence(open, 120);
-  const [focus, setFocus] = useState(value ?? today);
+  const [focus, setFocus] = useState(clampIso(value ?? today, min, max));
   const button = useRef<HTMLButtonElement | null>(null);
   const pop = useRef<HTMLDivElement | null>(null);
 
@@ -242,7 +250,7 @@ export function DateField({
         aria-label={ariaLabel ? `${ariaLabel}${value ? `, ${formatDay(value)}` : ""}` : undefined}
         aria-describedby={f.describedBy}
         onClick={() => {
-          setFocus(value ?? today);
+          setFocus(clampIso(value ?? today, min, max));
           setOpen((o) => !o);
         }}
         className={cn(inputShell({ invalid: f.invalid, disabled }), "w-full text-left focus-visible:outline-none", open && !f.invalid && "border-ms-primary shadow-[0_0_0_3px_var(--ms-primary-soft-2)]")}

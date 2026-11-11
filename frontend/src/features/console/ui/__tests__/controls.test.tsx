@@ -32,6 +32,7 @@ const {
   addMonthsIso,
   calendarDays,
   caretAfterDigits,
+  clampIso,
   filterOptions,
   formatDay,
   groupDigits,
@@ -262,6 +263,27 @@ describe("Date and time", () => {
     expect(host.textContent).toContain("Asia/Tashkent");
     click(document.activeElement!);
     expect(picked).toEqual(["2026-11-19"]);
+  });
+});
+
+describe("a bounded date", () => {
+  it("clamps the day into [min, max]", () => {
+    expect(clampIso("2026-11-11", undefined, "2026-11-10")).toBe("2026-11-10");
+    expect(clampIso("2026-11-01", "2026-11-05")).toBe("2026-11-05");
+    expect(clampIso("2026-11-07", "2026-11-05", "2026-11-10")).toBe("2026-11-07");
+  });
+
+  it("opens on the last allowed day when today is past max, and the keys stay on allowed days", () => {
+    // A birth date: max is yesterday and nothing is chosen yet (Codex review on #378).
+    render(<DateField aria-label="Birth date" value={null} max="2026-11-10" today="2026-11-11" onChange={() => {}} />);
+    click(host.querySelector("button")!);
+    expect(document.activeElement?.getAttribute("data-day")).toBe("2026-11-10");
+    key(document.activeElement!, "ArrowRight");
+    expect(document.activeElement?.getAttribute("data-day")).toBe("2026-11-10");
+    key(document.activeElement!, "ArrowLeft");
+    expect(document.activeElement?.getAttribute("data-day")).toBe("2026-11-09");
+    expect((host.querySelector('[aria-label="Next month"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((host.querySelector('[aria-label="Previous month"]') as HTMLButtonElement).disabled).toBe(false);
   });
 });
 

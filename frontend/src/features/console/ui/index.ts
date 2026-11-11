@@ -14,6 +14,7 @@ export {
   addDaysIso,
   addMonthsIso,
   calendarDays,
+  clampIso,
   formatDay,
   normalizeTime,
   periodRange,
