@@ -322,6 +322,33 @@ const TILES: Tile[] = [
     ),
   },
   {
+    key: "card-in",
+    title: "Page cards arrive",
+    spec: "animate-ms-card-in · 320 ms · in reading order",
+    demo: () => (
+      <span className="flex w-[220px] flex-col gap-2">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="animate-ms-card-in h-8 rounded-[10px] bg-ms-card shadow-ms-1" style={{ animationDelay: `${i * 90}ms` }} />
+        ))}
+      </span>
+    ),
+  },
+  {
+    key: "wipe-in",
+    title: "Lesson fills its hours",
+    spec: "animate-ms-wipe-in · 420 ms · in time order",
+    demo: () => (
+      <span className="relative h-[62px] w-[240px]">
+        <span className="animate-ms-wipe-in absolute inset-y-0 left-0 flex w-[112px] flex-col justify-center rounded-[12px] bg-ms-surface-2 px-2.5 text-[13px] text-ms-fg-2">
+          <b>Junior J6</b>8 / 8 marked
+        </span>
+        <span className="animate-ms-wipe-in absolute inset-y-0 left-[120px] flex w-[112px] flex-col justify-center rounded-[12px] bg-ms-primary px-2.5 text-[13px] text-white [animation-delay:90ms]">
+          <b>Middle M5</b>Now · 11 / 12
+        </span>
+      </span>
+    ),
+  },
+  {
     key: "hover-lift",
     title: "Hover lift",
     spec: "ms-hover-lift · −3 px · after an entrance too",

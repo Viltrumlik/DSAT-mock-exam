@@ -23,9 +23,16 @@ export function AttentionList({ sources, onNavigate }: { sources: readonly Atten
 
   return (
     <div className="flex flex-col">
-      {items.map((item) => (
-        <div key={item.id} className="flex items-center gap-3.5 border-b border-ms-line py-3 last:border-b-0">
-          <span className={`grid size-10 shrink-0 place-items-center rounded-full ${TONE[item.tone]}`}>
+      {items.map((item, i) => (
+        <div
+          key={item.id}
+          className="animate-ms-fade-in flex items-center gap-3.5 border-b border-ms-line py-3 last:border-b-0"
+          style={{ animationDelay: `${i * 50}ms` }}
+        >
+          <span
+            className={`animate-ms-check-pop grid size-10 shrink-0 place-items-center rounded-full ${TONE[item.tone]}`}
+            style={{ animationDelay: `${60 + i * 50}ms` }}
+          >
             <Icon name={item.icon} />
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
@@ -57,15 +64,19 @@ export function AttentionList({ sources, onNavigate }: { sources: readonly Atten
         <div key={s.id} className="flex items-center gap-3 py-2.5 text-[14px]">
           <Icon name="alert" size="sm" className="text-ms-critical-fg" />
           <span className="flex-1 text-ms-critical-fg">Couldn’t check {s.label}.</span>
-          <button type="button" onClick={s.retry} className="ms-transition min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-surface-2">
+          <button type="button" onClick={s.retry} className="ms-press min-h-9 rounded-[8px] px-2.5 font-semibold text-ms-primary-text hover:bg-ms-surface-2">
             Retry
           </button>
         </div>
       ))}
       {items.length === 0 && loading.length === 0 && failed.length === 0 ? (
         <p className="flex items-center gap-2.5 py-4 text-[15px] text-ms-fg-2">
-          <Icon name="ok" className="text-ms-positive-fg" />
-          Nothing needs you right now.
+          {/* Done — the tick draws once and the words stay (Motion board). */}
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0 text-ms-positive-fg">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" opacity=".3" />
+            <path className="animate-ms-check-draw" d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="animate-ms-fade-in [animation-delay:160ms]">Nothing needs you right now.</span>
         </p>
       ) : null}
     </div>
