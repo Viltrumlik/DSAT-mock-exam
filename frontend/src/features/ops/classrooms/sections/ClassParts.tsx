@@ -23,7 +23,7 @@ import {
 
 /** A count that is not zero, in its mark's colour; a zero stays quiet. */
 function Count({ n, tone }: { n: number; tone: "success" | "warning" | "danger" | "info" }) {
-  return <span className={cn("tabular-nums", n > 0 ? cn("font-semibold", TONE_TEXT[tone]) : "text-muted-foreground")}>{n}</span>;
+  return <span className={cn("tabular-nums", n > 0 ? cn("font-semibold", TONE_TEXT[tone]) : "text-ms-fg-3")}>{n}</span>;
 }
 
 export function ClassAttendanceSection({ id }: { id: number }) {
@@ -64,7 +64,7 @@ export function ClassAttendanceSection({ id }: { id: number }) {
             >
               {d.sessions.map((s) => (
                 <tr key={s.date}>
-                  <Td className="tabular-nums text-muted-foreground">{formatDay(s.date)}</Td>
+                  <Td className="tabular-nums text-ms-fg-3">{formatDay(s.date)}</Td>
                   <Td>
                     <Count n={s.present} tone="success" />
                   </Td>
@@ -81,7 +81,7 @@ export function ClassAttendanceSection({ id }: { id: number }) {
                     {s.lcup_push ? (
                       <Pill tone={PUSH[s.lcup_push]?.tone ?? "neutral"}>{PUSH[s.lcup_push]?.label ?? s.lcup_push}</Pill>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-ms-fg-3">—</span>
                     )}
                   </Td>
                 </tr>
@@ -114,7 +114,7 @@ export function ClassHomeworkSection({ id }: { id: number }) {
                     <Td wrap className="font-medium sm:max-w-[24rem] sm:truncate">
                       {a.title}
                     </Td>
-                    <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>
+                    <Td className={`${WIDE_ONLY} tabular-nums text-ms-fg-3`}>
                       {a.due_at ? formatDateTime(a.due_at) : "No due date"}
                     </Td>
                     <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(rate)])}>
@@ -140,22 +140,22 @@ export function ClassHistorySection({ id }: { id: number }) {
         isEmpty={(d) => d.items.length === 0}
         render={(d) => (
           <>
-            <ol className="ml-1.5 border-l border-border">
+            <ol className="ml-1.5 border-l border-ms-border">
               {d.items.map((item, i) => (
                 <li key={`${item.at}-${i}`} className="relative break-words py-2 pl-6">
                   <span
                     aria-hidden
-                    className="absolute -left-[5px] top-[15px] h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-card"
+                    className="absolute -left-[5px] top-[15px] h-2.5 w-2.5 rounded-full bg-ms-primary ring-4 ring-ms-card"
                   />
-                  <span className="text-xs tabular-nums text-muted-foreground">{formatDateTime(item.at)}</span>
+                  <span className="text-xs tabular-nums text-ms-fg-3">{formatDateTime(item.at)}</span>
                   {" · "}
-                  <span className="font-medium text-foreground">{item.title}</span>
-                  {item.by ? <span className="text-muted-foreground"> · by {item.by}</span> : null}
+                  <span className="font-medium text-ms-fg">{item.title}</span>
+                  {item.by ? <span className="text-ms-fg-3"> · by {item.by}</span> : null}
                 </li>
               ))}
             </ol>
             {d.truncated ? (
-              <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-ms-fg-3">
                 <ListChecks aria-hidden className="h-3.5 w-3.5" />
                 Showing the latest 200.
               </p>

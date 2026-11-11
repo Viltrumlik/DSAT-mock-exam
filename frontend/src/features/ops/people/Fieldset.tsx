@@ -94,8 +94,9 @@ export function Fieldset({
       className={cn("animate-ms-card-in min-w-0 rounded-ms-card bg-ms-card shadow-ms-1", className)}
       aria-label={title}
     >
-      <header className="flex items-start justify-between gap-3 px-[22px] pb-1 pt-5">
-        <div className="flex min-w-0 items-center gap-3">
+      {/* A button on the right drops below on a phone instead of squeezing the description to a word a line. */}
+      <header className="flex flex-wrap items-start justify-between gap-3 px-[22px] pb-1 pt-5">
+        <div className="flex min-w-[min(100%,16rem)] flex-1 items-center gap-3">
           {icon ? <IconSquare icon={icon} tone={tone} /> : null}
           <div className="min-w-0">
             <h2 className="text-ms-h text-ms-fg">{title}</h2>

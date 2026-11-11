@@ -3,9 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Lock, MoreHorizontal, Search, UserPlus, Users } from "lucide-react";
+import { Lock, MoreHorizontal, UserPlus, Users } from "lucide-react";
 import api, { classesApi } from "@/lib/api";
-import { Avatar, Badge, DropdownMenu, DropdownMenuItem } from "@/components/ui";
+// The row menu stays the portalled DropdownMenu: the roster table scrolls sideways, and the console Menu
+// (absolute, not portalled yet) would be cut off inside it.
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
+import { Avatar, TextInput, buttonClass } from "@/features/console/ui";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
 import { formatUzs } from "@/features/finance/financeApi";
@@ -15,6 +18,7 @@ import {
   Fieldset,
   LINK_CLASS,
   PartBody,
+  Pill,
   Table,
   Td,
   TONE_TEXT,
@@ -35,8 +39,8 @@ import { AddSeatDialog, NewStudentDialog, SeatActionDialog } from "./SeatDialogs
  * per row the actions that fit it, each writing the seat and the ledger together.
  */
 
-export const SMALL_BUTTON =
-  "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
+/** The console's 36 px secondary button, for rows and pickers. */
+export const SMALL_BUTTON = buttonClass({ size: "sm" });
 
 const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}%`);
 
@@ -111,42 +115,41 @@ function AddStudent({
   };
 
   return (
-    <div className="mb-5 rounded-xl border border-dashed border-border p-4">
-      <label htmlFor={`add-student-${room.id}`} className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <UserPlus aria-hidden className="h-4 w-4 text-primary" />
+    <div className="mb-5 rounded-[16px] border border-dashed border-ms-border-strong p-4">
+      <label htmlFor={`add-student-${room.id}`} className="flex items-center gap-2 text-[14px] font-medium text-ms-fg">
+        <UserPlus aria-hidden className="h-4 w-4 text-ms-primary-text" />
         Add student
       </label>
-      <div className="relative mt-2 max-w-md">
-        <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
+      <div className="mt-2 max-w-md">
+        <TextInput
           id={`add-student-${room.id}`}
+          icon="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search name, username or phone"
           autoComplete="off"
-          className="h-10 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         />
       </div>
       {term.length < 2 ? null : search.isError ? (
-        <p role="alert" className="mt-2 text-sm text-muted-foreground">
+        <p role="alert" className="mt-2 text-sm text-ms-fg-3">
           Could not search.{" "}
-          <button type="button" className="font-semibold text-primary hover:underline" onClick={() => void search.refetch()}>
+          <button type="button" className="font-semibold text-ms-primary-text hover:underline" onClick={() => void search.refetch()}>
             Retry
           </button>
         </p>
       ) : search.isPending ? (
-        <p className="mt-2 text-sm text-muted-foreground">Searching…</p>
+        <p className="mt-2 text-sm text-ms-fg-3">Searching…</p>
       ) : rows.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">No student matches “{term}”.</p>
+        <p className="mt-2 text-sm text-ms-fg-3">No student matches “{term}”.</p>
       ) : (
-        <ul className="mt-2 max-w-md divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+        <ul className="mt-2 max-w-md divide-y divide-ms-line overflow-hidden rounded-ms-ctl border border-ms-border bg-ms-card">
           {rows.map((r) => (
             <li key={r.id} className="flex items-center justify-between gap-3 px-3 py-2">
               <span className="flex min-w-0 items-center gap-2.5">
-                <Avatar src={r.avatar_url ?? null} name={r.name || r.username || ""} size={28} />
+                <Avatar src={r.avatar_url ?? null} name={r.name || r.username || ""} size="sm" />
                 <span className="min-w-0 leading-tight">
-                  <span className="block truncate text-sm font-medium text-foreground">{r.name || r.username}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block truncate text-sm font-medium text-ms-fg">{r.name || r.username}</span>
+                  <span className="block truncate text-xs text-ms-fg-3">
                     {r.groups ? r.groups.map((g) => g.name).join(", ") || "no class" : "public account"}
                   </span>
                 </span>
@@ -181,7 +184,7 @@ function SeatRowActions({
       <DropdownMenu
         portal
         trigger={
-          <button type="button" aria-label={`More actions for ${name}`} className={SMALL_BUTTON}>
+          <button type="button" aria-label={`More actions for ${name}`} className={buttonClass({ size: "sm", square: true })}>
             <MoreHorizontal aria-hidden className="h-4 w-4" />
           </button>
         }
@@ -245,7 +248,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
       description="Who sits in this class, what they owe and how they are doing"
       right={
         seatsOpen ? (
-          <button type="button" className={SMALL_BUTTON} onClick={() => setDialog({ kind: "new" })}>
+          <button type="button" className={buttonClass({ size: "sm", variant: "primary" })} onClick={() => setDialog({ kind: "new" })}>
             <UserPlus aria-hidden className="h-4 w-4" />
             New student
           </button>
@@ -253,7 +256,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
       }
     >
       {managed ? (
-        <p className="mb-5 flex items-start gap-2.5 rounded-lg border border-info/20 bg-info-soft px-3.5 py-3 text-sm text-info-foreground">
+        <p className="mb-5 flex items-start gap-2.5 rounded-ms-ctl border border-ms-info-line bg-ms-info-soft px-3.5 py-3 text-[14px] text-ms-info-fg">
           <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
           Students come from lc-up. Add or remove them there.
         </p>
@@ -275,7 +278,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                   <tr key={s.id}>
                     <Td wrap className="sm:max-w-[18rem]">
                       <span className="flex min-w-0 items-center gap-2.5">
-                        <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size={28} />
+                        <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size="sm" />
                         <span className="min-w-0">
                           {/* Wrapped on a phone ("Muhammadali …" lost half the name), one line from sm up. */}
                           <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:flex-nowrap">
@@ -287,23 +290,23 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                             >
                               {s.name || s.username}
                             </Link>
-                            {s.seat_status === "trial" ? <Badge variant="info" className="shrink-0">Trial</Badge> : null}
-                            {s.seat_status === "frozen" ? <Badge variant="warning" className="shrink-0">Frozen</Badge> : null}
+                            {s.seat_status === "trial" ? <span className="shrink-0"><Pill tone="info">Trial</Pill></span> : null}
+                            {s.seat_status === "frozen" ? <span className="shrink-0"><Pill tone="frozen">Frozen</Pill></span> : null}
                           </span>
                           {s.owes ? (
-                            <span className="block text-xs font-semibold text-danger sm:hidden">owes {formatUzs(s.owes)}</span>
+                            <span className="block text-xs font-semibold text-ms-critical-fg sm:hidden">owes {formatUzs(s.owes)}</span>
                           ) : null}
                         </span>
                       </span>
                     </Td>
-                    <Td className={`${spare} tabular-nums text-muted-foreground`}>
+                    <Td className={`${spare} tabular-nums text-ms-fg-3`}>
                       {s.seat_start_date ? formatDay(s.seat_start_date) : formatDate(s.joined_at)}
                     </Td>
                     <Td className={`${WIDE_ONLY} tabular-nums`}>
                       {s.owes ? (
-                        <span className="font-semibold text-danger">{formatUzs(s.owes)}</span>
+                        <span className="font-semibold text-ms-critical-fg">{formatUzs(s.owes)}</span>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-ms-fg-3">—</span>
                       )}
                     </Td>
                     <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(s.attendance_rate)])}>
@@ -348,7 +351,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
             ) : null}
             {seatsOpen && (d.left ?? []).length > 0 ? (
               <div className="mt-5">
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Left this group</h3>
+                <h3 className="text-ms-over mb-2 text-ms-fg-3">Left this group</h3>
                 <Table head={["Name", "Last day", ""]}>
                   {d.left.map((s) => (
                     <tr key={s.id}>
@@ -357,7 +360,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                           {s.name}
                         </Link>
                       </Td>
-                      <Td className="tabular-nums text-muted-foreground">{formatDay(s.seat_left_on)}</Td>
+                      <Td className="tabular-nums text-ms-fg-3">{formatDay(s.seat_left_on)}</Td>
                       <Td className="text-right">
                         <button
                           type="button"
