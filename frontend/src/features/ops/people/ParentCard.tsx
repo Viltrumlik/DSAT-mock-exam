@@ -5,6 +5,7 @@ import { Phone } from "lucide-react";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { serverReason } from "@/features/ops/classrooms/classroomsApi";
+import { buttonClass, inputShell } from "@/features/console/ui";
 import { Fieldset } from "./Fieldset";
 
 /**
@@ -12,8 +13,8 @@ import { Fieldset } from "./Fieldset";
  * this box. SMS stays on the student's own phone.
  */
 
-const INPUT =
-  "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+/** The console's field box (44 px, focus ring) on the bare input. */
+const INPUT = inputShell({ className: "w-full outline-none placeholder:text-ms-fg-3" });
 
 export function ParentCard({
   id,
@@ -51,13 +52,13 @@ export function ParentCard({
       <form onSubmit={(e) => void save(e)} className="space-y-4" noValidate>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="min-w-0 space-y-1.5">
-            <label htmlFor={`${uid}-name`} className="block text-sm font-medium text-foreground">
+            <label htmlFor={`${uid}-name`} className="block text-[14px] font-medium leading-5 text-ms-fg">
               Name
             </label>
             <input id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" className={INPUT} />
           </div>
           <div className="min-w-0 space-y-1.5">
-            <label htmlFor={`${uid}-phone`} className="block text-sm font-medium text-foreground">
+            <label htmlFor={`${uid}-phone`} className="block text-[14px] font-medium leading-5 text-ms-fg">
               Phone
             </label>
             <input id={`${uid}-phone`} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" className={INPUT} />
@@ -65,7 +66,7 @@ export function ParentCard({
         </div>
         <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           {error ? (
-            <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-foreground">
+            <p role="alert" className="rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3 py-2 text-[14px] text-ms-critical-fg">
               {error}
             </p>
           ) : (
@@ -74,7 +75,7 @@ export function ParentCard({
           <button
             type="submit"
             disabled={saving}
-            className="h-10 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+            className={buttonClass({ variant: "primary" })}
           >
             {saving ? "Saving…" : "Save"}
           </button>

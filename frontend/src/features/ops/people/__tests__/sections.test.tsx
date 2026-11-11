@@ -246,8 +246,9 @@ describe("Results", () => {
     });
     await render(<ResultsSection id={7} section="students" />);
     const rate = [...host.querySelectorAll("td")].find((td) => td.textContent === "50%")!;
-    expect(rate.className).toContain("text-danger");
-    expect(rate.className).not.toContain("text-foreground");
+    const classes = rate.className.split(/\s+/);
+    expect(classes).toContain("text-ms-critical-fg");
+    expect(classes).not.toContain("text-ms-fg");
   });
 
   it("shows a public user only mock exams, practice tests and events", async () => {

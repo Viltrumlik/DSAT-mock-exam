@@ -311,7 +311,7 @@ describe("the header", () => {
     expect(text).toContain("67%"); // 4 of 6 handed in
     expect(text).toMatch(/Owe lc-up\s*1/);
     // The tile's value, not its icon square (which shares the colour and has no text).
-    const owing = [...header().querySelectorAll(".text-danger")].map((el) => el.textContent).filter(Boolean);
+    const owing = [...header().querySelectorAll(".text-ms-critical-fg")].map((el) => el.textContent).filter(Boolean);
     expect(owing).toEqual(["1"]);
   });
 
@@ -374,8 +374,8 @@ describe("the tabs", () => {
       await renderPage("tab=homework");
       const cell = (title: string) =>
         [...box("Homework")!.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes(title))!.lastElementChild!;
-      expect(cell("Not due yet").className).not.toContain("text-danger");
-      expect(cell("Past due").className).toContain("text-danger");
+      expect(cell("Not due yet").className).not.toContain("text-ms-critical-fg");
+      expect(cell("Past due").className).toContain("text-ms-critical-fg");
     } finally {
       PARTS.homework = { assignments: [] };
     }

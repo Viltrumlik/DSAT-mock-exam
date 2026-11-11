@@ -5,6 +5,7 @@ import { UserRound } from "lucide-react";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { CANONICAL_ROLES, ROLE_LABELS, requiresSubject } from "@/lib/roles";
+import { buttonClass, inputShell } from "@/features/console/ui";
 import { Fieldset } from "./Fieldset";
 import type { PersonCore } from "./personApi";
 
@@ -18,8 +19,8 @@ import type { PersonCore } from "./personApi";
  * - no password — the owner replaced "New password" with the header's one-time password.
  */
 
-const INPUT =
-  "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted-foreground";
+/** The console's field box (44 px, focus ring; quieter when lc-up decides the value) on the bare control. */
+const input = (disabled = false) => inputShell({ disabled, className: "w-full outline-none placeholder:text-ms-fg-3" });
 
 /** Under a field lc-up decides for a linked learner (``lcup.profiles``, owner 2026-10-28). */
 const FROM_LCUP = "Set in lc-up — change it there; it reaches here within 15 minutes.";
@@ -42,11 +43,11 @@ function firstFieldError(data: unknown): string | null {
 function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="min-w-0 space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-medium text-foreground">
+      <label htmlFor={id} className="block text-[14px] font-medium leading-5 text-ms-fg">
         {label}
       </label>
       {children}
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="text-[13px] leading-[18px] text-ms-fg-3">{hint}</p> : null}
     </div>
   );
 }
@@ -54,7 +55,7 @@ function Field({ id, label, hint, children }: { id: string; label: string; hint?
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <fieldset className="space-y-3">
-      <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</legend>
+      <legend className="text-ms-over mb-1 text-ms-fg-3">{title}</legend>
       <div className="grid gap-4 sm:grid-cols-2">{children}</div>
     </fieldset>
   );
@@ -118,10 +119,10 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
       <form onSubmit={(e) => void save(e)} className="space-y-6" noValidate>
         <Group title="Name">
           <Field id={id("first")} label="First name" hint={locked.has("first_name") ? FROM_LCUP : undefined}>
-            <input id={id("first")} value={firstName} disabled={locked.has("first_name")} onChange={(e) => setFirstName(e.target.value)} className={INPUT} />
+            <input id={id("first")} value={firstName} disabled={locked.has("first_name")} onChange={(e) => setFirstName(e.target.value)} className={input(locked.has("first_name"))} />
           </Field>
           <Field id={id("last")} label="Last name" hint={locked.has("last_name") ? FROM_LCUP : undefined}>
-            <input id={id("last")} value={lastName} disabled={locked.has("last_name")} onChange={(e) => setLastName(e.target.value)} className={INPUT} />
+            <input id={id("last")} value={lastName} disabled={locked.has("last_name")} onChange={(e) => setLastName(e.target.value)} className={input(locked.has("last_name"))} />
           </Field>
         </Group>
 
@@ -132,7 +133,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="off"
-              className={INPUT}
+              className={input()}
             />
           </Field>
           <Field
@@ -147,7 +148,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               autoComplete="off"
-              className={INPUT}
+              className={input(locked.has("phone_number"))}
             />
           </Field>
           <div className="sm:col-span-2">
@@ -158,7 +159,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="off"
-                className={INPUT}
+                className={input()}
               />
             </Field>
           </div>
@@ -166,7 +167,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
 
         <Group title="Role">
           <Field id={id("role")} label="Role">
-            <select id={id("role")} value={role} onChange={(e) => setRole(e.target.value)} className={INPUT}>
+            <select id={id("role")} value={role} onChange={(e) => setRole(e.target.value)} className={input()}>
               {CANONICAL_ROLES.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABELS[r]}
@@ -178,7 +179,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
               changing its role here, so this field appearing is the only way to give one a subject. */}
           {needsSubject ? (
             <Field id={id("subject")} label="Subject">
-              <select id={id("subject")} value={subject} onChange={(e) => setSubject(e.target.value)} className={INPUT}>
+              <select id={id("subject")} value={subject} onChange={(e) => setSubject(e.target.value)} className={input()}>
                 <option value="">— select —</option>
                 <option value="math">Mathematics</option>
                 <option value="english">English / Reading & Writing</option>
@@ -190,9 +191,9 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
           ) : null}
         </Group>
 
-        <div className="flex flex-col-reverse items-stretch gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col-reverse items-stretch gap-3 border-t border-ms-line pt-5 sm:flex-row sm:items-center sm:justify-between">
           {error ? (
-            <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-foreground">
+            <p role="alert" className="rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3 py-2 text-[14px] text-ms-critical-fg">
               {error}
             </p>
           ) : (
@@ -201,7 +202,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
           <button
             type="submit"
             disabled={saving}
-            className="h-10 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+            className={buttonClass({ variant: "primary" })}
           >
             {saving ? "Saving…" : "Save"}
           </button>

@@ -20,7 +20,7 @@ export function HistorySection({ id }: { id: number }) {
         render={(d) => (
           <>
             <HistoryTimeline items={d.items} />
-            {d.truncated ? <p className="mt-3 text-xs text-muted-foreground">Showing the latest 200.</p> : null}
+            {d.truncated ? <p className="mt-3 text-xs text-ms-fg-3">Showing the latest 200.</p> : null}
           </>
         )}
       />
