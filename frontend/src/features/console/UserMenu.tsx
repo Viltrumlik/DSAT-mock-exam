@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { openShortcuts } from "./ShortcutsDialog";
+import { usePresence } from "./ui/presence";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 
@@ -43,6 +45,7 @@ export function UserMenu({ me }: { me: MeLike }) {
   const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
+  const { mounted, closing } = usePresence(open, 120);
   const [loggingOut, setLoggingOut] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -122,14 +125,14 @@ export function UserMenu({ me }: { me: MeLike }) {
         <Icon name="down" size="sm" className="hidden text-ms-fg-3 md:block" />
       </button>
 
-      {open ? (
+      {mounted ? (
         <div
           ref={menuRef}
           id={menuId}
           role="menu"
           aria-label="Account"
           onKeyDown={onMenuKey}
-          className="animate-ms-fade-in absolute right-0 top-full z-50 mt-2 w-72 rounded-ms-pop border border-ms-border bg-ms-card p-1.5 shadow-ms-2"
+          className={`${closing ? "animate-ms-dialog-out pointer-events-none" : "animate-ms-dialog-in"} absolute right-0 top-full z-50 mt-2 w-72 origin-top-right rounded-ms-pop border border-ms-border bg-ms-card p-1.5 shadow-ms-2`}
         >
           <div role="none" className="flex flex-col gap-1 px-2.5 pb-2.5 pt-2">
             <span className="truncate text-[15px] font-semibold text-ms-fg">{name}</span>
@@ -172,6 +175,20 @@ export function UserMenu({ me }: { me: MeLike }) {
               <kbd className="rounded-[6px] border border-ms-border-strong px-1.5 font-ms-mono text-[12px] text-ms-fg-2">[</kbd>
             </span>
           </div>
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            onClick={() => {
+              close();
+              openShortcuts();
+            }}
+            className={itemClass}
+          >
+            <Icon name="keyboard" className="text-ms-fg-2" />
+            All keyboard shortcuts
+            <kbd className="ml-auto rounded-[6px] border border-ms-border-strong px-1.5 font-ms-mono text-[12px] text-ms-fg-2">?</kbd>
+          </button>
 
           <div role="separator" className="-mx-1.5 my-1.5 h-px bg-ms-border" />
           <button

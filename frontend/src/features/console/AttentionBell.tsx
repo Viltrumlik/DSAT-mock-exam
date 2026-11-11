@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { attentionCount, type AttentionSource } from "./attention";
 import { AttentionList } from "./AttentionList";
+import { usePresence } from "./ui/presence";
 
 /**
  * The top bar's bell (design handoff v0.3, Shell board): the same items as the dashboard's
@@ -38,6 +39,8 @@ export function AttentionBell({ sources }: { sources: readonly AttentionSource[]
     };
   }, [open]);
 
+  const { mounted, closing } = usePresence(open);
+
   if (!sources.length) return null;
 
   return (
@@ -58,13 +61,13 @@ export function AttentionBell({ sources }: { sources: readonly AttentionSource[]
           </span>
         ) : null}
       </button>
-      {open ? (
+      {mounted ? (
         <div
           ref={panelRef}
           id={panelId}
           role="dialog"
           aria-label="Needs you"
-          className="animate-ms-dialog-in absolute right-0 top-full z-50 origin-top-right mt-2 w-[min(420px,calc(100vw-24px))] rounded-ms-pop border border-ms-border bg-ms-card px-4 pb-2 pt-3 shadow-ms-2"
+          className={`${closing ? "animate-ms-dialog-out pointer-events-none" : "animate-ms-dialog-in"} absolute right-0 top-full z-50 origin-top-right mt-2 w-[min(420px,calc(100vw-24px))] rounded-ms-pop border border-ms-border bg-ms-card px-4 pb-2 pt-3 shadow-ms-2`}
         >
           <div className="pb-1 text-[13px] font-semibold text-ms-fg-3">Needs you</div>
           <AttentionList sources={sources} onNavigate={() => setOpen(false)} />

@@ -1,5 +1,6 @@
 import { Avatar } from "@/components/ui";
 import { Badge } from "@/features/console/ui";
+import { useChanged } from "@/features/console/useChanged";
 import type { ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import type { PeopleRowBase } from "@/features/ops/changelist/peopleApi";
 
@@ -66,22 +67,30 @@ export function nameColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
   };
 }
 
+/**
+ * A status as a verdict (icon + word). When it changes in front of you — a freeze lands — the badge
+ * comes in again and a Frozen snowflake turns in (Motion board, "Freeze"); on a plain load nothing moves.
+ */
+function StatusBadge({ status, frozen }: { status: string; frozen: boolean }) {
+  const label = statusLabel(status, frozen);
+  const changed = useChanged(label);
+  const motion = changed ? "animate-ms-fade-in" : undefined;
+  return frozen || label.startsWith("Frozen") ? (
+    <Badge key={label} tone="frozen" icon="snow" className={motion} iconClassName={changed ? "animate-ms-snow-in" : undefined}>
+      {label}
+    </Badge>
+  ) : (
+    <Badge key={label} tone="positive" dot className={motion}>
+      {label}
+    </Badge>
+  );
+}
+
 export function statusColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
   return {
     key: "status",
     label: "Status",
-    render: (r) => {
-      const label = statusLabel(r.status, r.is_frozen);
-      return r.is_frozen || label.startsWith("Frozen") ? (
-        <Badge tone="frozen" icon="snow">
-          {label}
-        </Badge>
-      ) : (
-        <Badge tone="positive" dot>
-          {label}
-        </Badge>
-      );
-    },
+    render: (r) => <StatusBadge status={r.status} frozen={Boolean(r.is_frozen)} />,
   };
 }
 

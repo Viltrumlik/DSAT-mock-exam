@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Suspense, useRef, useState } from "react";
 
-import { useToast } from "@/components/ToastProvider";
+import { toast } from "@/features/console/toast";
 import { Icon } from "@/components/ui/Icon";
-import { buttonClass } from "@/features/console/ui";
+import { ConfirmDialog, buttonClass } from "@/features/console/ui";
 import { ChangeList, type ChangeListAction, type ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import { Truncated } from "@/features/ops/users/peopleColumns";
@@ -99,8 +98,9 @@ function QuestionBankChangeList() {
   const { params } = useChangeListParams(QB_FILTER_KEYS);
   const query = useQbChangeList(params);
   const bulk = useQbBulk();
-  const { push } = useToast();
   const [pending, setPending] = useState<Pending | null>(null);
+  const [open, setOpen] = useState(false);
+  const succeeded = useRef(false);
 
   const actions: ChangeListAction[] = [
     {
@@ -108,37 +108,40 @@ function QuestionBankChangeList() {
       label: "Approve selected questions",
       short: "Approve",
       icon: "check",
-      run: (ids) => new Promise<boolean>((resolve) => setPending({ ids, resolve })),
+      run: (ids) =>
+        new Promise<boolean>((resolve) => {
+          succeeded.current = false;
+          setPending({ ids, resolve });
+          setOpen(true);
+        }),
     },
   ];
 
+  // Runs inside the dialog: progress on the button; a failure shakes it and says why there.
   const confirm = async () => {
     if (!pending) return;
-    const { ids, resolve } = pending;
-    let done = false;
+    let r: Awaited<ReturnType<typeof bulk.mutateAsync>>;
     try {
-      const r = await bulk.mutateAsync({ action: "approve", ids });
-      const okCount = r.results.filter((x) => x.ok).length;
-      const failed = r.results.filter((x) => !x.ok);
-      const verb = "approved";
-      // The server says why a question was skipped ("Cannot approve an UNCLASSIFIED question…").
-      const why = failed[0]?.error ? ` (${failed[0].error})` : "";
-      if (okCount === 0) push({ tone: "error", message: `Nothing ${verb} — ${failed.length} skipped${why}.` });
-      else if (failed.length === 0) push({ tone: "success", message: `${okCount} question${okCount === 1 ? "" : "s"} ${verb}.` });
-      else push({ tone: "error", message: `${okCount} ${verb}, ${failed.length} skipped${why}.` });
-      done = true;
+      r = await bulk.mutateAsync({ action: "approve", ids: pending.ids });
     } catch {
-      push({ tone: "error", message: "Bulk action failed. Please try again." });
-    } finally {
-      setPending(null);
-      resolve(done);
+      throw new Error("Couldn’t reach the server. Check the list, then try again.");
     }
+    const okCount = r.results.filter((x) => x.ok).length;
+    const failed = r.results.filter((x) => !x.ok);
+    // The server says why a question was skipped ("Cannot approve an UNCLASSIFIED question…").
+    const why = failed[0]?.error ? ` (${failed[0].error})` : "";
+    if (okCount === 0) throw new Error(`Nothing approved — ${failed.length} skipped${why}.`);
+    succeeded.current = true;
+    toast.show({
+      icon: "check",
+      tone: failed.length ? "error" : "neutral",
+      message: failed.length ? `${okCount} approved, ${failed.length} skipped${why}.` : `${okCount} question${okCount === 1 ? "" : "s"} approved.`,
+    });
   };
 
-  const cancel = () => {
-    if (bulk.isPending || !pending) return;
-    pending.resolve(false);
-    setPending(null);
+  const close = () => {
+    setOpen(false);
+    pending?.resolve(succeeded.current);
   };
 
   return (
@@ -176,68 +179,22 @@ function QuestionBankChangeList() {
       />
 
       {pending ? (
-        <ConfirmApprove
-          count={pending.ids.length}
-          busy={bulk.isPending}
-          onCancel={cancel}
-          onConfirm={() => void confirm()}
-        />
+        <ConfirmDialog
+          open={open}
+          onClose={close}
+          title={`Approve ${pending.ids.length} question${pending.ids.length === 1 ? "" : "s"}?`}
+          icon="check"
+          confirmLabel={`Approve ${pending.ids.length}`}
+          busyLabel="Approving…"
+          doneLabel="Approved"
+          confirmIcon="check"
+          onConfirm={confirm}
+        >
+          <p>Approved questions become selectable by tests and count in analytics.</p>
+          <p>A question without a domain, skill and difficulty is skipped.</p>
+        </ConfirmDialog>
       ) : null}
     </div>
   );
 }
 
-function ConfirmApprove({
-  count,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  count: number;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const noun = `${count} question${count === 1 ? "" : "s"}`;
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--overlay-scrim)] p-4" onClick={onCancel}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="qb-bulk-title"
-        className="w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onCancel();
-        }}
-      >
-        <h2 id="qb-bulk-title" className="px-6 pt-5 text-base font-extrabold text-foreground">
-          Approve {noun}?
-        </h2>
-        <p className="px-6 pb-5 pt-2 text-sm leading-relaxed text-muted-foreground">
-          Approved questions become selectable by tests and count in analytics. A question without a domain, skill and
-          difficulty is skipped.
-        </p>
-        <div className="flex gap-2 border-t border-border bg-surface-2/40 px-6 py-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            autoFocus
-            className="h-10 flex-1 rounded-xl border border-border bg-card px-4 text-sm font-bold text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-60"
-          >
-            {busy ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" /> : null}
-            Approve
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
