@@ -246,6 +246,13 @@ describe("CampaignComposer", () => {
     expect(cardHead("Message").getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("?audience=debtors (Finance's Remind all) chooses the debtors and opens the message", async () => {
+    await render("audience=debtors");
+    expect(previewAudience.mock.calls[0][0]).toEqual({ audience: "debtors", audience_ids: [], excluded_user_ids: [] });
+    expect(cardHead("Who").textContent).toContain("Debtors");
+    expect(cardHead("Message").getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("keeps Send off while the preview is on its way", async () => {
     await render();
     await click(radio("Debtors"));
