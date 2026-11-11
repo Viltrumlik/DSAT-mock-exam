@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { Icon } from "@/components/ui/Icon";
 import type { AttentionSource } from "./attention";
+import { buttonClass } from "./ui";
 
 const TONE = {
   critical: "bg-ms-critical-soft text-ms-critical-fg",
@@ -30,7 +31,7 @@ export function AttentionList({ sources, onNavigate }: { sources: readonly Atten
           style={{ animationDelay: `${i * 50}ms` }}
         >
           <span
-            className={`animate-ms-check-pop grid size-10 shrink-0 place-items-center rounded-full ${TONE[item.tone]}`}
+            className={`animate-ms-check-pop grid size-10 shrink-0 place-items-center rounded-[12px] ${TONE[item.tone]}`}
             style={{ animationDelay: `${60 + i * 50}ms` }}
           >
             <Icon name={item.icon} />
@@ -42,7 +43,7 @@ export function AttentionList({ sources, onNavigate }: { sources: readonly Atten
           <Link
             href={item.action.href}
             onClick={onNavigate}
-            className="ms-transition ms-press inline-flex min-h-10 shrink-0 items-center gap-1 rounded-ms-btn bg-ms-surface-2 px-3.5 text-[14px] font-semibold text-ms-fg hover:bg-ms-surface-3"
+            className={buttonClass({ size: "sm" })}
           >
             {item.action.label}
             <Icon name="right" size="sm" />
