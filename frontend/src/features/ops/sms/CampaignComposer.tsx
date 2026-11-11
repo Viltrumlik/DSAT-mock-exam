@@ -20,7 +20,7 @@ import { ArrowLeft, Send } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useToast } from "@/components/ToastProvider";
-import { Alert, Button } from "@/components/ui";
+import { Alert, Button } from "./consoleKit";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { AudienceStep, audienceBody } from "./composer/AudienceStep";
 import { MessageStep, rolesFor } from "./composer/MessageStep";
@@ -159,14 +159,14 @@ function Card({
         type="button"
         aria-expanded={open}
         onClick={onOpen}
-        className="flex w-full items-baseline gap-2 px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="flex w-full items-baseline gap-2 px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ms-ring"
       >
-        <span className="shrink-0 text-[13px] font-semibold text-foreground">
+        <span className="shrink-0 text-[13px] font-semibold text-ms-fg">
           {mark} {title}
         </span>
-        {open ? null : <span className="min-w-0 truncate text-[13px] text-muted-foreground">{summary}</span>}
+        {open ? null : <span className="min-w-0 truncate text-[13px] text-ms-fg-3">{summary}</span>}
       </button>
-      {open ? <div className="sms-rise space-y-3 border-t border-border p-3">{children}</div> : null}
+      {open ? <div className="sms-rise space-y-3 border-t border-ms-border p-3">{children}</div> : null}
     </section>
   );
 }
@@ -174,7 +174,7 @@ function Card({
 const BACK = (
   <Link
     href={smsTabHref("campaigns")}
-    className="inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+    className="inline-flex items-center gap-1 text-[13px] font-medium text-ms-fg-3 hover:text-ms-fg"
   >
     <ArrowLeft className="h-4 w-4" aria-hidden />
     Campaigns
@@ -277,7 +277,7 @@ function ComposerForm({ start }: { start: ComposerDraft }) {
             <AudienceStep value={who} onChange={setWho} allowed={KINDS} names={names} />
             {body && shown ? (
               <div className="flex flex-wrap items-center gap-3">
-                <p className="text-[13px] font-medium tabular-nums text-foreground">
+                <p className="text-[13px] font-medium tabular-nums text-ms-fg">
                   {figuresLine({ count: shown.count, noPhone: shown.skipped.no_phone?.length ?? 0 })}
                 </p>
                 <button type="button" className={TEXT_BUTTON} onClick={() => setListOpen(true)}>
@@ -319,8 +319,8 @@ function ComposerForm({ start }: { start: ComposerDraft }) {
         </div>
       </div>
 
-      <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-card p-2 md:hidden">
-        <p className="min-w-0 flex-1 text-[12px] font-medium tabular-nums text-foreground">{figures ? figuresLine(figures) : ""}</p>
+      <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-ms-border bg-ms-card p-2 md:hidden">
+        <p className="min-w-0 flex-1 text-[12px] font-medium tabular-nums text-ms-fg">{figures ? figuresLine(figures) : ""}</p>
         <div className="shrink-0">{sendButton}</div>
       </div>
 
