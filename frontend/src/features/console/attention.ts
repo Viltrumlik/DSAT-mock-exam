@@ -12,6 +12,7 @@ import { smsKeys } from "@/features/ops/sms/smsHooks";
 import api from "@/lib/api";
 import { formatSom } from "./entitySearch";
 import { fetchLessonsToday, lessonsTodayKey, notMarkedItem } from "./lessonsToday";
+import { useStudioSummary, type StudioSummary } from "./studio/summary";
 
 /**
  * "Needs you" (design handoff v0.3, AdminToday / BuilderHome boards and the top bar's bell): the
@@ -128,23 +129,96 @@ export function noTeacherItem(page: FacetPage): AttentionItem | null {
   };
 }
 
-const facetCount = (page: FacetPage, key: string, value: string) =>
-  page.filters?.find((f) => f.key === key)?.options.find((o) => o.value === value)?.count ?? 0;
+/** "3 days", "1 day", "today": how long the oldest question has waited. */
+export function waited(iso: string | null, now = new Date()): string {
+  if (!iso) return "";
+  const days = Math.floor((now.getTime() - new Date(iso).getTime()) / 86_400_000);
+  return days <= 0 ? "today" : days === 1 ? "1 day" : `${days} days`;
+}
 
-export function reviewItem(page: FacetPage): AttentionItem | null {
-  const n = facetCount(page, "status", "TRIAGE");
+/** "12:05" today, else "8 Nov", by the learning center's clock. */
+export function clockOrDay(iso: string, now = new Date()): string {
+  const tz = "Asia/Tashkent";
+  const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const at = new Date(iso);
+  return day(at) === day(now)
+    ? new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(at)
+    : new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "short" }).format(at);
+}
+
+// ── The Builder's five kinds (BuilderHome board), all from one Studio summary ───────────────────────
+
+export function noKeyItem(s: StudioSummary): AttentionItem | null {
+  const n = s.no_key.count;
   if (!n) return null;
+  const live = s.no_key.live;
+  return {
+    id: "no-key",
+    icon: "ms-answerkey",
+    tone: live ? "critical" : "attention",
+    title: n === 1 ? "1 question has no answer key" : `${n} questions have no answer key`,
+    detail: live
+      ? `${live} ${live === 1 ? "is" : "are"} in live tests — students can’t be scored on ${live === 1 ? "it" : "them"}`
+      : "None of them is in a live test",
+    action: { label: "Fix keys", href: "/builder/question-bank?answer=no" },
+  };
+}
+
+export function reviewItem(s: StudioSummary, now = new Date()): AttentionItem | null {
+  const n = s.review.count;
+  if (!n) return null;
+  const parts = [s.review.oldest_at ? `Oldest ${waited(s.review.oldest_at, now)}` : "", s.review.with_suggestion ? `${s.review.with_suggestion} ${s.review.with_suggestion === 1 ? "has" : "have"} a suggestion` : ""];
   return {
     id: "review",
     icon: "ms-review",
     tone: "attention",
     title: `${plural(n, "question", "questions")} waiting for review`,
+    detail: parts.filter(Boolean).join(" · ") || undefined,
     action: { label: "Start reviewing", href: "/builder/question-bank/triage" },
   };
 }
 
-export function unclassifiedItem(page: FacetPage): AttentionItem | null {
-  const n = facetCount(page, "classified", "no");
+export function importItem(s: StudioSummary, now = new Date()): AttentionItem | null {
+  const b = s.imports.failed[0];
+  if (!b) return null;
+  const more = s.imports.with_errors - 1;
+  const parts = [
+    `${plural(b.errors, "row", "rows")} with errors`,
+    `${plural(b.duplicates, "duplicate", "duplicates")}`,
+    [b.by, clockOrDay(b.at, now)].filter(Boolean).join(", "),
+    more > 0 ? `+${plural(more, "more batch", "more batches")}` : "",
+  ];
+  return {
+    id: "imports",
+    icon: "ms-import",
+    tone: "critical",
+    title: `Import batch #${b.id} failed validation`,
+    detail: parts.filter(Boolean).join(" · "),
+    action: { label: "See errors", href: `/builder/question-bank/imports/${b.id}` },
+  };
+}
+
+/** "R&W 2 needs 8 more · Math 2 is empty". */
+export function gapLine(gaps: readonly { module: string; have: number; need: number }[]): string {
+  return gaps.map((g) => (g.have === 0 ? `${g.module} is empty` : `${g.module} needs ${g.need - g.have} more`)).join(" · ");
+}
+
+export function mockItem(s: StudioSummary): AttentionItem | null {
+  const m = s.mocks.not_ready[0];
+  if (!m) return null;
+  const more = s.mocks.not_ready_count - 1;
+  return {
+    id: "mock",
+    icon: "ms-fullmock",
+    tone: "attention",
+    title: m.ready ? `${m.title} is ${plural(m.short, "question", "questions")} short` : `${m.title} can’t be published yet`,
+    detail: [gapLine(m.gaps) || m.block_reason, more > 0 ? `+${plural(more, "more mock", "more mocks")}` : ""].filter(Boolean).join(" · "),
+    action: { label: "Open", href: `/builder/full-mocks/${m.id}` },
+  };
+}
+
+export function unclassifiedItem(s: StudioSummary): AttentionItem | null {
+  const n = s.no_skill.count;
   if (!n) return null;
   return {
     id: "unclassified",
@@ -203,16 +277,19 @@ export function useAdminAttention(enabled: boolean): AttentionSource[] {
   ];
 }
 
-/** The Builder's sources: one question-bank request answers both (its status and classified facets). */
-export function useBuilderAttention(enabled: boolean): AttentionSource[] {
-  const bank = useQuery({
-    queryKey: ["console", "attention", "qb-facets"],
-    queryFn: async () => (await api.get<FacetPage>("/questionbank/questions/changelist/", { params: { page_size: 25 } })).data,
-    enabled,
-    staleTime: 60_000,
-  });
+/** The Builder's five kinds, in the board's order; one Studio summary request answers all of them. */
+export function useBuilderAttention(enabled: boolean, withRecent = false): AttentionSource[] {
+  const summary = useStudioSummary(enabled, withRecent);
   if (!enabled) return [];
-  return [source("review", "the review queue", bank, reviewItem), source("unclassified", "questions", bank, unclassifiedItem)];
+  // One request answers all five: while it loads or after it failed, say so once, not five times.
+  if (summary.data === undefined || summary.isError) return [source("studio", "what needs the team", summary, () => null)];
+  return [
+    source("no-key", "answer keys", summary, noKeyItem),
+    source("review", "the review queue", summary, (d) => reviewItem(d)),
+    source("imports", "imports", summary, (d) => importItem(d)),
+    source("mock", "full mocks", summary, mockItem),
+    source("unclassified", "questions", summary, unclassifiedItem),
+  ];
 }
 
 /** How many KINDS of problem there are (the bell's number), not how many people. */

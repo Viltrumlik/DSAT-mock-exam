@@ -25,6 +25,7 @@ import {
   Save,
 } from "lucide-react";
 import { mocksAdminApi } from "@/features/mocksAdmin/api";
+import { recordRecent } from "@/features/console/recent";
 import { StateTag } from "@/components/governance";
 import { useToast } from "@/components/ToastProvider";
 import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
@@ -59,6 +60,11 @@ export default function FullMockOverviewPage() {
     queryFn: () => mocksAdminApi.getMock(mockId),
     enabled: Number.isFinite(mockId) && mockId > 0,
   });
+
+  // Studio home's "Continue where you left off" (BuilderHome board).
+  useEffect(() => {
+    if (mock) recordRecent({ kind: "mock", id: mockId, name: mock.title || `Full mock ${mockId}`, href: `/builder/full-mocks/${mockId}` });
+  }, [mock, mockId]);
 
   const invalidateMock = () => qc.invalidateQueries({ queryKey: mockKey(mockId) });
 

@@ -66,7 +66,8 @@ export function OpsShell({
   // "Needs you" — the bell's items (and the dashboard's): Admin's only for super admins and admins,
   // whom every one of its endpoints admits; the Builder's for everyone in it.
   const adminAttention = useAdminAttention(config.temp === "admin" && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)));
-  const builderAttention = useBuilderAttention(config.temp === "builder" && Boolean(me));
+  // On Studio home the bell shares the page's summary (same key, recents included); elsewhere a stable one.
+  const builderAttention = useBuilderAttention(config.temp === "builder" && Boolean(me), pathname === "/builder");
   const attention = config.temp === "builder" ? builderAttention : adminAttention;
 
   // The other console, for the top bar's switch and ⌘K — only when this person may open it (a test

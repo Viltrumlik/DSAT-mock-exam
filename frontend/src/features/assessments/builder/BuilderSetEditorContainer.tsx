@@ -50,6 +50,7 @@ import { SATQuestionPreview } from "@/features/assessments/builder/SATQuestionPr
 import { QuestionRow } from "@/features/assessments/builder/QuestionRow";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
 import { writeStudioSession } from "@/lib/studioSession";
+import { recordRecent } from "@/features/console/recent";
 import {
   DndContext,
   PointerSensor,
@@ -207,6 +208,13 @@ export default function BuilderSetEditorContainer() {
     },
     [setId, detail, toast],
   );
+
+  // Studio home's "Continue where you left off" (BuilderHome board).
+  const savedTitle = (detail.data as { title?: string } | undefined)?.title;
+  useEffect(() => {
+    if (!Number.isFinite(setId) || setId <= 0 || !detail.data) return;
+    recordRecent({ kind: "set", id: setId, name: savedTitle || `Set ${setId}`, href: `/builder/sets/${setId}` });
+  }, [setId, detail.data, savedTitle]);
 
   // ── Session continuity: persist last-edited set + question to localStorage ──
   useEffect(() => {

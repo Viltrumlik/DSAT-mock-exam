@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Archive, ArrowLeft, Pencil, RotateCcw, Sparkles } from "lucide-react";
 
 import { useQbArchive, useQbQuestion, useQbRestore } from "@/domains/questionBank/hooks";
@@ -14,6 +14,7 @@ import {
   resolveImageUrl,
 } from "@/domains/questionBank/utils";
 import type { QbQuestionDetail } from "@/domains/questionBank/types";
+import { recordRecent } from "@/features/console/recent";
 
 type Tab = "preview" | "details";
 
@@ -23,6 +24,10 @@ export default function QuestionBankDetailPage() {
   const [tab, setTab] = useState<Tab>("preview");
   const [editing, setEditing] = useState(false);
   const { data: q, isLoading, error } = useQbQuestion(id);
+  // Studio home's "Continue where you left off" (BuilderHome board).
+  useEffect(() => {
+    if (q) recordRecent({ kind: "question", id: q.id, name: q.qb_id, href: `/builder/question-bank/${q.id}` });
+  }, [q]);
   const archive = useQbArchive();
   const restore = useQbRestore();
 
