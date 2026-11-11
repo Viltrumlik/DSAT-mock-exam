@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useTheme } from "next-themes";
 
 import { Icon } from "@/components/ui/Icon";
+import { ControlsSection } from "./ControlsSection";
 import { IconSection } from "./IconSection";
 import { MotionSection } from "./MotionSection";
 import { TokenSection } from "./TokenSection";
@@ -137,6 +138,10 @@ export default function DesignPreview() {
 
         <Section id="motion" over="5 · Motion" title="Motion that answers “did it work?”">
           <MotionSection />
+        </Section>
+
+        <Section id="controls" over="6 · Controls" title="Buttons, badges, chips and the list’s parts">
+          <ControlsSection />
         </Section>
       </div>
       <Probes />
