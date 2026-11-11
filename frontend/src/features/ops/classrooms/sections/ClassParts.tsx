@@ -1,9 +1,8 @@
 "use client";
 
 import { BookCheck, CalendarCheck, CalendarDays, History, ListChecks } from "lucide-react";
-import { Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { Fieldset, PartBody, StatTile, Table, Td, TONE_TEXT, WIDE_ONLY } from "@/features/ops/people/Fieldset";
+import { Fieldset, PartBody, Pill, StatTile, Table, Td, TONE_TEXT, WIDE_ONLY } from "@/features/ops/people/Fieldset";
 import { formatDateTime, formatDay } from "@/features/ops/people/format";
 import { rateTone } from "@/features/ops/people/PersonHeader";
 import { PUSH } from "@/features/ops/people/sections/AttendanceSection";
@@ -78,7 +77,7 @@ export function ClassAttendanceSection({ id }: { id: number }) {
                   </Td>
                   <Td className={WIDE_ONLY}>
                     {s.lcup_push ? (
-                      <Badge variant={PUSH[s.lcup_push]?.variant ?? "neutral"}>{PUSH[s.lcup_push]?.label ?? s.lcup_push}</Badge>
+                      <Pill tone={PUSH[s.lcup_push]?.tone ?? "neutral"}>{PUSH[s.lcup_push]?.label ?? s.lcup_push}</Pill>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}

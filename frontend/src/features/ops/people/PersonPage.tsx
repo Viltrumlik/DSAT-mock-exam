@@ -46,7 +46,7 @@ function SameNameNotice({ person }: { person: PersonCore }) {
   return (
     <div
       data-testid="same-name"
-      className="flex gap-3 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3.5 text-sm text-warning-foreground"
+      className="flex gap-3 rounded-[16px] border border-ms-attention-line bg-ms-attention-soft px-4 py-3.5 text-[14px] text-ms-attention-fg"
     >
       <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
       <div className="min-w-0 space-y-1">
@@ -105,8 +105,8 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
     return (
       <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6" aria-busy>
         <span className="sr-only">Loading…</span>
-        <div className="h-44 animate-pulse rounded-2xl bg-surface-2" />
-        <div className="h-64 animate-pulse rounded-2xl bg-surface-2" />
+        <div className="h-44 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+        <div className="h-64 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
       </div>
     );
   }
@@ -114,7 +114,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
     const missing = isNotFound(query.error);
     return (
       <div className="mx-auto w-full max-w-6xl space-y-2 p-4 text-sm md:p-6">
-        <p className="text-muted-foreground">
+        <p className="text-ms-fg-3">
           {missing ? "This account does not exist or is outside your scope." : "Could not load this account."}
         </p>
         <p className="flex gap-3">
@@ -198,7 +198,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
     <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
       <Link
         href={backHref}
-        className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-sm font-medium text-ms-fg-3 hover:text-ms-fg"
       >
         <ChevronLeft aria-hidden className="h-4 w-4" />
         {LIST_LABEL[section]}
@@ -270,7 +270,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
                 Their current password stops working and every device is signed out. They sign in once with their
                 phone number and its last four digits, then choose a new password straight away.
               </p>
-              <p className="rounded-lg bg-surface-2 px-3 py-2 font-medium text-foreground tabular-nums">
+              <p className="rounded-ms-ctl bg-ms-surface-2 px-3 py-2 font-medium text-ms-fg tabular-nums">
                 {formatPhone(person.phone)} · password {lastFour}
               </p>
               <p>It works for 14 days.</p>
@@ -288,7 +288,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
           body={
             <>
               <p>Tell {person.first_name || person.name} to sign in with:</p>
-              <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 rounded-lg bg-success-soft px-4 py-3 text-success-foreground">
+              <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 rounded-ms-ctl bg-ms-positive-soft px-4 py-3 text-ms-positive-fg">
                 <dt>Login</dt>
                 <dd className="font-semibold tabular-nums">{formatPhone(otpGiven.login)}</dd>
                 <dt>Password</dt>
