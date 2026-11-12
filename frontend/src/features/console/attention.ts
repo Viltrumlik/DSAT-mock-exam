@@ -146,7 +146,7 @@ export function clockOrDay(iso: string, now = new Date()): string {
     : new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "short" }).format(at);
 }
 
-// ── The Builder's five kinds (BuilderHome board), all from one Studio summary ───────────────────────
+// ── The Builder's three kinds (BuilderHome board), all from one Studio summary ───────────────────────
 
 export function noKeyItem(s: StudioSummary): AttentionItem | null {
   const n = s.no_key.count;
@@ -161,40 +161,6 @@ export function noKeyItem(s: StudioSummary): AttentionItem | null {
       ? `${live} ${live === 1 ? "is" : "are"} in live tests — students can’t be scored on ${live === 1 ? "it" : "them"}`
       : "None of them is in a live test",
     action: { label: "Fix keys", href: "/builder/question-bank?answer=no" },
-  };
-}
-
-export function reviewItem(s: StudioSummary, now = new Date()): AttentionItem | null {
-  const n = s.review.count;
-  if (!n) return null;
-  const parts = [s.review.oldest_at ? `Oldest ${waited(s.review.oldest_at, now)}` : "", s.review.with_suggestion ? `${s.review.with_suggestion} ${s.review.with_suggestion === 1 ? "has" : "have"} a suggestion` : ""];
-  return {
-    id: "review",
-    icon: "ms-review",
-    tone: "attention",
-    title: `${plural(n, "question", "questions")} waiting for review`,
-    detail: parts.filter(Boolean).join(" · ") || undefined,
-    action: { label: "Start reviewing", href: "/builder/question-bank/triage" },
-  };
-}
-
-export function importItem(s: StudioSummary, now = new Date()): AttentionItem | null {
-  const b = s.imports.failed[0];
-  if (!b) return null;
-  const more = s.imports.with_errors - 1;
-  const parts = [
-    `${plural(b.errors, "row", "rows")} with errors`,
-    `${plural(b.duplicates, "duplicate", "duplicates")}`,
-    [b.by, clockOrDay(b.at, now)].filter(Boolean).join(", "),
-    more > 0 ? `+${plural(more, "more batch", "more batches")}` : "",
-  ];
-  return {
-    id: "imports",
-    icon: "ms-import",
-    tone: "critical",
-    title: `Import batch #${b.id} failed validation`,
-    detail: parts.filter(Boolean).join(" · "),
-    action: { label: "See errors", href: `/builder/question-bank/imports/${b.id}` },
   };
 }
 
@@ -277,16 +243,17 @@ export function useAdminAttention(enabled: boolean): AttentionSource[] {
   ];
 }
 
-/** The Builder's five kinds, in the board's order; one Studio summary request answers all of them. */
+/**
+ * The Builder's three kinds, in the board's order; one Studio summary request answers all of them. The review
+ * queue and failed imports were two more until the owner removed both pages (2026-11-12).
+ */
 export function useBuilderAttention(enabled: boolean, withRecent = false): AttentionSource[] {
   const summary = useStudioSummary(enabled, withRecent);
   if (!enabled) return [];
-  // One request answers all five: while it loads or after it failed, say so once, not five times.
+  // One request answers all three: while it loads or after it failed, say so once, not three times.
   if (summary.data === undefined || summary.isError) return [source("studio", "what needs the team", summary, () => null)];
   return [
     source("no-key", "answer keys", summary, noKeyItem),
-    source("review", "the review queue", summary, (d) => reviewItem(d)),
-    source("imports", "imports", summary, (d) => importItem(d)),
     source("mock", "full mocks", summary, mockItem),
     source("unclassified", "questions", summary, unclassifiedItem),
   ];

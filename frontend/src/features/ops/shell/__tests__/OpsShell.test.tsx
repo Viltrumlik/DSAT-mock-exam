@@ -227,18 +227,18 @@ describe("OpsShell", () => {
 
 describe("OpsShell for the builder", () => {
   it("wears the same frame with the builder's nav, name and home", () => {
-    render("/builder/question-bank/triage", SUPER_ADMIN, BUILDER_CONSOLE);
+    render("/builder/question-bank/new", SUPER_ADMIN, BUILDER_CONSOLE);
     expect(sidebar().className).toContain("fixed");
     expect(sidebar().getAttribute("aria-label")).toBe("Builder navigation");
     expect(sidebar().textContent).toContain("MasterSAT builder");
     expect(sidebar().querySelector('a[title="MasterSAT builder"]')?.getAttribute("href")).toBe("/builder");
     const captions = [...sidebar().querySelectorAll("p")].map((p) => p.textContent);
     expect(captions).toEqual(["Learning", "Simulation"]);
-    // Only the Review queue is current — not the Question bank, which it nests under.
+    // A question's own page lights the Question bank.
     const current = [...sidebar().querySelectorAll('[aria-current="page"]')].map((a) => a.getAttribute("href"));
-    expect(current).toEqual(["/builder/question-bank/triage"]);
+    expect(current).toEqual(["/builder/question-bank"]);
     const crumb = container.querySelector('nav[aria-label="Breadcrumb"]') as HTMLElement;
-    expect(crumb.textContent).toBe("BuilderReview queue");
+    expect(crumb.textContent).toBe("BuilderQuestion bank");
     expect(crumb.querySelector('a[href="/builder"]')).not.toBeNull();
   });
 

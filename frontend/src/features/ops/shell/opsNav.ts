@@ -158,8 +158,8 @@ export function isOpsNavActive(pathname: string, item: Pick<OpsNavItem, "href" |
 }
 
 /**
- * The nav item a path sits under — the LONGEST matching href, so `/builder/question-bank/triage`
- * is Triage Queue and not also Question Bank, and `/ops/classrooms/12/roster` is Classrooms.
+ * The nav item a path sits under — the LONGEST matching href, so a nested item lights only itself and
+ * not its parent too, and `/ops/classrooms/12/roster` is Classrooms.
  * The sidebar marks only this item; `null` when no item matches.
  */
 export function activeNavItem(pathname: string, groups: readonly OpsNavGroup[]): OpsNavItem | null {

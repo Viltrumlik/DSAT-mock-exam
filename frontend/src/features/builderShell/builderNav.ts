@@ -5,14 +5,14 @@ import { visibleByRole, type ConsoleConfig, type OpsNavGroup } from "@/features/
  * (owner: "question builderni opsga styledan ko'chirib builderni ham o'zgartiring").
  *
  * The builder's groups as its own sidebar had them, with the redesign's clearer names (design handoff
- * v0.3, Main · C): "Triage Queue" is the Review queue, and "Sets bank (legacy)" is the Old sets bank,
- * moved below the line next to Archived.
+ * v0.3, Main · C): "Sets bank (legacy)" is the Old sets bank, moved below the line next to Archived. The Review
+ * queue and Imports left on 2026-11-12 (owner: "shu ikkisi umuman kerak emas … pdfdan import qilmayapmiz").
  *   - Learning: the pedagogical / classroom content;
  *   - Simulation: SAT simulation — past papers, practice tests, full mocks;
  *   - below the line: the old sets bank and Archived.
  *
  * The sidebar marks the longest match, so the Question Bank's own pages (a question, "new")
- * light Question Bank, and the Review queue and Imports light only themselves.
+ * light Question Bank.
  */
 export const BUILDER_NAV_GROUPS: readonly OpsNavGroup[] = [
   {
@@ -25,9 +25,6 @@ export const BUILDER_NAV_GROUPS: readonly OpsNavGroup[] = [
     caption: "Learning",
     items: [
       { href: "/builder/question-bank", label: "Question bank", icon: "ms-question" },
-      // "Triage" was the word only the team knew; the page explains it in a helper line.
-      { href: "/builder/question-bank/triage", label: "Review queue", icon: "ms-review" },
-      { href: "/builder/question-bank/imports", label: "Imports", icon: "ms-import" },
       { href: "/builder/sets", label: "Assessments", icon: "layers" },
       { href: "/builder/midterms", label: "Midterms", icon: "ms-midterm" },
       { href: "/builder/vocabulary", label: "Vocabulary", icon: "ms-vocab" },

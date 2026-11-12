@@ -114,33 +114,35 @@ afterEach(() => {
 });
 
 describe("StudioHome", () => {
-  it("greets the author with the review queue and the mock closest to ready", async () => {
+  it("greets the author with the mock closest to ready", async () => {
     await render();
     expect(text()).toContain("Welcome back, Nodira");
-    expect(text()).toContain("12 questions waiting for review · Full Mock 7 is 30 questions from ready");
+    expect(text()).toContain("Full Mock 7 is 30 questions from ready");
+    // The Review queue left the Builder (2026-11-12): the header no longer counts what waits there.
+    expect(text()).not.toContain("waiting for review");
     const badge = host.querySelector('a[href="/builder/full-mocks/5"]');
     expect(badge?.textContent).toContain("4 mid-attempt on Full Mock 5");
   });
 
-  it("lists the five kinds that need the team, in the board's order, each opening its list", async () => {
+  it("lists the three kinds that need the team, in the board's order, each opening its list", async () => {
     await render();
     const t = text();
     const order = [
       "6 questions have no answer key",
-      "12 questions waiting for review",
-      "Import batch #3 failed validation",
       "Full Mock 7 can’t be published yet",
       "4 questions without a skill",
     ].map((s) => t.indexOf(s, t.indexOf("Needs you")));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(t).toContain("2 are in live tests — students can’t be scored on them");
-    expect(t).toContain("Oldest 3 days · 4 have a suggestion");
     expect(t).toContain("R&W 2 needs 8 more · Math 2 is empty");
     expect(host.querySelector('a[href="/builder/question-bank?answer=no"]')?.textContent).toContain("Fix keys");
-    expect(host.querySelector('a[href="/builder/question-bank/imports/3"]')?.textContent).toContain("See errors");
-    // The card's count is the number of KINDS: five.
-    expect(t).toContain("Needs you5");
+    // The Review queue and Imports are gone: nothing links to them, and neither is a kind any more.
+    expect(host.querySelector('a[href^="/builder/question-bank/imports"]')).toBeNull();
+    expect(host.querySelector('a[href="/builder/question-bank/triage"]')).toBeNull();
+    expect(t).not.toContain("Import batch #3 failed validation");
+    // The card's count is the number of KINDS: three.
+    expect(t).toContain("Needs you3");
   });
 
   it("lays the bank out by subject and status, each number opening the bank filtered to it", async () => {
@@ -209,7 +211,8 @@ describe("StudioHome", () => {
     const t = text();
     expect(t).toContain("R&W 37");
     expect(t).toContain("English 8");
-    expect(t).toContain("1 with errors");
+    // No Imports tile since the owner removed the page (2026-11-12).
+    expect(host.querySelector('a[href="/builder/question-bank/imports"]')).toBeNull();
     expect(t).toContain("5 live");
     expect(t).toContain("1 incomplete");
     expect(t).toContain("SAT Core · Hard words for 750+ · …");

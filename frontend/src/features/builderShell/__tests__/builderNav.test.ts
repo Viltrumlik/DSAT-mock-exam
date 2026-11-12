@@ -21,8 +21,6 @@ describe("BUILDER_NAV_GROUPS", () => {
     expect(labels(0)).toEqual(["Studio home"]);
     expect(labels(1)).toEqual([
       "Question bank",
-      "Review queue",
-      "Imports",
       "Assessments",
       "Midterms",
       "Vocabulary",
@@ -48,8 +46,6 @@ describe("BUILDER_NAV_GROUPS", () => {
 describe("the current item", () => {
   it("is the longest match, so a nested item does not light its parent too", () => {
     expect(active("/builder/question-bank")).toBe("Question bank");
-    expect(active("/builder/question-bank/triage")).toBe("Review queue");
-    expect(active("/builder/question-bank/imports/7")).toBe("Imports");
     // A question's own pages belong to the Question Bank (they lit nothing before).
     expect(active("/builder/question-bank/42")).toBe("Question bank");
     expect(active("/builder/question-bank/new")).toBe("Question bank");

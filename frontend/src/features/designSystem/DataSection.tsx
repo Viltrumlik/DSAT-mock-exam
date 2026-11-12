@@ -52,7 +52,7 @@ const SMS_DAYS = ["28", "29", "30", "31", "1", "2", "3", "4", "5", "6", "7", "8"
 
 const SPOTS: { name: IllustrationName; title: string; detail: string; where: string }[] = [
   { name: "chairs", title: "No students in this class yet", detail: "Add the first one, or move a student here from another class.", where: "empty · Classroom › Students" },
-  { name: "sunrise", title: "All caught up", detail: "Nothing needs you right now. New trials, failed SMS and debts will show up here.", where: "done · Today, Review queue" },
+  { name: "sunrise", title: "All caught up", detail: "Nothing needs you right now. New trials, failed SMS and debts will show up here.", where: "done · Today" },
   { name: "magnifier", title: "No one matches “Bekzot”", detail: "Search also works by phone or username. 2 filters are on.", where: "empty, filtered · any list" },
   { name: "unplugged", title: "Couldn’t load students", detail: "The list didn’t load — it is not empty. Nothing was changed.", where: "error · any data region" },
   { name: "laptop", title: "Open this editor on a computer", detail: "Editing a module needs a wider screen. You can still check its status here.", where: "phone · Builder editors" },
