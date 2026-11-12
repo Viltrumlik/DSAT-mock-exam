@@ -1,29 +1,36 @@
 "use client";
 
+/**
+ * /ops/journals/[journalId] — one journal: its state and progress, the journal's actions, and its sessions
+ * (search, filters, bulk actions, add, edit, delete).
+ *
+ * In the console's look (design handoff v0.3). The words and the calls are the page's own; deleting a
+ * session asks in the console's dialog instead of the browser's.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { cn } from "@/lib/cn";
+
+import { Icon } from "@/components/ui/Icon";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import {
+  Badge,
+  Button,
+  Checkbox,
+  ConfirmDialog,
+  Dialog,
+  EmptyState,
+  SearchField,
+  StatTile,
+  chipClass,
+  type BadgeTone,
+} from "@/features/console/ui";
 import { journalsApi } from "@/features/journals/api";
+import { BACK_LINK, LoadingLine, Medallion } from "@/features/journals/journalParts";
 import type { JournalDetail, LessonSummary } from "@/features/journals/types";
 import type { MidtermOption } from "@/features/journals/types";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Archive,
-  ArchiveRestore,
-  Download,
-  Edit3,
-  GraduationCap,
-  Loader2,
-  Plus,
-  RotateCcw,
-  Search,
-  Send,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
+import { cn } from "@/lib/cn";
 
 type FilterKey = "all" | "published" | "draft" | "missing" | "midterm" | "has_files" | "has_assessment" | "has_pastpaper";
 
@@ -37,6 +44,14 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "has_assessment", label: "Has assessment" },
   { key: "has_pastpaper", label: "Has past paper" },
 ];
+
+const MIDTERM_PICKER_TITLE = "journal-midterm-picker-title";
+
+/** The server's own words for a refusal, when it sent any. */
+function serverDetail(e: unknown): string | undefined {
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  return typeof detail === "string" && detail ? detail : undefined;
+}
 
 export default function JournalDetailPage() {
   const params = useParams<{ journalId: string }>();
@@ -56,6 +71,8 @@ export default function JournalDetailPage() {
   const [midtermPickerOpen, setMidtermPickerOpen] = useState(false);
   const [midtermOptions, setMidtermOptions] = useState<MidtermOption[]>([]);
   const [midtermLoading, setMidtermLoading] = useState(false);
+  // The session waiting on "Delete session N?".
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; number: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,15 +163,18 @@ export default function JournalDetailPage() {
     }
   };
 
-  const deleteSession = async (lessonId: number, lessonNumber: number) => {
-    if (!window.confirm(`Delete session ${lessonNumber}? Later sessions are renumbered.`)) return;
+  /** "Delete session N?" said yes: a refusal stays in the dialog, in the server's words when it sent any. */
+  const deleteSession = async () => {
+    if (!pendingDelete) return;
+    const lessonId = pendingDelete.id;
     setBusy(`del-${lessonId}`);
     setError(null);
     try {
       await journalsApi.deleteSession(journalId, lessonId);
+      setPendingDelete(null);
       await load();
-    } catch {
-      setError("Could not delete that session.");
+    } catch (e: unknown) {
+      throw new Error(serverDetail(e) || "Could not delete that session.");
     } finally {
       setBusy(null);
     }
@@ -236,19 +256,13 @@ export default function JournalDetailPage() {
   };
 
   if (loading) {
-    return (
-      <div className="mx-auto flex max-w-5xl items-center gap-2 rounded-2xl border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading journal…
-      </div>
-    );
+    return <LoadingLine card className="mx-auto max-w-5xl">Loading journal…</LoadingLine>;
   }
   if (!journal) {
     return (
       <div className="mx-auto max-w-5xl">
         <BackLink />
-        <p className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-          {error || "Journal not found."}
-        </p>
+        <LibraryError>{error || "Journal not found."}</LibraryError>
       </div>
     );
   }
@@ -257,52 +271,58 @@ export default function JournalDetailPage() {
   const archived = journal.status === "ARCHIVED";
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      <BackLink />
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+      <div>
+        <BackLink />
 
-      {/* Header */}
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <GraduationCap className="h-6 w-6" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-foreground">{journal.display_title}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-muted-foreground">
+        {/* Header */}
+        <div className="animate-ms-fade-in flex min-w-0 items-center gap-3">
+          <Medallion icon="ms-journal" size="lg" />
+          <div className="min-w-0">
+            <h1 className="text-ms-title break-words text-ms-fg">{journal.display_title}</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[14px] text-ms-fg-2">
               <StatusBadge status={journal.status} />
               <span>{journal.duration_months} mo</span>
-              <span>·</span>
+              <span aria-hidden="true" className="text-ms-fg-3">·</span>
               <span>{journal.total_lessons} lessons</span>
-              <span>·</span>
+              <span aria-hidden="true" className="text-ms-fg-3">·</span>
               <span>{p.homework_total} homework</span>
-              <span>·</span>
+              <span aria-hidden="true" className="text-ms-fg-3">·</span>
               <span>{p.midterm_total} midterm{p.midterm_total !== 1 ? "s" : ""}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
-          {error}
-        </div>
-      )}
+      {error && <LibraryError>{error}</LibraryError>}
 
       {/* Action bar */}
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         {archived ? (
-          <ActionBtn icon={ArchiveRestore} label="Restore to draft" busy={busy === "unarchive"} onClick={() => runJournalAction("unarchive", () => journalsApi.unarchive(journalId))} />
+          <Button size="sm" icon="undo" state={busy === "unarchive" ? "busy" : "idle"} onClick={() => runJournalAction("unarchive", () => journalsApi.unarchive(journalId))}>
+            Restore to draft
+          </Button>
         ) : (
           <>
-            <ActionBtn primary icon={Send} label="Publish" busy={busy === "publish"} onClick={doPublish} />
+            <Button variant="primary" size="sm" icon="send" state={busy === "publish" ? "busy" : "idle"} onClick={doPublish}>
+              Publish
+            </Button>
             {journal.status === "PUBLISHED" && (
-              <ActionBtn icon={RotateCcw} label="Revert to draft" busy={busy === "unarchive"} onClick={() => runJournalAction("unarchive", () => journalsApi.unarchive(journalId))} />
+              <Button size="sm" icon="undo" state={busy === "unarchive" ? "busy" : "idle"} onClick={() => runJournalAction("unarchive", () => journalsApi.unarchive(journalId))}>
+                Revert to draft
+              </Button>
             )}
-            <ActionBtn icon={Archive} label="Archive" busy={busy === "archive"} onClick={() => runJournalAction("archive", () => journalsApi.archive(journalId))} />
+            <Button size="sm" icon="archive" state={busy === "archive" ? "busy" : "idle"} onClick={() => runJournalAction("archive", () => journalsApi.archive(journalId))}>
+              Archive
+            </Button>
           </>
         )}
-        <ActionBtn icon={Download} label="Export" busy={busy === "export"} onClick={doExport} />
-        <ActionBtn icon={Upload} label="Import" busy={busy === "import"} onClick={() => fileInputRef.current?.click()} />
+        <Button size="sm" icon="download" state={busy === "export" ? "busy" : "idle"} onClick={doExport}>
+          Export
+        </Button>
+        <Button size="sm" icon="upload" state={busy === "import" ? "busy" : "idle"} onClick={() => fileInputRef.current?.click()}>
+          Import
+        </Button>
         <input
           ref={fileInputRef} type="file" accept="application/json" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); e.target.value = ""; }}
@@ -310,118 +330,96 @@ export default function JournalDetailPage() {
       </div>
 
       {/* Progress panel */}
-      <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label="Completion" value={`${p.completion_pct}%`} tone={p.completion_pct >= 100 ? "good" : "warn"} />
-        <Stat label="Homework ready" value={`${p.homework_ready}/${p.homework_total}`} tone={p.homework_missing === 0 ? "good" : "warn"} />
-        <Stat label="Classwork ready" value={`${p.classwork_ready}/${p.homework_total}`} tone={p.classwork_missing === 0 ? "good" : "warn"} />
-        <Stat label="Midterms set" value={`${p.midterm_configured}/${p.midterm_total}`} tone={p.midterm_total > 0 && p.midterm_configured === p.midterm_total ? "good" : "neutral"} />
-        <Stat label="Published / Draft" value={`${p.published_count} / ${p.draft_count}`} tone="neutral" />
-      </div>
+      <section aria-label="Progress" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <StatTile label="Completion" value={`${p.completion_pct}%`} tone={p.completion_pct >= 100 ? "positive" : "attention"} />
+        <StatTile label="Homework ready" value={`${p.homework_ready}/${p.homework_total}`} tone={p.homework_missing === 0 ? "positive" : "attention"} delay={40} />
+        <StatTile label="Classwork ready" value={`${p.classwork_ready}/${p.homework_total}`} tone={p.classwork_missing === 0 ? "positive" : "attention"} delay={80} />
+        <StatTile label="Midterms set" value={`${p.midterm_configured}/${p.midterm_total}`} tone={p.midterm_total > 0 && p.midterm_configured === p.midterm_total ? "positive" : undefined} delay={120} />
+        <StatTile label="Published / Draft" value={`${p.published_count} / ${p.draft_count}`} delay={160} />
+      </section>
 
       {/* Add session — nothing is pre-provisioned; the admin decides the course shape. */}
       {!archived && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-border bg-card px-4 py-3">
-          <div className="mr-auto">
-            <div className="text-sm font-bold text-foreground">
+        <div className="flex flex-wrap items-center gap-2 rounded-ms-card border border-dashed border-ms-border-strong bg-ms-card px-4 py-3">
+          <div className="mr-auto min-w-0">
+            <div className="text-[15px] font-semibold text-ms-fg">
               {p.sessions_total} session{p.sessions_total === 1 ? "" : "s"}
             </div>
             {journal.recommended && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[13px] text-ms-fg-2">
                 Recommended for {journal.level_label}: {journal.recommended.lessons} lessons
                 {" · "}midterm every {journal.recommended.midterm_every}
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={addHomeworkSession}
-            disabled={busy === "add-session"}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {busy === "add-session" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          <Button variant="primary" size="sm" icon="plus" state={busy === "add-session" ? "busy" : "idle"} onClick={addHomeworkSession}>
             New session
-          </button>
-          <button
-            type="button"
-            onClick={openMidtermPicker}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface-2 px-3.5 py-2 text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary"
-          >
-            <GraduationCap className="h-4 w-4" />
+          </Button>
+          <Button size="sm" icon="ms-midterm" onClick={openMidtermPicker}>
             New midterm
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Midterm picker — only midterms matching this journal's subject + level. */}
-      {midtermPickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-panel p-5 shadow-xl">
-            <div className="mb-3 flex items-center gap-2">
-              <h2 className="flex-1 text-base font-extrabold text-foreground">
-                Add a midterm session
-              </h2>
-              <button type="button" onClick={() => setMidtermPickerOpen(false)} aria-label="Close" className="rounded-md p-1 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
+      <Dialog open={midtermPickerOpen} onClose={() => setMidtermPickerOpen(false)} labelledBy={MIDTERM_PICKER_TITLE} width={512}>
+        <div className="flex items-center gap-2 border-b border-ms-line py-3 pl-5 pr-3">
+          <h2 id={MIDTERM_PICKER_TITLE} className="flex-1 text-[18px] font-bold leading-6 text-ms-fg">
+            Add a midterm session
+          </h2>
+          <Button variant="ghost" size="sm" icon="x" aria-label="Close" tooltip={false} onClick={() => setMidtermPickerOpen(false)} />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <p className="mb-3 text-[14px] text-ms-fg-2">
+            Showing published midterms for {journal.subject_label} · {journal.level_label}.
+            The class gets access 2 days before this session.
+          </p>
+          {midtermLoading ? (
+            <div role="status" className="flex items-center gap-2 py-6 text-[14px] text-ms-fg-2">
+              <Icon name="loader" size="sm" className="animate-ms-spin text-ms-primary-text" /> Loading midterms…
             </div>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Showing published midterms for {journal.subject_label} · {journal.level_label}.
-              The class gets access 2 days before this session.
+          ) : midtermOptions.length === 0 ? (
+            <p className="rounded-ms-ctl border border-dashed border-ms-border-strong px-4 py-6 text-center text-[14px] text-ms-fg-2">
+              No published midterms are tagged for this level yet.
             </p>
-            {midtermLoading ? (
-              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading midterms…
-              </div>
-            ) : midtermOptions.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                No published midterms are tagged for this level yet.
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {midtermOptions.map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      onClick={() => addMidtermSession(m.id)}
-                      disabled={busy === "add-midterm"}
-                      className="w-full rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary disabled:opacity-50"
-                    >
-                      <div className="text-sm font-bold text-foreground">{m.title}</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {midtermOptions.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    onClick={() => addMidtermSession(m.id)}
+                    disabled={busy === "add-midterm"}
+                    className="ms-transition flex w-full items-center gap-3 rounded-ms-ctl border border-ms-border bg-ms-card px-4 py-3 text-left hover:border-ms-primary hover:bg-ms-surface disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[15px] font-semibold text-ms-fg">{m.title}</span>
+                      <span className="mt-0.5 block text-[13px] text-ms-fg-2">
                         {m.level || "untagged"}
                         {m.question_count != null ? ` · ${m.question_count} questions` : ""}
                         {m.duration_minutes ? ` · ${m.duration_minutes} min` : ""}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                      </span>
+                    </span>
+                    <Icon name="plus" size="sm" className="text-ms-fg-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
+      </Dialog>
 
       {/* Filter + search bar */}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search lessons…"
-            className="w-full rounded-xl border border-border bg-card py-2.5 pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-          />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-col gap-3">
+        <SearchField value={search} placeholder="Search lessons…" onSearch={setSearch} />
+        <div role="group" aria-label="Filter sessions" className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
             <button
               key={f.key}
               type="button"
+              aria-pressed={filter === f.key}
               onClick={() => setFilter(f.key)}
-              className={cn(
-                "rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors",
-                filter === f.key ? "bg-primary text-white" : "bg-surface-2 text-muted-foreground hover:text-foreground",
-              )}
+              className={chipClass(filter === f.key)}
             >
               {f.label}
             </button>
@@ -431,15 +429,15 @@ export default function JournalDetailPage() {
 
       {/* Bulk toolbar */}
       {selected.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-4 py-2.5">
-          <span className="text-sm font-bold text-foreground">{selected.size} selected</span>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <BulkBtn label="Publish" busy={busy === "bulk-publish"} onClick={() => runBulk("publish")} />
-            <BulkBtn label="Draft" busy={busy === "bulk-draft"} onClick={() => runBulk("draft")} />
-            <BulkBtn label="Clear content" busy={busy === "bulk-clear"} onClick={() => runBulk("clear")} />
-            <button type="button" onClick={() => setSelected(new Set())} className="text-xs font-bold text-muted-foreground hover:text-foreground">
+        <div role="toolbar" aria-label="Bulk actions" className="animate-ms-fade-in flex flex-wrap items-center gap-2 rounded-ms-card border border-ms-primary bg-ms-primary-soft px-4 py-2.5">
+          <span aria-live="polite" className="text-[15px] font-semibold tabular-nums text-ms-fg">{selected.size} selected</span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button variant="primary" size="sm" state={busy === "bulk-publish" ? "busy" : "idle"} onClick={() => runBulk("publish")}>Publish</Button>
+            <Button variant="primary" size="sm" state={busy === "bulk-draft" ? "busy" : "idle"} onClick={() => runBulk("draft")}>Draft</Button>
+            <Button variant="primary" size="sm" state={busy === "bulk-clear" ? "busy" : "idle"} onClick={() => runBulk("clear")}>Clear content</Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -453,19 +451,37 @@ export default function JournalDetailPage() {
             checked={selected.has(l.id)}
             onToggle={() => toggle(l.id)}
             onEdit={() => router.push(`/ops/journals/${journalId}/lessons/${l.id}`)}
-            onDelete={() => deleteSession(l.id, l.lesson_number)}
+            onDelete={() => setPendingDelete({ id: l.id, number: l.lesson_number })}
             deleting={busy === `del-${l.id}`}
             disabled={archived}
           />
         ))}
         {filtered.length === 0 && (
-          <li className="rounded-2xl border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
-            {(journal.lessons?.length ?? 0) === 0
-              ? "No sessions yet — add the first one with “New session”."
-              : "No sessions match."}
+          <li className="rounded-ms-card border border-dashed border-ms-border-strong bg-ms-card">
+            <EmptyState
+              icon={(journal.lessons?.length ?? 0) === 0 ? "ms-journal" : "search"}
+              title={
+                (journal.lessons?.length ?? 0) === 0
+                  ? "No sessions yet — add the first one with “New session”."
+                  : "No sessions match."
+              }
+            />
           </li>
         )}
       </ol>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        tone="critical"
+        icon="trash"
+        title={pendingDelete ? `Delete session ${pendingDelete.number}?` : ""}
+        confirmLabel="Delete"
+        busyLabel="Deleting…"
+        onConfirm={deleteSession}
+      >
+        Later sessions are renumbered.
+      </ConfirmDialog>
     </div>
   );
 }
@@ -484,170 +500,105 @@ function LessonRow({
   const isMidterm = lesson.lesson_type === "MIDTERM";
   return (
     <li
+      data-lesson={lesson.id}
       className={cn(
-        "flex items-center gap-3 rounded-2xl border p-4 shadow-sm transition-colors",
+        "animate-ms-card-in ms-transition flex flex-wrap items-center gap-x-3 gap-y-2 rounded-ms-card border p-4",
         isMidterm
-          ? "border-[#6d4ec7]/40 bg-[#6d4ec7]/5"
+          ? "border-ms-info-line bg-ms-card"
           : lesson.is_ready
-            ? "border-border bg-card"
-            : "border-amber-300/60 bg-amber-50/40 dark:border-amber-900/50 dark:bg-amber-950/20",
+            ? "border-ms-border bg-ms-card"
+            : "border-ms-attention-line bg-ms-card",
       )}
     >
       {!isMidterm && !disabled && (
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onToggle}
-          className="h-4 w-4 shrink-0 rounded border-border text-primary focus:ring-primary"
-          aria-label={`Select lesson ${lesson.lesson_number}`}
-        />
+        <Checkbox checked={checked} onChange={onToggle} label={`Select lesson ${lesson.lesson_number}`} />
       )}
       <span
         className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold",
-          isMidterm ? "bg-[#6d4ec7]/15 text-[#6d4ec7]" : "bg-primary/10 text-primary",
+          "grid size-10 shrink-0 place-items-center rounded-[12px] text-[14px] font-bold tabular-nums",
+          isMidterm ? "bg-ms-info-soft text-ms-info-fg" : "bg-ms-primary-soft text-ms-primary-text",
         )}
       >
         {lesson.lesson_number}
       </span>
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-[14rem]">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-extrabold text-foreground">
+          <span className="min-w-0 truncate text-[15px] font-semibold text-ms-fg">
             {isMidterm
               ? lesson.midterm?.title || "Midterm — no exam selected"
               : lesson.title || lesson.new_topic_title || `Session ${lesson.lesson_number}`}
           </span>
           {isMidterm ? (
-            <Badge className="bg-[#6d4ec7]/15 text-[#6d4ec7]">Midterm</Badge>
+            <Badge tone="info" icon="ms-midterm">Midterm</Badge>
           ) : lesson.status === "PUBLISHED" ? (
-            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Published</Badge>
+            <Badge tone="positive" icon="ok">Published</Badge>
           ) : lesson.is_ready ? (
-            <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">Ready</Badge>
+            <Badge tone="info" dot>Ready</Badge>
           ) : (
-            <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Missing</Badge>
+            <Badge tone="attention" icon="warn">Missing</Badge>
           )}
         </div>
         {isMidterm ? (
-          <div className="mt-0.5 text-[12px] font-medium text-muted-foreground">
+          <div className="mt-0.5 text-[13px] text-ms-fg-2">
             Class gets access {lesson.midterm?.access_days_before ?? 2} days before · no homework
           </div>
         ) : (
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] font-medium text-muted-foreground">
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] text-ms-fg-2">
             <span>{lesson.content_count} item{lesson.content_count !== 1 ? "s" : ""}</span>
-            <span className={cn("font-bold", lesson.homework_ready ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+            <span className={cn("font-semibold", lesson.homework_ready ? "text-ms-positive-fg" : "text-ms-attention-fg")}>
               · Homework {lesson.homework_ready ? "✓" : "—"}
             </span>
-            <span className={cn("font-bold", lesson.classwork_ready ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+            <span className={cn("font-semibold", lesson.classwork_ready ? "text-ms-positive-fg" : "text-ms-attention-fg")}>
               · Classwork {lesson.classwork_ready ? "✓" : "—"}
             </span>
             {!lesson.is_ready && lesson.validation.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="h-3 w-3" /> {lesson.validation[0]}
+              <span className="inline-flex items-center gap-1 text-ms-attention-fg">
+                <Icon name="warn" size="sm" className="size-3.5" /> {lesson.validation[0]}
               </span>
             )}
           </div>
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-1.5">
         {!isMidterm && (
-          <button
-            type="button"
-            onClick={onEdit}
-            disabled={disabled}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
-          >
-            <Edit3 className="h-4 w-4" /> Edit
-          </button>
+          <Button size="sm" icon="pencil" onClick={onEdit} disabled={disabled}>
+            Edit
+          </Button>
         )}
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={disabled || deleting}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="trash"
           aria-label={`Delete session ${lesson.lesson_number}`}
-          className="rounded-xl border border-border bg-background p-2 text-muted-foreground transition-colors hover:border-rose-400 hover:text-rose-500 disabled:opacity-50"
-        >
-          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-        </button>
+          state={deleting ? "busy" : "idle"}
+          disabled={disabled || deleting}
+          onClick={onDelete}
+        />
       </div>
     </li>
   );
 }
 
+const STATUS_TONE: Record<JournalDetail["status"], BadgeTone> = {
+  PUBLISHED: "positive",
+  ARCHIVED: "neutral",
+  DRAFT: "attention",
+};
+
 function StatusBadge({ status }: { status: JournalDetail["status"] }) {
-  const style =
-    status === "PUBLISHED"
-      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-      : status === "ARCHIVED"
-        ? "bg-surface-2 text-muted-foreground"
-        : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
-  return <Badge className={style}>{status}</Badge>;
-}
-
-function Badge({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide", className)}>
-      {children}
-    </span>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone: "good" | "warn" | "bad" | "neutral" }) {
-  const color =
-    tone === "good" ? "text-emerald-600 dark:text-emerald-400"
-      : tone === "bad" ? "text-rose-600 dark:text-rose-400"
-        : tone === "warn" ? "text-amber-600 dark:text-amber-400"
-          : "text-foreground";
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={cn("text-xl font-extrabold", color)}>{value}</span>
-    </div>
-  );
-}
-
-function ActionBtn({
-  icon: Icon, label, onClick, busy, primary,
-}: {
-  icon: typeof Send; label: string; onClick: () => void; busy?: boolean; primary?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={busy}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold transition-colors disabled:opacity-60",
-        primary
-          ? "bg-primary text-white hover:bg-primary/90"
-          : "border border-border bg-card text-foreground hover:border-primary hover:text-primary",
-      )}
-    >
-      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
-      {label}
-    </button>
-  );
-}
-
-function BulkBtn({ label, onClick, busy }: { label: string; onClick: () => void; busy?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={busy}
-      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-    >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-      {label}
-    </button>
+    <Badge tone={STATUS_TONE[status] ?? "attention"} dot>
+      {status}
+    </Badge>
   );
 }
 
 function BackLink() {
   return (
-    <Link href="/ops/journals" className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-muted-foreground transition-colors hover:text-primary">
-      <ArrowLeft className="h-4 w-4" /> All journals
+    <Link href="/ops/journals" className={BACK_LINK}>
+      <Icon name="left" size="sm" /> All journals
     </Link>
   );
 }

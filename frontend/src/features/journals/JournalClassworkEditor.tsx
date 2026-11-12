@@ -1,35 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { Button } from "@/features/console/ui";
 import { journalsApi } from "@/features/journals/api";
 import type { Classwork, ContentOptions, JournalDetail } from "@/features/journals/types";
-import {
-  ClassroomAlert,
-  ClassroomButton,
-  ClassroomField,
-  crInputClass,
-  crTextareaClass,
-} from "@/components/classroom";
+import { CONTROL, SERIF_AREA } from "@/features/questionsAdmin/questionLook";
 import MultiLinkInput, { fromLinkRows, toLinkRows, type LinkRow } from "@/components/MultiLinkInput";
 import LessonVideoField from "@/components/LessonVideoField";
 import VocabPicker from "@/features/journals/VocabPicker";
-import { cn } from "@/lib/cn";
 import {
-  BookOpen,
-  Check,
-  ClipboardList,
-  Coffee,
-  Dumbbell,
-  ExternalLink,
-  FileText,
-  Loader2,
-  Paperclip,
-  RefreshCw,
-  Search,
-  Sparkles,
-  Upload,
-  X,
-} from "lucide-react";
+  CHIP_SM,
+  FileDrop,
+  JField,
+  LoadingLine,
+  Medallion,
+  PANEL,
+  PendingFile,
+  PickTick,
+  StoredFile,
+} from "@/features/journals/journalParts";
+import { cn } from "@/lib/cn";
+
+/**
+ * The classwork plan for one journal session: the timetable reminder and the five lesson blocks.
+ *
+ * In the console's look (design handoff v0.3). The words, the rules and the calls are the editor's own.
+ */
+
+/** A long text field in the console's shell (sans: these are the teacher's notes, not a question). */
+const AREA = SERIF_AREA;
 
 type Props = {
   journalId: number;
@@ -40,12 +42,12 @@ type Props = {
 };
 
 /** The five lesson blocks, in running order — mirrors the classroom timetable. */
-const BLOCK_META: Record<string, { label: string; icon: typeof BookOpen }> = {
-  HOMEWORK_REVIEW: { label: "Homework", icon: ClipboardList },
-  NEW_TOPIC: { label: "New topic", icon: Sparkles },
-  BREAK: { label: "Break", icon: Coffee },
-  EXERCISES: { label: "Exercises", icon: Dumbbell },
-  REVISION: { label: "Revision", icon: RefreshCw },
+const BLOCK_META: Record<string, { label: string; icon: IconName }> = {
+  HOMEWORK_REVIEW: { label: "Homework", icon: "clipboard" },
+  NEW_TOPIC: { label: "New topic", icon: "book" },
+  BREAK: { label: "Break", icon: "timer" },
+  EXERCISES: { label: "Exercises", icon: "pencil" },
+  REVISION: { label: "Revision", icon: "refresh" },
 };
 
 export default function JournalClassworkEditor({
@@ -182,64 +184,55 @@ export default function JournalClassworkEditor({
   const totalMinutes = timetable.reduce((s, b) => s + (b.minutes || 0), 0);
 
   if (loading) {
-    return (
-      <div className="flex items-center gap-2 rounded-2xl border border-border bg-card px-6 py-8 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading classwork…
-      </div>
-    );
+    return <LoadingLine card>Loading classwork…</LoadingLine>;
   }
 
   const review = cw?.homework_review ?? null;
+  const TH = "border border-ms-line bg-ms-surface px-2 py-2";
 
   return (
     <div className="flex flex-col gap-5">
-      {error && <ClassroomAlert tone="error">{error}</ClassroomAlert>}
+      {error && <LibraryError>{error}</LibraryError>}
 
       {/* ── Lesson timetable (reminder only) ───────────────────────────────── */}
-      <section className="rounded-2xl border border-border bg-panel p-4 shadow-sm">
-        <div className="mb-2.5 flex items-center justify-between">
-          <h2 className="text-[15px] font-extrabold text-foreground">Lesson timetable</h2>
-          <span className="text-xs font-bold text-muted-foreground">{totalMinutes} min total</span>
+      <section className={cn(PANEL, "animate-ms-card-in p-4 sm:p-5")}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-[16px] font-semibold text-ms-fg">Lesson timetable</h2>
+          <span className="text-[13px] font-medium tabular-nums text-ms-fg-2">{totalMinutes} min total</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] border-collapse text-center">
             <thead>
               <tr>
-                <th className="border border-border bg-surface-2 px-2 py-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                <th className={cn(TH, "text-left text-[12px] font-semibold uppercase tracking-[0.04em] text-ms-fg-3")}>
                   Stage
                 </th>
-                {timetable.map((b) => {
-                  const Icon = BLOCK_META[b.key].icon;
-                  return (
-                    <th
-                      key={b.key}
-                      className="border border-border bg-surface-2 px-2 py-2 text-[12.5px] font-extrabold text-foreground"
-                    >
-                      <span className="inline-flex items-center gap-1.5">
-                        <Icon className="h-3.5 w-3.5 text-primary" aria-hidden />
-                        {BLOCK_META[b.key].label}
-                      </span>
-                    </th>
-                  );
-                })}
+                {timetable.map((b) => (
+                  <th key={b.key} className={cn(TH, "text-[13px] font-semibold text-ms-fg")}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon name={BLOCK_META[b.key].icon} size="sm" className="size-3.5 text-ms-primary-text" />
+                      {BLOCK_META[b.key].label}
+                    </span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td className="border border-border px-2 py-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                <td className="border border-ms-line px-2 py-2 text-left text-[12px] font-semibold uppercase tracking-[0.04em] text-ms-fg-3">
                   Time
                 </td>
                 {timetable.map((b) => (
-                  <td key={b.key} className="border border-border px-2 py-2">
-                    <span className="text-[13px] font-bold text-foreground">{b.minutes}</span>
-                    <span className="text-[12px] text-muted-foreground"> min</span>
+                  <td key={b.key} className="border border-ms-line px-2 py-2">
+                    <span className="text-[14px] font-semibold tabular-nums text-ms-fg">{b.minutes}</span>
+                    <span className="text-[13px] text-ms-fg-3"> min</span>
                   </td>
                 ))}
               </tr>
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[12px] text-muted-foreground">
+        <p className="mt-2.5 text-[13px] text-ms-fg-3">
           A reminder for the teacher during the lesson — adjust any stage below.
         </p>
       </section>
@@ -253,23 +246,23 @@ export default function JournalClassworkEditor({
       >
         {review ? (
           <div className="flex flex-col gap-2">
-            <div className="text-[13px] font-bold text-foreground">
+            <div className="text-[14px] font-semibold text-ms-fg">
               Session {review.lesson_number}: {review.title || "Homework"}
             </div>
             {review.instructions && (
-              <p className="whitespace-pre-wrap text-[12.5px] text-muted-foreground">
+              <p className="whitespace-pre-wrap text-[13px] text-ms-fg-2">
                 {review.instructions}
               </p>
             )}
             <ul className="flex flex-col gap-1.5">
               {review.assessments.map((a) => (
-                <ReviewItem key={`a-${a.id}`} icon={ClipboardList} label={a.title} kind="Assessment" />
+                <ReviewItem key={`a-${a.id}`} icon="clipboard" label={a.title} kind="Assessment" />
               ))}
               {review.practice_test_ids.map((id) => (
-                <ReviewItem key={`p-${id}`} icon={BookOpen} label={`Past paper #${id}`} kind="Past paper" />
+                <ReviewItem key={`p-${id}`} icon="ms-pastpaper" label={`Past paper #${id}`} kind="Past paper" />
               ))}
               {review.attachment_urls.map((f, i) => (
-                <ReviewItem key={`f-${i}`} icon={FileText} label={f.name} kind="File" href={f.url} />
+                <ReviewItem key={`f-${i}`} icon="file" label={f.name} kind="File" href={f.url} />
               ))}
               {(review.external_urls?.length
                 ? toLinkRows(review.external_urls, review.external_url_labels)
@@ -279,7 +272,7 @@ export default function JournalClassworkEditor({
               ).map((l, i) => (
                 <ReviewItem
                   key={`l-${i}`}
-                  icon={ExternalLink}
+                  icon="external"
                   label={l.label || l.url}
                   kind="Link"
                   href={l.url}
@@ -291,13 +284,13 @@ export default function JournalClassworkEditor({
               review.attachment_urls.length === 0 &&
               !review.external_urls?.length &&
               !review.external_url && (
-                <p className="text-[12.5px] text-muted-foreground">
+                <p className="text-[13px] text-ms-fg-2">
                   That session has no attached content yet.
                 </p>
               )}
           </div>
         ) : (
-          <p className="text-[12.5px] text-muted-foreground">
+          <p className="text-[13px] text-ms-fg-2">
             This is the first session — there is no previous homework to review.
           </p>
         )}
@@ -310,36 +303,36 @@ export default function JournalClassworkEditor({
         onMinutes={(v) => setMins((m) => ({ ...m, new_topic_minutes: v }))}
         subtitle="Taught exactly like a homework brief: title, instructions, resources, files and links."
       >
-        <div className="flex flex-col gap-3.5">
-          <ClassroomField label="Title *" htmlFor="cw-title">
+        <div className="flex flex-col gap-4">
+          <JField label="Title *" htmlFor="cw-title">
             <input
               id="cw-title"
               value={topicTitle}
               onChange={(e) => setTopicTitle(e.target.value)}
               placeholder="e.g. Linear equations"
-              className={`${crInputClass} font-semibold`}
+              className={CONTROL}
             />
-          </ClassroomField>
-          <ClassroomField label="Instructions *" htmlFor="cw-inst">
+          </JField>
+          <JField label="Instructions *" htmlFor="cw-inst">
             <textarea
               id="cw-inst"
               value={topicInstructions}
               onChange={(e) => setTopicInstructions(e.target.value)}
               placeholder="What you will teach and how"
               rows={6}
-              className={crTextareaClass}
+              className={AREA}
             />
-          </ClassroomField>
-          <ClassroomField label="External links" hint="Give a link a name and students see the name instead of the address.">
+          </JField>
+          <JField label="External links" hint="Give a link a name and students see the name instead of the address.">
             <MultiLinkInput
               value={topicLinks}
               onChange={setTopicLinks}
-              inputClassName={crInputClass}
+              inputClassName={CONTROL}
               placeholder="https://example.com/slides"
               idPrefix="cw-url"
             />
-          </ClassroomField>
-          <ClassroomField label="Lesson video" hint="Upload the recording from your computer, or paste a YouTube/Vimeo/Loom/Drive link.">
+          </JField>
+          <JField label="Lesson video" hint="Upload the recording from your computer, or paste a YouTube/Vimeo/Loom/Drive link.">
             <LessonVideoField
               url={topicVideoUrl}
               onUrlChange={setTopicVideoUrl}
@@ -349,21 +342,13 @@ export default function JournalClassworkEditor({
               onRemovedChange={setTopicVideoRemoved}
               existingUrl={cw?.new_topic_video_file_url || cw?.new_topic_video_url || ""}
               requestUpload={(filename) => journalsApi.videoUploadUrl(filename)}
-              inputClassName={crInputClass}
+              inputClassName={CONTROL}
               idPrefix="cw-video"
             />
-          </ClassroomField>
+          </JField>
 
-          <ClassroomField label="Files">
-            <label
-              htmlFor="cw-files"
-              className="flex cursor-pointer flex-col items-center gap-1.5 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-5 text-center transition-colors hover:border-primary hover:bg-primary/5"
-            >
-              <Upload className="h-5 w-5 text-primary" />
-              <p className="text-[13px] text-muted-foreground">
-                <strong className="text-foreground">Click to browse</strong> or drop files
-              </p>
-            </label>
+          <JField label="Files">
+            <FileDrop htmlFor="cw-files" />
             <input
               id="cw-files"
               type="file"
@@ -375,42 +360,20 @@ export default function JournalClassworkEditor({
               }}
             />
             {(cw?.new_topic_attachment_urls.length ?? 0) > 0 && (
-              <div className="mt-2 space-y-1">
+              <div className="mt-2 flex flex-col gap-1">
                 {cw?.new_topic_attachment_urls.map((f, i) => (
-                  <a
-                    key={i}
-                    href={f.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-2"
-                  >
-                    <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{f.name}</span>
-                  </a>
+                  <StoredFile key={i} href={f.url} name={f.name} />
                 ))}
               </div>
             )}
             {topicFiles.length > 0 && (
-              <div className="mt-2 space-y-1">
+              <div className="mt-2 flex flex-col gap-1">
                 {topicFiles.map((f, i) => (
-                  <div
-                    key={`${f.name}-${i}`}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-1.5"
-                  >
-                    <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate text-xs font-medium text-foreground">{f.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => setTopicFiles((p) => p.filter((_, j) => j !== i))}
-                      className="text-muted-foreground hover:text-rose-500"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  <PendingFile key={`${f.name}-${i}`} name={f.name} onRemove={() => setTopicFiles((p) => p.filter((_, j) => j !== i))} />
                 ))}
               </div>
             )}
-          </ClassroomField>
+          </JField>
 
           <PickList
             title="Assessments for the new topic"
@@ -444,7 +407,7 @@ export default function JournalClassworkEditor({
         onMinutes={(v) => setMins((m) => ({ ...m, break_minutes: v }))}
         subtitle="Nothing to prepare — the teacher runs the break. It only appears in the timetable."
       >
-        <p className="text-[12.5px] text-muted-foreground">No setup needed.</p>
+        <p className="text-[13px] text-ms-fg-2">No setup needed.</p>
       </BlockCard>
 
       {/* ── 4. Exercises ───────────────────────────────────────────────────── */}
@@ -454,7 +417,7 @@ export default function JournalClassworkEditor({
         onMinutes={(v) => setMins((m) => ({ ...m, exercises_minutes: v }))}
         subtitle="In-class practice. During the lesson the teacher grants the class access to each item."
       >
-        <div className="flex flex-col gap-3.5">
+        <div className="flex flex-col gap-4">
           <PickList
             title="Assessments"
             items={(options?.assessment_sets ?? []).map((a) => ({
@@ -478,12 +441,12 @@ export default function JournalClassworkEditor({
             emptyText="No past papers for this subject."
           />
           <div>
-            <p className="mb-2 text-[13px] font-bold text-foreground">Vocabulary</p>
+            <p className="mb-2 text-[14px] font-semibold text-ms-fg">Vocabulary</p>
             <VocabPicker
               sections={options?.vocabulary_sections ?? []}
               selectedIds={exVocabIds}
               onToggle={(id) => toggle(setExVocabIds, id)}
-              inputClassName={crInputClass}
+              inputClassName={CONTROL}
               idPrefix="cw-ex-vocab"
             />
           </div>
@@ -499,39 +462,37 @@ export default function JournalClassworkEditor({
       >
         <div className="flex flex-col gap-3">
           {exAssessmentIds.size + exTestIds.size === 0 ? (
-            <p className="text-[12.5px] text-muted-foreground">
+            <p className="text-[13px] text-ms-fg-2">
               Add exercises above — revision re-opens them.
             </p>
           ) : (
-            <p className="text-[12.5px] text-muted-foreground">
+            <p className="text-[13px] text-ms-fg-2">
               Revision covers the {exAssessmentIds.size + exTestIds.size} item
               {exAssessmentIds.size + exTestIds.size === 1 ? "" : "s"} selected in Exercises.
             </p>
           )}
-          <ClassroomField label="Revision notes" htmlFor="cw-rev">
+          <JField label="Revision notes" htmlFor="cw-rev">
             <textarea
               id="cw-rev"
               value={revisionNotes}
               onChange={(e) => setRevisionNotes(e.target.value)}
               placeholder="Common mistakes to focus on, worked examples to show…"
               rows={4}
-              className={crTextareaClass}
+              className={AREA}
             />
-          </ClassroomField>
+          </JField>
         </div>
       </BlockCard>
 
       {/* Save bar */}
-      <div className="sticky bottom-0 flex items-center gap-3 rounded-2xl border border-border bg-panel px-4 py-3 shadow-lg">
-        <span className="text-[12.5px] font-semibold text-muted-foreground">
+      <div className="sticky bottom-0 z-[5] flex flex-wrap items-center gap-3 rounded-ms-card border border-ms-border bg-ms-card px-4 py-3 shadow-ms-2">
+        <span className="min-w-0 flex-1 basis-[14rem] text-[13px] font-medium text-ms-fg-2">
           {cw?.is_ready ? "Classwork ready." : "Add a new-topic title and instructions to finish."}
           {savedAt ? ` Saved ${savedAt}.` : ""}
         </span>
-        <div className="ml-auto">
-          <ClassroomButton type="button" variant="primary" onClick={save} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save classwork
-          </ClassroomButton>
-        </div>
+        <Button variant="primary" onClick={save} state={saving ? "busy" : "idle"}>
+          Save classwork
+        </Button>
       </div>
     </div>
   );
@@ -559,29 +520,28 @@ function BlockCard({
   subtitle: string;
   children: React.ReactNode;
 }) {
-  const meta = BLOCK_META[blockKey] ?? { label: blockKey, icon: BookOpen };
-  const Icon = meta.icon;
+  const meta = BLOCK_META[blockKey] ?? { label: blockKey, icon: "book" as IconName };
   return (
-    <section className="rounded-2xl border border-border bg-panel p-5 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-primary/10 text-primary">
-          <Icon className="h-[18px] w-[18px]" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-[15px] font-extrabold text-foreground">{meta.label}</h3>
-          <p className="text-[12.5px] text-muted-foreground">{subtitle}</p>
+    <section data-block={blockKey} className={cn(PANEL, "animate-ms-card-in p-5")}>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Medallion icon={meta.icon} />
+        <div className="min-w-0 flex-1 basis-[14rem]">
+          <h3 className="text-[16px] font-semibold text-ms-fg">{meta.label}</h3>
+          <p className="text-[13px] text-ms-fg-2">{subtitle}</p>
         </div>
         <label className="flex items-center gap-2">
-          <span className="text-[12px] font-bold text-muted-foreground">Minutes</span>
-          <input
-            type="number"
-            min={0}
-            max={180}
-            value={minutes}
-            onChange={(e) => onMinutes(Math.max(0, Number(e.target.value) || 0))}
-            className={`${crInputClass} w-20 text-center`}
-            aria-label={`${meta.label} minutes`}
-          />
+          <span className="text-[13px] font-medium text-ms-fg-2">Minutes</span>
+          <span className="block w-20">
+            <input
+              type="number"
+              min={0}
+              max={180}
+              value={minutes}
+              onChange={(e) => onMinutes(Math.max(0, Number(e.target.value) || 0))}
+              className={cn(CONTROL, "text-center tabular-nums")}
+              aria-label={`${meta.label} minutes`}
+            />
+          </span>
         </label>
       </div>
       {children}
@@ -590,23 +550,21 @@ function BlockCard({
 }
 
 function ReviewItem({
-  icon: Icon,
+  icon,
   label,
   kind,
   href,
 }: {
-  icon: typeof BookOpen;
+  icon: IconName;
   label: string;
   kind: string;
   href?: string;
 }) {
   const inner = (
     <>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{label}</span>
-      <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
-        {kind}
-      </span>
+      <Icon name={icon} size="sm" className="size-3.5 text-ms-primary-text" />
+      <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ms-fg">{label}</span>
+      <span className={CHIP_SM}>{kind}</span>
     </>
   );
   return (
@@ -616,12 +574,12 @@ function ReviewItem({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 transition-colors hover:border-primary"
+          className="ms-transition flex items-center gap-2 rounded-ms-ctl border border-ms-border bg-ms-card px-3 py-2 hover:border-ms-primary hover:bg-ms-surface"
         >
           {inner}
         </a>
       ) : (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">{inner}</div>
+        <div className="flex items-center gap-2 rounded-ms-ctl border border-ms-border bg-ms-card px-3 py-2">{inner}</div>
       )}
     </li>
   );
@@ -648,31 +606,29 @@ function PickList({
       )
     : items;
   return (
-    <div>
-      <div className="mb-1.5 flex items-center gap-2">
-        <h4 className="text-[13px] font-extrabold text-foreground">{title}</h4>
-        <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
-          {selected.size} selected
-        </span>
+    <div data-picklist={title}>
+      <div className="mb-2 flex items-center gap-2">
+        <h4 className="text-[14px] font-semibold text-ms-fg">{title}</h4>
+        <span className={CHIP_SM}>{selected.size} selected</span>
       </div>
       {/* Search appears once the list is long enough to be worth filtering. */}
       {items.length > 5 && (
-        <div className="relative mb-1.5">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <div className="relative mb-2">
+          <Icon name="search" size="sm" className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-ms-fg-3" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${title.toLowerCase()}…`}
-            className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-3 text-[12.5px] text-foreground outline-none focus:border-primary"
+            className={cn(CONTROL, "pl-9")}
           />
         </div>
       )}
       {items.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-[12.5px] text-muted-foreground">
+        <p className="rounded-ms-ctl border border-dashed border-ms-border-strong px-3 py-3 text-[13px] text-ms-fg-2">
           {emptyText}
         </p>
       ) : shown.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-[12.5px] text-muted-foreground">
+        <p className="rounded-ms-ctl border border-dashed border-ms-border-strong px-3 py-3 text-[13px] text-ms-fg-2">
           No matches for “{query}”.
         </p>
       ) : (
@@ -686,22 +642,15 @@ function PickList({
                   onClick={() => onToggle(it.id)}
                   aria-pressed={on}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
-                    on ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary",
+                    "ms-transition flex w-full items-center gap-2.5 rounded-ms-ctl border px-3 py-2 text-left",
+                    on ? "border-ms-primary bg-ms-primary-soft" : "border-ms-border bg-ms-card hover:border-ms-border-strong hover:bg-ms-surface",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px]",
-                      on ? "border-primary bg-primary text-white" : "border-border text-transparent",
-                    )}
-                  >
-                    <Check className="h-2.5 w-2.5" strokeWidth={3} />
-                  </span>
+                  <PickTick on={on} small />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-semibold text-foreground">{it.label}</span>
+                    <span className="block truncate text-[14px] font-medium text-ms-fg">{it.label}</span>
                     {it.meta ? (
-                      <span className="block truncate text-[11.5px] text-muted-foreground">{it.meta}</span>
+                      <span className="block truncate text-[12px] text-ms-fg-3">{it.meta}</span>
                     ) : null}
                   </span>
                 </button>
