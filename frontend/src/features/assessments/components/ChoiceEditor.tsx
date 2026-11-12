@@ -1,10 +1,21 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { ImagePlus, Plus, X } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/cn";
 import type { AssessmentChoice } from "@/features/assessments/types";
 import { AssessmentText } from "@/lib/assessmentText";
+import { Badge, Button, Kbd } from "@/features/console/ui";
+import { ImageUpload } from "@/features/assessments/components/ImageUpload";
+import {
+  CHOICE,
+  CHOICE_IDLE,
+  CHOICE_KEY,
+  LETTER,
+  LETTER_IDLE,
+  LETTER_KEY,
+  hasMarkup,
+} from "@/features/questionsAdmin/questionLook";
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
@@ -111,7 +122,6 @@ function ChoiceRow({
   hasDuplicateError,
   canRemove,
   onFocusTextarea,
-  inputClassName,
   imageProps,
 }: {
   choice: AssessmentChoice;
@@ -125,7 +135,6 @@ function ChoiceRow({
   hasDuplicateError: boolean;
   canRemove: boolean;
   onFocusTextarea?: (el: HTMLTextAreaElement, setVal: (v: string) => void) => void;
-  inputClassName: string;
   imageProps?: ChoiceImageProps;
 }) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -143,48 +152,63 @@ function ChoiceRow({
   };
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-3">
+    // The choice as the student sees it (PR 17c, the module editor's cards): the answer key's card in green.
+    <div
+      data-choice={choice.id}
+      className={cn(
+        CHOICE,
+        "flex-col gap-2 focus-within:border-ms-primary",
+        isCorrect ? CHOICE_KEY : CHOICE_IDLE,
+        hasDuplicateError && !isCorrect && "border-ms-attention",
+      )}
+    >
+      <div className="flex items-start gap-3">
         {/* Letter badge — click to mark correct */}
         <button
           type="button"
           disabled={disabled}
           onClick={onMarkCorrect}
           title={isCorrect ? "Correct answer" : "Mark as correct"}
+          aria-label={isCorrect ? `Option ${choice.id} is the correct answer` : `Mark option ${choice.id} as correct`}
+          aria-pressed={isCorrect}
           className={cn(
-            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold transition-colors select-none",
-            isCorrect
-              ? "bg-emerald-500 text-white shadow-sm"
-              : "border border-border bg-card text-muted-foreground hover:border-emerald-400 hover:text-emerald-600",
+            LETTER,
+            "ms-transition select-none",
+            isCorrect ? LETTER_KEY : cn(LETTER_IDLE, "hover:border-ms-positive hover:text-ms-positive-fg"),
             disabled && "cursor-not-allowed opacity-50",
           )}
         >
-          {choice.id}
+          {isCorrect ? <Icon name="check" size="sm" className="size-4" /> : choice.id}
         </button>
 
-        {/* Input — a textarea so Enter inserts a newline; auto-grows to fit content. */}
-        <textarea
-          ref={(el) => {
-            textareaRef?.(el);
-            autoGrowTextarea(el);
-          }}
-          rows={1}
-          disabled={disabled}
-          placeholder={`Option ${choice.id}`}
-          value={choice.text}
-          onChange={(e) => {
-            onChangeText(e.target.value);
-            autoGrowTextarea(e.currentTarget);
-          }}
-          onKeyDown={handleKeyDown}
-          onFocus={(e) => onFocusTextarea?.(e.currentTarget, onChangeText)}
-          className={cn(
-            inputClassName,
-            "flex-1 resize-none overflow-hidden",
-            isCorrect && "border-emerald-400 ring-1 ring-emerald-300 focus:border-emerald-400",
-            hasDuplicateError && "border-amber-400",
-          )}
-        />
+        {/* Input — a textarea so Enter inserts a newline; auto-grows to fit content. Georgia sits on the
+            wrapper: globals.css gives every control `font-family: inherit`. */}
+        <div className="min-w-0 flex-1 font-ms-serif">
+          <textarea
+            ref={(el) => {
+              textareaRef?.(el);
+              autoGrowTextarea(el);
+            }}
+            rows={1}
+            disabled={disabled}
+            aria-label={`Option ${choice.id}`}
+            placeholder={`Option ${choice.id}`}
+            value={choice.text}
+            onChange={(e) => {
+              onChangeText(e.target.value);
+              autoGrowTextarea(e.currentTarget);
+            }}
+            onKeyDown={handleKeyDown}
+            onFocus={(e) => onFocusTextarea?.(e.currentTarget, onChangeText)}
+            className="min-h-7 w-full resize-none overflow-hidden bg-transparent py-0.5 text-[16px] leading-6 text-ms-fg outline-none placeholder:text-ms-fg-3 disabled:cursor-not-allowed"
+          />
+        </div>
+
+        {isCorrect ? (
+          <Badge tone="positive" className="mt-0.5 shrink-0">
+            Answer key · {choice.id}
+          </Badge>
+        ) : null}
 
         {/* Remove */}
         <button
@@ -192,70 +216,47 @@ function ChoiceRow({
           disabled={disabled || !canRemove}
           onClick={onRemove}
           title="Remove option"
+          aria-label={`Remove option ${choice.id}`}
           className={cn(
-            "shrink-0 rounded-lg p-1 text-muted-foreground/30 transition-colors hover:text-red-500",
+            "ms-transition grid size-7 shrink-0 place-items-center rounded-[8px] text-ms-fg-3 hover:bg-ms-critical-soft hover:text-ms-critical-fg",
             !canRemove && "invisible",
           )}
         >
-          <X className="h-3.5 w-3.5" />
+          <Icon name="x" size="sm" className="size-3.5" />
         </button>
       </div>
 
-      {/* Live math preview */}
-      {choice.text.trim() && (
-        <div className="ml-10 rounded-lg border border-border/50 bg-surface-2/40 px-2.5 py-1.5">
-          <AssessmentText text={choice.text} preserveNewlines className="text-xs leading-relaxed text-foreground" />
+      {/* Live math preview — only when the choice carries math or markup; a plain choice already reads as
+          itself in the card (as in the module editor). */}
+      {hasMarkup(choice.text) && (
+        <div className="ml-10 rounded-[10px] bg-ms-surface px-3 py-2">
+          <AssessmentText text={choice.text} preserveNewlines className="font-ms-serif text-[15px] leading-6 text-ms-fg" />
         </div>
       )}
 
       {hasDuplicateError && (
-        <p className="ml-10 text-[10px] font-semibold text-amber-600">Duplicate option</p>
+        <p className="ml-10 text-[13px] font-semibold text-ms-attention-fg">Duplicate option</p>
       )}
 
-      {/* Per-choice image upload */}
-      {imageProps !== undefined && (
-        <div className="ml-10 flex flex-wrap items-center gap-2">
-          {imageProps?.existingUrl && !imageProps.cleared && !imageProps.file && (
-            <>
-              <img src={imageProps.existingUrl} alt={`Option ${choice.id}`} className="max-h-16 rounded-lg border border-border object-contain" />
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={imageProps.onClear}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
-              >
-                <X className="h-3 w-3" /> Remove
-              </button>
-            </>
-          )}
-          {imageProps?.file && (
-            <>
-              <img src={URL.createObjectURL(imageProps.file)} alt="Preview" className="max-h-16 rounded-lg border border-border object-contain" />
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={imageProps?.onCancel}
-                className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
-              >
-                <X className="h-3 w-3" /> Cancel
-              </button>
-            </>
-          )}
-          {imageProps && (
-            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-border bg-surface-2/30 px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
-              <ImagePlus className="h-3 w-3" />
-              {imageProps.file ? "Change image" : imageProps.existingUrl && !imageProps.cleared ? "Replace image" : "Add image"}
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                disabled={disabled}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) imageProps.onSet(f); }}
-              />
-            </label>
-          )}
+      {/* Per-choice image upload — the shared widget, so its preview URL is made once and freed (it was made
+          anew on every render and never revoked). */}
+      {imageProps ? (
+        <div className="ml-10">
+          <ImageUpload
+            label={`Option ${choice.id}`}
+            showLabel={false}
+            size="sm"
+            words={{ add: "Add image", change: "Change image", replace: "Replace image" }}
+            existingUrl={imageProps.existingUrl}
+            file={imageProps.file}
+            cleared={imageProps.cleared}
+            onSet={imageProps.onSet}
+            onClear={imageProps.onClear}
+            onCancel={imageProps.onCancel}
+            disabled={disabled}
+          />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -268,7 +269,6 @@ export function ChoiceEditor({
   onChange,
   disabled,
   onFocusTextarea,
-  inputClassName,
   getChoiceImageProps,
 }: {
   choices: AssessmentChoice[];
@@ -276,7 +276,6 @@ export function ChoiceEditor({
   onChange: (choices: AssessmentChoice[], correctId: string) => void;
   disabled?: boolean;
   onFocusTextarea?: (el: HTMLTextAreaElement, setVal: (v: string) => void) => void;
-  inputClassName: string;
   getChoiceImageProps?: (choiceId: string) => ChoiceImageProps | null;
 }) {
   const rowRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
@@ -352,60 +351,51 @@ export function ChoiceEditor({
   );
 
   return (
-    <div className="space-y-3">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        {noCorrect && (
-          <span className="text-[10px] font-bold text-amber-600 animate-pulse">
-            Click a letter badge to mark the correct answer ↓
-          </span>
-        )}
-      </div>
+    <div className="flex flex-col gap-2.5">
+      {noCorrect && (
+        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-ms-attention-fg">
+          <Icon name="warn" size="sm" className="size-3.5" />
+          Click a letter badge to mark the correct answer ↓
+        </p>
+      )}
 
       {/* Rows */}
-      <div className="space-y-2">
-        {choices.map((c, idx) => (
-          <ChoiceRow
-            key={`row-${idx}`}
-            choice={c}
-            isCorrect={c.id === correctId}
-            onChangeText={(text) => updateText(idx, text)}
-            onMarkCorrect={() => markCorrect(idx)}
-            onRemove={() => removeChoice(idx)}
-            onAddAfter={() => addChoiceAfter(idx)}
-            disabled={disabled}
-            textareaRef={(el) => { rowRefs.current[idx] = el; }}
-            hasDuplicateError={dupSet.has(idx)}
-            canRemove={choices.length > 2}
-            onFocusTextarea={onFocusTextarea}
-            inputClassName={inputClassName}
-            imageProps={getChoiceImageProps ? getChoiceImageProps(c.id) : undefined}
-          />
-        ))}
-      </div>
+      {choices.map((c, idx) => (
+        <ChoiceRow
+          key={`row-${idx}`}
+          choice={c}
+          isCorrect={c.id === correctId}
+          onChangeText={(text) => updateText(idx, text)}
+          onMarkCorrect={() => markCorrect(idx)}
+          onRemove={() => removeChoice(idx)}
+          onAddAfter={() => addChoiceAfter(idx)}
+          disabled={disabled}
+          textareaRef={(el) => { rowRefs.current[idx] = el; }}
+          hasDuplicateError={dupSet.has(idx)}
+          canRemove={choices.length > 2}
+          onFocusTextarea={onFocusTextarea}
+          imageProps={getChoiceImageProps ? getChoiceImageProps(c.id) : undefined}
+        />
+      ))}
 
       {/* Footer: add + count */}
       <div className="flex items-center gap-3 pt-1">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
+          icon="plus"
           disabled={disabled || choices.length >= 8}
           onClick={() => addChoiceAfter(choices.length - 1)}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-muted-foreground transition-colors",
-            "hover:border-primary/30 hover:bg-primary/5 hover:text-primary",
-            "disabled:cursor-not-allowed disabled:opacity-40",
-          )}
         >
-          <Plus className="h-3.5 w-3.5" />
           Add option
-          <kbd className="ml-0.5 rounded bg-surface-2 px-1 py-0.5 text-[9px] font-mono text-muted-foreground/60">⌘↵</kbd>
-        </button>
+          <Kbd className="ml-0.5">⌘↵</Kbd>
+        </Button>
 
         {tooFew && (
-          <span className="text-[10px] font-semibold text-red-500">Need at least 2 options</span>
+          <span className="text-[13px] font-semibold text-ms-critical-fg">Need at least 2 options</span>
         )}
 
-        <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+        <span className="ml-auto text-[13px] tabular-nums text-ms-fg-3">
           {choices.length}/8
         </span>
       </div>

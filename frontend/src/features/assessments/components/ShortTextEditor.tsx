@@ -1,13 +1,12 @@
 "use client";
 
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { useId } from "react";
+import { cn } from "@/lib/cn";
+import { FIELD_LABEL, SERIF_AREA } from "@/features/questionsAdmin/questionLook";
 import {
   parseJson,
   type AssessmentQuestionEditorDraft,
 } from "@/features/assessments/components/assessmentQuestionEditorShared";
-
-const INPUT = STUDIO_INPUT;
-const LABEL = STUDIO_FIELD_LABEL;
 
 // ─── Short text ───────────────────────────────────────────────────────────────
 
@@ -24,11 +23,15 @@ export function ShortTextEditor({
     setVal: (v: string) => void,
   ) => (e: React.FocusEvent<HTMLTextAreaElement | HTMLInputElement>) => void;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className={LABEL}>Expected answer (exact match)</label>
+      <label htmlFor={`${id}-answer`} className={FIELD_LABEL}>
+        Expected answer (exact match)
+      </label>
       <textarea
-        className={`${INPUT} min-h-[80px] leading-relaxed`}
+        id={`${id}-answer`}
+        className={cn(SERIF_AREA, "min-h-[80px]")}
         disabled={disabled}
         placeholder="Enter the exact expected answer."
         value={(() => {
