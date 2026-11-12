@@ -1,20 +1,42 @@
 "use client";
 
+/**
+ * /builder/sets — Assessments: subject → level → the sets in that bucket.
+ *
+ * In the console's look (design handoff v0.3, PR 17a), the Builder library's header, chips, badges and dialogs:
+ * the words, the drill-down and every action (review status, Import CSV, delete with the 409 force delete) are
+ * the page's own.
+ */
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
-import { useAssessmentSetsList, useDeleteAssessmentSet, useSetReviewStatus } from "@/features/assessments/hooks";
-import { getRole, getSubject } from "@/lib/permissions";
-import { Plus, Search, RefreshCw, Trash2, ChevronRight, BookOpen, Sigma, Upload, X } from "lucide-react";
-import { cn } from "@/lib/cn";
-import { StateTag, SetLineage } from "@/components/governance";
-import { ConfirmDialog } from "@/features/classroom/ui";
-import { levelLabel, levelsForSubject, setHasLevel, setLevelsLabel, type LevelKey } from "@/lib/levels";
-import { REVIEW_STATUS_LABELS, type ReviewStatus } from "@/features/assessments/types";
-import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
-import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
-import type { Subject } from "@/features/assessments/types";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+
+import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ToastProvider";
+import { useAssessmentSetsList, useDeleteAssessmentSet, useSetReviewStatus } from "@/features/assessments/hooks";
+import { REVIEW_STATUS_LABELS, type AssessmentSet, type ReviewStatus, type Subject } from "@/features/assessments/types";
+import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
+import { FIELD, FIELD_HINT, FIELD_LABEL, LibraryError, LibraryHeader } from "@/features/builderLibrary/sectionParts";
+import {
+  Badge,
+  Button,
+  ChipCount,
+  ConfirmDialog,
+  Dialog,
+  EmptyState,
+  SearchField,
+  Select,
+  StatTile,
+  buttonClass,
+  chipClass,
+  type BadgeTone,
+} from "@/features/console/ui";
+import { normalizeApiError } from "@/lib/apiError";
+import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
+import { cn } from "@/lib/cn";
+import { levelLabel, levelsForSubject, setHasLevel, setLevelsLabel, type LevelKey } from "@/lib/levels";
+import { getRole, getSubject } from "@/lib/permissions";
 
 type SubjectKey = "english" | "math";
 const SUBJECTS: { code: SubjectKey; label: string }[] = [
@@ -24,18 +46,26 @@ const SUBJECTS: { code: SubjectKey; label: string }[] = [
 // Sentinel for the "Unassigned" bucket (legacy sets with a blank level).
 const UNASSIGNED_LEVEL = "__unassigned__";
 
-const SUBJECT_COLORS: Record<string, string> = {
-  math: "bg-purple-100 text-purple-800",
-  english: "bg-teal-100 text-teal-800",
-};
-
-const REVIEW_STATUS_STYLES: Record<ReviewStatus, string> = {
-  draft: "bg-slate-100 text-slate-700",
-  needs_review: "bg-amber-100 text-amber-800",
-  approved: "bg-emerald-100 text-emerald-800",
+const REVIEW_STATUS_TONE: Record<ReviewStatus, BadgeTone> = {
+  draft: "neutral",
+  needs_review: "attention",
+  approved: "positive",
 };
 
 const REVIEW_STATUS_ORDER: ReviewStatus[] = ["draft", "needs_review", "approved"];
+
+type VisibilityFilter = "all" | "active" | "inactive";
+
+const subjectName = (code: string | null | undefined) => SUBJECTS.find((s) => s.code === code)?.label ?? code ?? "";
+
+/** The delete hook rethrows the normalized error; anything else (an axios error) is normalized here. */
+function apiErrorOf(e: unknown): { status: number; message: string } {
+  const r = e as { response?: unknown; status?: unknown; message?: unknown } | null;
+  if (r && typeof r === "object" && !r.response && typeof r.status === "number") {
+    return { status: r.status, message: typeof r.message === "string" ? r.message : "" };
+  }
+  return normalizeApiError(e);
+}
 
 export default function BuilderSetsPage() {
   // Backend already enforces teacher subject scoping.
@@ -44,7 +74,7 @@ export default function BuilderSetsPage() {
   const scopedSubject = (role === "teacher" ? getSubject() : null) as SubjectKey | null;
   const canApprove = role === "admin" || role === "super_admin" || role === "test_auditor";
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [statusFilter, setStatusFilter] = useState<VisibilityFilter>("all");
   const [reviewFilter, setReviewFilter] = useState<"all" | ReviewStatus>("all");
   // Drill-down: subject (English/Math) → level → the sets in that bucket. A scoped teacher
   // has one subject, so step 1 is pre-selected and skipped. New sets inherit this context.
@@ -55,6 +85,7 @@ export default function BuilderSetsPage() {
   const router = useRouter();
 
   // Create a new set directly from a CSV of questions (subject+level from the bucket).
+  const csvId = useId();
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvTitle, setCsvTitle] = useState("");
   const [csvSource, setCsvSource] = useState("");
@@ -83,40 +114,58 @@ export default function BuilderSetsPage() {
       },
     );
   };
-  const [pendingDelete, setPendingDelete] = useState<{ id: number; title: string } | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Set becomes true after a 409 (the set is published/assigned) — reveals the
-  // force-delete action, which removes it along with student attempts & grades.
+
+  // Delete: the confirm dialog asks; a 409 (the set is published/assigned) reveals the force
+  // delete, which removes it along with student attempts & grades. The target outlives the
+  // dialog so its words stay while it leaves.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; title: string } | null>(null);
   const [deleteBlocked, setDeleteBlocked] = useState(false);
+  const [forceError, setForceError] = useState<string | null>(null);
+  const [forcing, setForcing] = useState(false);
   const deleteSet = useDeleteAssessmentSet();
 
   const { data, isLoading, error, refetch } = useAssessmentSetsList(
     scopedSubject ? { subject: scopedSubject } : undefined,
   );
 
-  const runDelete = (force: boolean) => {
-    if (!pendingDelete) return;
-    setDeleteError(null);
-    deleteSet.mutate(
-      { setId: pendingDelete.id, force },
-      {
-        onSuccess: () => {
-          setPendingDelete(null);
-          setDeleteBlocked(false);
-        },
-        onError: (e) => {
-          const err = e as { message?: string; status?: number };
-          setDeleteError(err?.message || "Could not delete this set.");
-          if (err?.status === 409) setDeleteBlocked(true);
-        },
-      },
-    );
+  const askDelete = (s: { id: number; title: string }) => {
+    setDeleteTarget(s);
+    setDeleteBlocked(false);
+    setForceError(null);
+    setDeleteOpen(true);
   };
 
-  const closeDelete = () => {
-    setPendingDelete(null);
-    setDeleteError(null);
-    setDeleteBlocked(false);
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteSet.mutateAsync({ setId: deleteTarget.id, force: false });
+    } catch (e) {
+      const err = apiErrorOf(e);
+      if (err.status === 409) setDeleteBlocked(true);
+      throw new Error(err.message || "Could not delete this set.");
+    }
+  };
+
+  const forceDelete = async () => {
+    if (!deleteTarget) return;
+    setForceError(null);
+    setForcing(true);
+    try {
+      await deleteSet.mutateAsync({ setId: deleteTarget.id, force: true });
+      setDeleteOpen(false);
+    } catch (e) {
+      setForceError(apiErrorOf(e).message || "Could not delete this set.");
+    } finally {
+      setForcing(false);
+    }
+  };
+
+  const openCsv = () => {
+    setCsvTitle("");
+    setCsvSource("");
+    if (csvFileRef.current) csvFileRef.current.value = "";
+    setCsvOpen(true);
   };
 
   const submitCsvImport = async () => {
@@ -163,10 +212,15 @@ export default function BuilderSetsPage() {
     subjectSets.filter((s) => (lv === UNASSIGNED_LEVEL ? !s.level : setHasLevel(s, lv))).length;
   const hasUnassigned = subjectSets.some((s) => !s.level);
 
+  // The sets of the level bucket, before the search and the chips.
+  const bucketSets = useMemo(() => {
+    if (selectedLevel === UNASSIGNED_LEVEL) return subjectSets.filter((s) => !s.level);
+    if (selectedLevel) return subjectSets.filter((s) => setHasLevel(s, selectedLevel));
+    return subjectSets;
+  }, [subjectSets, selectedLevel]);
+
   const filtered = useMemo(() => {
-    let result = subjectSets;
-    if (selectedLevel === UNASSIGNED_LEVEL) result = result.filter((s) => !s.level);
-    else if (selectedLevel) result = result.filter((s) => setHasLevel(s, selectedLevel));
+    let result = bucketSets;
     const term = search.trim().toLowerCase();
     if (term.length >= 1) {
       result = result.filter(
@@ -178,7 +232,10 @@ export default function BuilderSetsPage() {
     if (reviewFilter !== "all")
       result = result.filter((s) => (s.review_status ?? "draft") === reviewFilter);
     return result;
-  }, [subjectSets, selectedLevel, search, statusFilter, reviewFilter]);
+  }, [bucketSets, search, statusFilter, reviewFilter]);
+
+  const reviewCount = (rs: ReviewStatus) => bucketSets.filter((s) => (s.review_status ?? "draft") === rs).length;
+  const activeInBucket = bucketSets.filter((s) => s.is_active).length;
 
   const activeCount = sets.filter((s) => s.is_active).length;
   const draftCount = sets.filter((s) => !s.is_active).length;
@@ -191,89 +248,66 @@ export default function BuilderSetsPage() {
       ? `/builder/sets/new?subject=${selectedSubject}${selectedLevel !== UNASSIGNED_LEVEL ? `&level=${selectedLevel}` : ""}`
       : "/builder/sets/new";
 
+  const newSetLink = (
+    <Link href={newSetHref} className={buttonClass({ variant: "primary" })}>
+      <Icon name="plus" size="sm" />
+      New set
+    </Link>
+  );
+
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Assessments</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Assessment sets group reusable questions into a deliverable unit. Approve a set to make
-            it assignable to classrooms.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
-          </button>
-          <Link
-            href="/builder/bank"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
-          >
-            Question Bank
-          </Link>
-          {canCreate && (
-            <button
-              type="button"
-              onClick={() => { setCsvTitle(""); setCsvSource(""); if (csvFileRef.current) csvFileRef.current.value = ""; setCsvOpen(true); }}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
-            >
-              <Upload className="h-4 w-4" />
-              Import CSV
-            </button>
-          )}
-          {canCreate && (
-            <Link
-              href={newSetHref}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              New set
+    <div className="flex flex-col gap-5">
+      <LibraryHeader
+        eyebrow="Learning"
+        title="Assessments"
+        description="Assessment sets group reusable questions into a deliverable unit. Approve a set to make it assignable to classrooms."
+        actions={
+          <>
+            <Button variant="secondary" icon="refresh" onClick={() => void refetch()}>
+              Refresh
+            </Button>
+            <Link href="/builder/bank" className={buttonClass({ variant: "secondary" })}>
+              Question Bank
             </Link>
-          )}
-        </div>
-      </div>
+            {canCreate && (
+              <Button variant="secondary" icon="upload" onClick={openCsv}>
+                Import CSV
+              </Button>
+            )}
+            {canCreate && newSetLink}
+          </>
+        }
+      />
 
       {/* Breadcrumb — subject → level drill-down */}
-      <nav className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+      <nav aria-label="Subject and level" className="animate-ms-fade-in flex flex-wrap items-center gap-1 text-[14px]">
         {scopedSubject ? (
-          <button
-            type="button"
-            onClick={() => setSelectedLevel(null)}
-            className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedLevel ? "text-primary" : "text-foreground")}
-          >
-            {SUBJECTS.find((s) => s.code === scopedSubject)?.label ?? scopedSubject}
-          </button>
+          <Crumb current={!selectedLevel} onClick={() => setSelectedLevel(null)}>
+            {subjectName(scopedSubject)}
+          </Crumb>
         ) : (
-          <button
-            type="button"
-            onClick={() => { setSelectedSubject(null); setSelectedLevel(null); }}
-            className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedSubject ? "text-primary" : "text-foreground")}
+          <Crumb
+            current={!selectedSubject}
+            onClick={() => {
+              setSelectedSubject(null);
+              setSelectedLevel(null);
+            }}
           >
             All subjects
-          </button>
+          </Crumb>
         )}
         {selectedSubject && !scopedSubject && (
           <>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            <button
-              type="button"
-              onClick={() => setSelectedLevel(null)}
-              className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedLevel ? "text-primary" : "text-foreground")}
-            >
-              {SUBJECTS.find((s) => s.code === selectedSubject)?.label ?? selectedSubject}
-            </button>
+            <Icon name="right" size="sm" className="text-ms-fg-3" />
+            <Crumb current={!selectedLevel} onClick={() => setSelectedLevel(null)}>
+              {subjectName(selectedSubject)}
+            </Crumb>
           </>
         )}
         {selectedSubject && selectedLevel && (
           <>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            <span className="rounded-lg px-2 py-1 text-foreground">{selectedLevelLabel}</span>
+            <Icon name="right" size="sm" className="text-ms-fg-3" />
+            <Crumb current>{selectedLevelLabel}</Crumb>
           </>
         )}
       </nav>
@@ -281,341 +315,488 @@ export default function BuilderSetsPage() {
       {/* Stats */}
       {!isLoading && sets.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-foreground">{sets.length}</p>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Total</p>
-          </div>
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-primary">{activeCount}</p>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Active</p>
-          </div>
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-muted-foreground">{draftCount}</p>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Draft</p>
-          </div>
+          <StatTile label="Total" value={sets.length} />
+          <StatTile label="Active" value={activeCount} tone="positive" delay={40} />
+          <StatTile label="Draft" value={draftCount} delay={80} />
         </div>
       )}
 
-
       {/* Search + filter — only in the set list (subject & level are the drill-down) */}
       {canCreate && (
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[160px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search sets…"
-              className="w-full rounded-xl border border-border bg-card pl-9 pr-4 py-2 text-sm font-medium placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+        <div className="flex flex-col gap-3">
+          <SearchField value={search} placeholder="Search sets…" onSearch={setSearch} className="max-w-[640px]" />
+          <div className="flex flex-wrap gap-x-6 gap-y-3">
+            <ChipGroup
+              label="Review status"
+              value={reviewFilter}
+              onChange={setReviewFilter}
+              options={[
+                { v: "all", l: "All review statuses", n: bucketSets.length },
+                ...REVIEW_STATUS_ORDER.map((rs) => ({ v: rs, l: REVIEW_STATUS_LABELS[rs], n: reviewCount(rs) })),
+              ]}
+            />
+            <ChipGroup
+              label="Visibility"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { v: "all", l: "All visibility", n: bucketSets.length },
+                { v: "active", l: "Active only", n: activeInBucket },
+                { v: "inactive", l: "Archived only", n: bucketSets.length - activeInBucket },
+              ]}
             />
           </div>
-          <select
-            value={reviewFilter}
-            onChange={(e) => setReviewFilter(e.target.value as typeof reviewFilter)}
-            className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
-            title="Review status"
-          >
-            <option value="all">All review statuses</option>
-            {REVIEW_STATUS_ORDER.map((rs) => (
-              <option key={rs} value={rs}>
-                {REVIEW_STATUS_LABELS[rs]}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-            className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
-            title="Visibility"
-          >
-            <option value="all">All visibility</option>
-            <option value="active">Active only</option>
-            <option value="inactive">Archived only</option>
-          </select>
         </div>
       )}
 
       {/* Error */}
       {error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-          {String((error as { message?: string })?.message || error)}
-        </div>
+        <LibraryError>
+          <span className="flex flex-wrap items-center justify-between gap-2">
+            {String((error as { message?: string })?.message || error)}
+            <Button variant="ghost" size="sm" onClick={() => void refetch()} className="-my-1 text-ms-primary-text">
+              Retry
+            </Button>
+          </span>
+        </LibraryError>
       ) : null}
 
       {/* Content — drill-down: subject → level → sets */}
       {isLoading ? (
-        <div className="flex justify-center p-10">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <div aria-busy="true" aria-label="Loading" className="grid gap-4 sm:grid-cols-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-[100px] animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+          ))}
         </div>
-      ) : selectedSubject === null ? (
+      ) : error && sets.length === 0 ? null : selectedSubject === null ? (
         /* Step 1 — choose a subject */
         <div className="grid gap-4 sm:grid-cols-2">
-          {SUBJECTS.map((s) => {
+          {SUBJECTS.map((s, i) => {
             const n = countForSubject(s.code);
-            const Icon = s.code === "math" ? Sigma : BookOpen;
+            const math = s.code === "math";
             return (
-              <button
+              <BucketCard
                 key={s.code}
-                type="button"
-                onClick={() => { setSelectedSubject(s.code); setSelectedLevel(null); }}
-                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-6 text-left transition-colors hover:border-primary hover:bg-surface-2"
-              >
-                <div className="flex items-center gap-4">
-                  <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl", s.code === "math" ? "bg-purple-100 text-purple-700" : "bg-teal-100 text-teal-700")}>
-                    <Icon className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p className="text-lg font-extrabold text-foreground">{s.label}</p>
-                    <p className="text-sm text-muted-foreground">{n} set{n !== 1 ? "s" : ""}</p>
-                  </div>
-                </div>
-                <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
+                delay={i * 40}
+                big
+                onClick={() => {
+                  setSelectedSubject(s.code);
+                  setSelectedLevel(null);
+                }}
+                lead={
+                  <span className={cn("grid size-12 shrink-0 place-items-center rounded-[14px]", math ? "bg-ms-math-soft text-ms-math-fg" : "bg-ms-rw-soft text-ms-rw-fg")}>
+                    <Icon name={math ? "sigma" : "book"} />
+                  </span>
+                }
+                title={s.label}
+                sub={`${n} set${n !== 1 ? "s" : ""}`}
+              />
             );
           })}
         </div>
       ) : selectedLevel === null ? (
         /* Step 2 — choose a level */
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {levelsForSubject(selectedSubject).map((code: LevelKey) => {
+          {levelsForSubject(selectedSubject).map((code: LevelKey, i) => {
             const n = countForLevel(code);
             return (
-              <button
+              <BucketCard
                 key={code}
-                type="button"
+                delay={i * 40}
                 onClick={() => setSelectedLevel(code)}
-                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-primary hover:bg-surface-2"
-              >
-                <div>
-                  <p className="text-base font-extrabold text-foreground">{levelLabel(code)}</p>
-                  <p className="text-sm text-muted-foreground">{n} set{n !== 1 ? "s" : ""}</p>
-                </div>
-                <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
+                lead={<span aria-hidden="true" className={cn("h-9 w-1 shrink-0 rounded-full", selectedSubject === "math" ? "bg-ms-math-fg" : "bg-ms-rw-fg")} />}
+                title={levelLabel(code)}
+                sub={`${n} set${n !== 1 ? "s" : ""}`}
+              />
             );
           })}
           {hasUnassigned && (
-            <button
-              type="button"
+            <BucketCard
+              dashed
+              delay={levelsForSubject(selectedSubject).length * 40}
               onClick={() => setSelectedLevel(UNASSIGNED_LEVEL)}
-              className="group flex items-center justify-between rounded-2xl border border-dashed border-border bg-card p-5 text-left transition-colors hover:border-primary hover:bg-surface-2"
-            >
-              <div>
-                <p className="text-base font-extrabold text-foreground">Unassigned</p>
-                <p className="text-sm text-muted-foreground">{countForLevel(UNASSIGNED_LEVEL)} without a level</p>
-              </div>
-              <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-            </button>
+              title="Unassigned"
+              sub={`${countForLevel(UNASSIGNED_LEVEL)} without a level`}
+            />
           )}
         </div>
       ) : (
-      /* Step 3 — sets in this subject+level */
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-5 py-4 font-bold text-foreground">
-          {`${filtered.length} set${filtered.length === 1 ? "" : "s"}`}
-        </div>
-
-        {filtered.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
-            <p className="font-semibold">
-              {subjectSets.length === 0 || countForLevel(selectedLevel === UNASSIGNED_LEVEL ? UNASSIGNED_LEVEL : selectedLevel ?? "") === 0
-                ? `No sets in ${SUBJECTS.find((s) => s.code === selectedSubject)?.label} · ${selectedLevelLabel} yet.`
-                : "No sets match your filters."}
-            </p>
-            <Link
-              href={newSetHref}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              New set
-            </Link>
+        /* Step 3 — sets in this subject+level */
+        <section aria-label="Sets" className="animate-ms-fade-in rounded-ms-card bg-ms-card shadow-ms-1">
+          <div className="border-b border-ms-line px-5 py-3.5 text-[15px] font-semibold text-ms-fg">
+            {`${filtered.length} set${filtered.length === 1 ? "" : "s"}`}
           </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {filtered.map((s) => {
-              const questionCount = (s.questions ?? []).length;
-              const activeQs = (s.questions ?? []).filter((q: { is_active?: boolean }) => q.is_active).length;
-              const reviewStatus = (s.review_status ?? "draft") as ReviewStatus;
-              return (
-                <div
+
+          {filtered.length === 0 ? (
+            <div className="p-4">
+              <EmptyState
+                icon="layers"
+                title={
+                  subjectSets.length === 0 || countForLevel(selectedLevel) === 0
+                    ? `No sets in ${subjectName(selectedSubject)} · ${selectedLevelLabel} yet.`
+                    : "No sets match your filters."
+                }
+                action={newSetLink}
+              />
+            </div>
+          ) : (
+            <ul className="divide-y divide-ms-line">
+              {filtered.map((s, i) => (
+                <SetRow
                   key={s.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-surface-2/50 transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                      <p className="font-extrabold text-foreground truncate">
-                        #{s.id} · {s.title}
-                      </p>
-                      {s.subject && (
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
-                            SUBJECT_COLORS[s.subject] ?? "bg-slate-100 text-slate-700",
-                          )}
-                        >
-                          {s.subject}
-                        </span>
-                      )}
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
-                          REVIEW_STATUS_STYLES[reviewStatus],
-                        )}
-                        title="Review status"
-                      >
-                        {REVIEW_STATUS_LABELS[reviewStatus]}
-                      </span>
-                      <StateTag state={s.is_active ? "PUBLISHED" : "DRAFT"} size="xs" />
-                      {s.level && (
-                        <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-700">
-                          {setLevelsLabel(s.level, s.secondary_level)}
-                        </span>
-                      )}
-                    </div>
-                    {s.category && (
-                      <p className="text-xs text-muted-foreground mb-0.5">{s.category}</p>
-                    )}
-                    {role === "super_admin" && (s.created_by_name || s.created_by_email) && (
-                      <p className="text-[11px] text-muted-foreground/80 mb-0.5">
-                        Created by{" "}
-                        <span className="font-semibold text-foreground/70">
-                          {s.created_by_name || s.created_by_email}
-                        </span>
-                        {s.created_by_name && s.created_by_email ? ` · ${s.created_by_email}` : ""}
-                      </p>
-                    )}
-                    <SetLineage
-                      setId={s.id}
-                      isPublished={s.is_active}
-                      questionCount={questionCount}
-                      activeQuestionCount={activeQs}
-                      updatedAt={s.updated_at}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <select
-                      value={reviewStatus}
-                      disabled={setStatus.isPending}
-                      onChange={(e) => changeStatus(s.id, e.target.value as ReviewStatus)}
-                      onClick={(e) => e.stopPropagation()}
-                      title={canApprove ? "Change review status" : "Only an admin can approve"}
-                      className="rounded-lg border border-border bg-card px-2 py-1 text-xs font-bold text-foreground disabled:opacity-50"
-                    >
-                      {REVIEW_STATUS_ORDER.map((rs) => (
-                        <option key={rs} value={rs} disabled={rs === "approved" && !canApprove}>
-                          {REVIEW_STATUS_LABELS[rs]}
-                        </option>
-                      ))}
-                    </select>
-                    <Link
-                      href={`/builder/sets/${s.id}`}
-                      className="text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Open editor →
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteError(null);
-                        setPendingDelete({ id: s.id, title: s.title });
-                      }}
-                      title="Delete set"
-                      aria-label={`Delete set ${s.title}`}
-                      className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                  set={s}
+                  delay={Math.min(i, 8) * 30}
+                  showCreator={role === "super_admin"}
+                  canApprove={canApprove}
+                  statusBusy={setStatus.isPending}
+                  onStatus={(rs) => changeStatus(s.id, rs)}
+                  onDelete={() => askDelete({ id: s.id, title: s.title })}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
-      {csvOpen && selectedSubject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !csvBusy && setCsvOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-foreground">Import set from CSV</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {SUBJECTS.find((s) => s.code === selectedSubject)?.label}
-                  {selectedLevelLabel ? ` · ${selectedLevelLabel}` : ""} — one question per row.
-                </p>
-              </div>
-              <button onClick={() => !csvBusy && setCsvOpen(false)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2" aria-label="Close"><X className="h-4 w-4" /></button>
+      <Dialog open={csvOpen && Boolean(selectedSubject)} onClose={() => setCsvOpen(false)} labelledBy={csvId} width={480} locked={csvBusy}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitCsvImport();
+          }}
+        >
+          <div className="flex flex-col gap-4 px-[22px] pb-2 pt-[22px]">
+            <div>
+              <h2 id={csvId} className="text-[20px] font-bold leading-7 tracking-[-0.01em] text-ms-fg">
+                Import set from CSV
+              </h2>
+              <p className="mt-1 text-[14px] text-ms-fg-2">
+                {subjectName(selectedSubject)}
+                {selectedLevelLabel ? ` · ${selectedLevelLabel}` : ""} — one question per row.
+              </p>
             </div>
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Title</label>
-                <input autoFocus value={csvTitle} onChange={(e) => setCsvTitle(e.target.value)} placeholder="e.g. Algebra — Unit 1" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Source</label>
-                <select value={csvSource} onChange={(e) => setCsvSource(e.target.value)} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
-                  <option value="">Select a source…</option>
-                  {allowedSourcesForSubject(selectedSubject as Subject, [selectedLevel === UNASSIGNED_LEVEL ? "" : selectedLevel]).map((s) => (
-                    <option key={s} value={s}>{sourceLabel(s)}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">CSV file</label>
-                <input ref={csvFileRef} type="file" accept=".csv,text/csv" className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-primary" />
-                <p className="mt-1 text-[11px] text-muted-foreground">Columns: question_type, prompt, option_a–d, correct_answer, points, explanation.</p>
-              </div>
+            <div>
+              <label htmlFor={`${csvId}-title`} className={FIELD_LABEL}>
+                Title
+              </label>
+              <input
+                id={`${csvId}-title`}
+                data-autofocus
+                value={csvTitle}
+                onChange={(e) => setCsvTitle(e.target.value)}
+                placeholder="e.g. Algebra — Unit 1"
+                className={FIELD}
+              />
             </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setCsvOpen(false)} disabled={csvBusy} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2 disabled:opacity-50">Cancel</button>
-              <button onClick={() => void submitCsvImport()} disabled={csvBusy || !csvTitle.trim() || !csvSource} className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{csvBusy ? "Importing…" : "Import"}</button>
+            <div>
+              <label htmlFor={`${csvId}-source`} className={FIELD_LABEL}>
+                Source
+              </label>
+              <select id={`${csvId}-source`} value={csvSource} onChange={(e) => setCsvSource(e.target.value)} className={FIELD}>
+                <option value="">Select a source…</option>
+                {selectedSubject
+                  ? allowedSourcesForSubject(selectedSubject as Subject, [selectedLevel === UNASSIGNED_LEVEL ? "" : selectedLevel]).map((s) => (
+                      <option key={s} value={s}>
+                        {sourceLabel(s)}
+                      </option>
+                    ))
+                  : null}
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`${csvId}-file`} className={FIELD_LABEL}>
+                CSV file
+              </label>
+              <input
+                id={`${csvId}-file`}
+                ref={csvFileRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="block w-full text-[14px] text-ms-fg-2 file:mr-3 file:h-9 file:cursor-pointer file:rounded-[10px] file:border-0 file:bg-ms-primary-soft file:px-3 file:text-[14px] file:font-semibold file:text-ms-primary-text"
+              />
+              <p className={FIELD_HINT}>Columns: question_type, prompt, option_a–d, correct_answer, points, explanation.</p>
             </div>
           </div>
-        </div>
-      )}
+          <div className="mt-3 flex items-center justify-end gap-2 border-t border-ms-border bg-ms-surface px-5 py-3.5">
+            <Button variant="secondary" onClick={() => setCsvOpen(false)} disabled={csvBusy}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              icon="upload"
+              state={csvBusy ? "busy" : "idle"}
+              busyLabel="Importing…"
+              disabled={csvBusy || !csvTitle.trim() || !csvSource}
+            >
+              Import
+            </Button>
+          </div>
+        </form>
+      </Dialog>
 
       <ConfirmDialog
-        open={!!pendingDelete}
-        tone="danger"
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        tone="critical"
+        icon="trash"
         title="Delete assessment set?"
-        description={
-          pendingDelete
-            ? `“#${pendingDelete.id} · ${pendingDelete.title}” and its draft questions will be permanently removed.`
-            : undefined
-        }
         confirmLabel="Delete set"
-        loading={deleteSet.isPending}
-        onConfirm={() => runDelete(false)}
-        onCancel={closeDelete}
-      >
-        {deleteError ? (
-          <div className="space-y-3">
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-              {deleteError}
-            </div>
-            {deleteBlocked ? (
-              <div className="rounded-xl border border-red-300 bg-red-50 p-3">
-                <p className="text-sm font-bold text-red-800">Force delete?</p>
-                <p className="mt-1 text-xs text-red-700">
-                  This permanently deletes the set together with every student attempt, grade, and
-                  result on it, and removes it from any classroom homework. This can’t be undone.
+        busyLabel="Deleting…"
+        onConfirm={confirmDelete}
+        afterError={
+          deleteBlocked ? (
+            <div className="animate-ms-fade-in rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft p-3.5">
+              <p className="text-[14px] font-semibold text-ms-critical-fg">Force delete?</p>
+              <p className="mt-1 text-[13px] leading-[19px] text-ms-critical-fg">
+                This permanently deletes the set together with every student attempt, grade, and
+                result on it, and removes it from any classroom homework. This can’t be undone.
+              </p>
+              {forceError ? (
+                <p role="alert" className="mt-2 text-[13px] font-semibold text-ms-critical-fg">
+                  {forceError}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => runDelete(true)}
-                  disabled={deleteSet.isPending}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {deleteSet.isPending ? "Deleting…" : "Force delete (removes attempts & grades)"}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+              ) : null}
+              <Button
+                variant="danger"
+                size="sm"
+                icon="trash"
+                className="mt-2.5"
+                state={forcing ? "busy" : "idle"}
+                busyLabel="Deleting…"
+                onClick={() => void forceDelete()}
+              >
+                Force delete (removes attempts & grades)
+              </Button>
+            </div>
+          ) : null
+        }
+      >
+        {deleteTarget ? `“#${deleteTarget.id} · ${deleteTarget.title}” and its draft questions will be permanently removed.` : null}
       </ConfirmDialog>
     </div>
+  );
+}
+
+/** One step of "All subjects › Math › Junior": the earlier steps go back, the last one is where you are. */
+function Crumb({ current, onClick, children }: { current: boolean; onClick?: () => void; children: ReactNode }) {
+  return current && !onClick ? (
+    <span aria-current="page" className="rounded-[8px] px-2 py-1 font-semibold text-ms-fg">
+      {children}
+    </span>
+  ) : (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={current ? "page" : undefined}
+      className={cn(
+        "ms-transition rounded-[8px] px-2 py-1 font-semibold hover:bg-ms-surface-2",
+        current ? "text-ms-fg" : "text-ms-primary-text",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** A subject or a level to open: its name and how many sets are in it. */
+function BucketCard({
+  lead,
+  title,
+  sub,
+  big = false,
+  dashed = false,
+  delay = 0,
+  onClick,
+}: {
+  lead?: ReactNode;
+  title: string;
+  sub: string;
+  big?: boolean;
+  dashed?: boolean;
+  delay?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{ animationDelay: `${delay}ms` }}
+      className={cn(
+        "group animate-ms-card-in ms-hover-lift ms-press flex items-center justify-between gap-4 rounded-ms-card text-left",
+        big ? "p-6" : "p-5",
+        dashed ? "border border-dashed border-ms-border-strong bg-transparent" : "bg-ms-card shadow-ms-1",
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-4">
+        {lead}
+        <span className="min-w-0">
+          <span className={cn("block font-bold text-ms-fg", big ? "text-[18px] leading-6" : "text-[16px] leading-[22px]")}>{title}</span>
+          <span className="mt-0.5 block text-[14px] text-ms-fg-2">{sub}</span>
+        </span>
+      </span>
+      <Icon name="right" className="shrink-0 text-ms-fg-3 transition-transform group-hover:translate-x-0.5" />
+    </button>
+  );
+}
+
+/** A filter as chips with their counts in this level. */
+function ChipGroup<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: T;
+  onChange: (v: T) => void;
+  options: { v: T; l: string; n: number }[];
+}) {
+  return (
+    <div role="group" aria-label={label} className="flex flex-wrap items-center gap-1.5">
+      {options.map((o) => (
+        <button
+          key={o.v}
+          type="button"
+          aria-pressed={value === o.v}
+          onClick={() => onChange(o.v)}
+          className={chipClass(value === o.v, o.n === 0 && o.v !== "all")}
+        >
+          {o.l}
+          <ChipCount n={o.n} on={value === o.v} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The set's subject in the Builder's colours: English (R&W) rose, Math violet. */
+function SubjectTag({ subject }: { subject: string }) {
+  const math = subject === "math";
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full px-[9px] text-[13px] font-semibold leading-none",
+        math ? "bg-ms-math-soft text-ms-math-fg" : "bg-ms-rw-soft text-ms-rw-fg",
+      )}
+    >
+      <Icon name={math ? "sigma" : "book"} size="sm" className="size-3.5" />
+      {subjectName(subject)}
+    </span>
+  );
+}
+
+/** What the set holds and whether it can still change: "12 questions (10 active) · immutable" / "· updated …". */
+function SetFacts({ set }: { set: AssessmentSet }) {
+  const questions = set.questions ?? [];
+  const total = questions.length;
+  const active = questions.filter((q: { is_active?: boolean }) => q.is_active).length;
+  const updated = set.updated_at
+    ? new Date(set.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
+  return (
+    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ms-fg-3">
+      <span className="inline-flex items-center gap-1">
+        <Icon name="layers" size="sm" className="size-3.5" />
+        {total} question{total === 1 ? "" : "s"}
+        {total - active > 0 ? <span className="font-semibold text-ms-attention-fg">({active} active)</span> : null}
+      </span>
+      {set.is_active ? (
+        <>
+          <span aria-hidden="true">·</span>
+          <span className="inline-flex items-center gap-1 font-semibold text-ms-attention-fg">
+            <Icon name="lock" size="sm" className="size-3.5" />
+            immutable
+          </span>
+        </>
+      ) : updated ? (
+        <>
+          <span aria-hidden="true">·</span>
+          <span>updated {updated}</span>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+function SetRow({
+  set: s,
+  delay,
+  showCreator,
+  canApprove,
+  statusBusy,
+  onStatus,
+  onDelete,
+}: {
+  set: AssessmentSet;
+  delay: number;
+  showCreator: boolean;
+  canApprove: boolean;
+  statusBusy: boolean;
+  onStatus: (rs: ReviewStatus) => void;
+  onDelete: () => void;
+}) {
+  const reviewStatus = (s.review_status ?? "draft") as ReviewStatus;
+  const href = `/builder/sets/${s.id}`;
+  return (
+    <li
+      data-set={s.id}
+      style={{ animationDelay: `${delay}ms` }}
+      className="animate-ms-fade-in ms-transition flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4 hover:bg-ms-surface"
+    >
+      {/* A basis, so on a narrow screen the actions wrap under the set instead of squeezing it. */}
+      <div className="min-w-0 flex-1 basis-[22rem]">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={href} className="min-w-0 break-words text-[16px] font-semibold leading-[22px] text-ms-fg hover:text-ms-primary-text">
+            #{s.id} · {s.title}
+          </Link>
+          {s.subject ? <SubjectTag subject={s.subject} /> : null}
+          <Badge tone={REVIEW_STATUS_TONE[reviewStatus]}>{REVIEW_STATUS_LABELS[reviewStatus]}</Badge>
+          {s.is_active ? (
+            <Badge tone="positive" dot>
+              Published
+            </Badge>
+          ) : (
+            <Badge tone="line">Draft</Badge>
+          )}
+          {s.level ? <Badge tone="line">{setLevelsLabel(s.level, s.secondary_level)}</Badge> : null}
+        </div>
+        {s.category ? <p className="mt-1 text-[13px] text-ms-fg-2">{s.category}</p> : null}
+        {showCreator && (s.created_by_name || s.created_by_email) ? (
+          <p className="mt-0.5 text-[13px] text-ms-fg-3">
+            Created by <span className="font-semibold text-ms-fg-2">{s.created_by_name || s.created_by_email}</span>
+            {s.created_by_name && s.created_by_email ? ` · ${s.created_by_email}` : ""}
+          </p>
+        ) : null}
+        <SetFacts set={s} />
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Select<ReviewStatus>
+          aria-label={`Review status of #${s.id}`}
+          className="w-[160px]"
+          value={reviewStatus}
+          disabled={statusBusy}
+          onChange={(rs) => {
+            if (rs !== reviewStatus) onStatus(rs);
+          }}
+          options={REVIEW_STATUS_ORDER.map((rs) => ({
+            value: rs,
+            label: REVIEW_STATUS_LABELS[rs],
+            disabledReason: rs === "approved" && !canApprove ? "Only an admin can approve" : undefined,
+          }))}
+        />
+        <Link href={href} className={buttonClass({ variant: "ghost", size: "sm" })}>
+          Open editor →
+        </Link>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="trash"
+          aria-label={`Delete set ${s.title}`}
+          onClick={onDelete}
+          className="text-ms-fg-3 hover:text-ms-critical-fg"
+        />
+      </div>
+    </li>
   );
 }
