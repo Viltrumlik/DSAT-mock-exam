@@ -52,7 +52,7 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
           <Truncated text={q.question_text} className={QUESTION_WIDTH} />
         </Link>
       ) : (
-        <span className="text-muted-foreground">(no text)</span>
+        <span className="text-ms-fg-3">(no text)</span>
       ),
   },
   { key: "subject", label: "Subject", render: (q) => SUBJECT_LABELS[q.subject] ?? q.subject },
@@ -63,16 +63,16 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
       q.domain_name ? (
         <Truncated
           text={q.skill_name ? `${q.domain_name} › ${q.skill_name}` : q.domain_name}
-          className={`${SKILL_WIDTH} text-muted-foreground`}
+          className={`${SKILL_WIDTH} text-ms-fg-3`}
         />
       ) : (
-        <span className="italic text-muted-foreground">Unclassified</span>
+        <span className="italic text-ms-fg-3">Unclassified</span>
       ),
   },
   {
     key: "difficulty",
     label: "Difficulty",
-    render: (q) => <span className="text-muted-foreground">{difficultyLabel(q.difficulty)}</span>,
+    render: (q) => <span className="text-ms-fg-3">{difficultyLabel(q.difficulty)}</span>,
   },
   {
     key: "status",
