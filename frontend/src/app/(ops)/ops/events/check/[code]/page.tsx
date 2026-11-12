@@ -14,13 +14,16 @@
  * There is no scanner of our own here. The camera app does the scanning and opens this URL;
  * shipping a QR-reading library would add a dependency and a camera permission to do what the
  * phone already does.
+ *
+ * In the console's look (design handoff v0.3): one card, the code in the ticket's mono face, the
+ * name large. The words and the call are the page's own.
  */
 
 import { use } from "react";
-import { Check } from "lucide-react";
 
-import { Alert, Button } from "@/components/ui";
+import { Button } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { BOX, Notice } from "@/features/ops/telegram-posts/telegramLook";
 import { useMarkAttendance, useTicket } from "@/features/events/eventsHooks";
 
 function fmtTime(iso: string | null) {
@@ -38,61 +41,69 @@ export default function TicketCheckPage({ params }: { params: Promise<{ code: st
   const row = ticket.data;
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <OpsPageHeader section="Events" title="Ticket" description="Scanned at the door." />
 
       {ticket.isPending ? (
-        <p className="text-sm text-muted-foreground">Reading the ticket…</p>
+        <div role="status" aria-busy="true" className="flex flex-col gap-3">
+          <p className="text-[14px] text-ms-fg-3">Reading the ticket…</p>
+          <div className="h-40 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+        </div>
       ) : ticket.isError || !row ? (
-        <Alert tone="danger">
+        <Notice tone="danger">
           No ticket with that code. Find the student by name in the list instead.
-        </Alert>
+        </Notice>
       ) : (
-        <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-primary">
+        <section className={`animate-ms-card-in flex flex-col gap-4 p-5 sm:p-6 ${BOX}`}>
+          <div className="min-w-0">
+            <p className="font-ms-mono text-[14px] font-semibold tracking-[.08em] text-ms-primary-text">
               {row.ticket_code}
             </p>
-            <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
+            <h2 className="mt-1 break-words font-ms-display text-[28px] font-bold leading-9 tracking-[-0.02em] text-ms-fg">
               {row.student_name}
             </h2>
-            <p className="mt-1 text-sm font-semibold text-muted-foreground">
+            <p className="mt-1 text-[15px] text-ms-fg-2">
               {row.event.title}
               {row.event.location ? ` · ${row.event.location}` : ""}
             </p>
           </div>
 
           {row.attendance ? (
-            <Alert tone={row.attendance === "ATTENDED" ? "success" : "info"}>
+            <Notice tone={row.attendance === "ATTENDED" ? "success" : "info"}>
               {row.attendance === "ATTENDED" ? "Attended" : "Missed"}
               {row.marked_at ? ` · marked ${fmtTime(row.marked_at)}` : ""}
               {row.marked_by_name ? ` by ${row.marked_by_name}` : ""}
-            </Alert>
+            </Notice>
           ) : null}
 
           {row.can_mark && row.attendance !== "ATTENDED" ? (
-            <Button
-              onClick={() =>
-                mark.mutate(
-                  { id: row.registration_id, attendance: "ATTENDED" },
-                  { onSuccess: () => void ticket.refetch() },
-                )
-              }
-              loading={mark.isPending}
-            >
-              <Check className="mr-1.5 h-4 w-4" aria-hidden />
-              Attended
-            </Button>
+            <div>
+              <Button
+                variant="primary"
+                icon="check"
+                state={mark.isPending ? "busy" : "idle"}
+                disabled={mark.isPending}
+                onClick={() =>
+                  mark.mutate(
+                    { id: row.registration_id, attendance: "ATTENDED" },
+                    { onSuccess: () => void ticket.refetch() },
+                  )
+                }
+                className="w-full sm:w-auto"
+              >
+                Attended
+              </Button>
+            </div>
           ) : row.can_mark ? null : row.reason === "too_early" ? (
-            <Alert tone="info">You can mark from {fmtTime(row.marking_opens_at)}.</Alert>
+            <Notice tone="info">You can mark from {fmtTime(row.marking_opens_at)}.</Notice>
           ) : row.reason === "cancelled" ? (
-            <Alert tone="warning">
+            <Notice tone="warning">
               This student gave this seat back, so there is nothing to mark.
-            </Alert>
+            </Notice>
           ) : (
-            <Alert tone="warning">This event was called off.</Alert>
+            <Notice tone="warning">This event was called off.</Notice>
           )}
-        </div>
+        </section>
       )}
     </div>
   );
