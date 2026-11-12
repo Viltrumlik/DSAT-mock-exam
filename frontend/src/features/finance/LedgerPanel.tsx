@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+import { SCHOOL_TIME_ZONE, toSchoolDateKey } from "@/lib/schoolTime";
 import { formatUzs } from "./financeApi";
 import { ENTER_LABEL, EntryForm, SeatPriceForm, VoidForm } from "./LedgerEntryForm";
 import {
@@ -51,8 +52,9 @@ function money(amount: number) {
 
 function moment(iso: string | null): string {
   if (!iso) return "not yet";
-  const time = new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  return `${day(iso)}, ${time}`;
+  // The server writes these in UTC, so the date is read off the school's clock too, not sliced.
+  const time = new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
+  return `${day(toSchoolDateKey(iso))}, ${time}`;
 }
 
 function Problems({ problems }: { problems: LedgerProblem[] }) {

@@ -16,6 +16,7 @@ import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Badge, Button, EmptyState } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { PostForm } from "./PostForm";
 import { STATE_BADGE, firstLine, kindLabel, scheduleLabel, sentLabel } from "./audience";
 import { BOX, CAPTION, CAPTION_ROW, LoadFailed, Notice, RowsLoading, dotted, toneOf } from "./telegramLook";
@@ -92,7 +93,7 @@ export function TelegramPostsPage() {
                         <Icon name="users" size="sm" className="size-3.5 text-ms-fg-3" />
                         {post.audience_label}
                       </span>
-                      {post.next_send_at ? <span>Next: {new Date(post.next_send_at).toLocaleString()}</span> : null}
+                      {post.next_send_at ? <span>Next: {new Date(post.next_send_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE })}</span> : null}
                       {sent ? <span className="tabular-nums">{sent}</span> : null}
                     </p>
                   </div>

@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   campaignBadge,
+  dateTime,
   fillPattern,
   hourLabel,
   isAscii,
@@ -165,5 +166,35 @@ describe("todayInTashkent", () => {
     // 20:30 UTC is already the next day in Tashkent (UTC+5).
     expect(todayInTashkent(new Date("2026-10-31T20:30:00Z"))).toBe("2026-11-01");
     expect(todayInTashkent(new Date("2026-10-31T18:30:00Z"))).toBe("2026-10-31");
+  });
+});
+
+/**
+ * The composer schedules a campaign at a Tashkent hour and labels it so; the campaign page that
+ * says when it "Goes out" must name the same hour. On a device three hours behind (Europe/Kyiv
+ * in November) a campaign set for 10:00 used to read "07:00" there.
+ */
+describe("dateTime on a device outside Tashkent", () => {
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date("2026-11-09T16:00:00+05:00").getHours()).toBe(13);
+  });
+
+  it("names the hour and the day by Tashkent's clock", () => {
+    expect(dateTime("2026-11-09T16:00:00+05:00")).toBe("9 Nov 2026, 16:00");
+    // 01:00 on the 10th in Tashkent is still the 9th on the device.
+    expect(dateTime("2026-11-10T01:00:00+05:00")).toBe("10 Nov 2026, 01:00");
+    expect(dateTime(null)).toBe("—");
   });
 });

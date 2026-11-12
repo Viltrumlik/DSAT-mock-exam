@@ -15,6 +15,7 @@ import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Badge, Button, type BadgeTone } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { errorBody } from "./apiError";
 import { PostForm } from "./PostForm";
 import { STATE_BADGE, firstLine, kindLabel, plainText, scheduleLabel } from "./audience";
@@ -227,7 +228,7 @@ export function TelegramPostPage({ id }: { id: number }) {
         {p.next_send_at ? (
           <span className="inline-flex items-center gap-1.5">
             <Icon name="clock" size="sm" className="size-3.5 text-ms-fg-3" />
-            Next: {new Date(p.next_send_at).toLocaleString()}
+            Next: {new Date(p.next_send_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE })}
           </span>
         ) : null}
       </div>
@@ -276,7 +277,7 @@ export function TelegramPostPage({ id }: { id: number }) {
                           </Badge>
                         </td>
                         <td className={`${TD} whitespace-nowrap text-[13px] tabular-nums text-ms-fg-2`}>
-                          {d.sent_at ? new Date(d.sent_at).toLocaleTimeString() : ""}
+                          {d.sent_at ? new Date(d.sent_at).toLocaleTimeString(undefined, { timeZone: SCHOOL_TIME_ZONE }) : ""}
                         </td>
                         <td className={`${TD} text-[13px] text-ms-fg-3`}>{d.error}</td>
                       </tr>

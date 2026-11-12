@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -607,5 +607,101 @@ describe("OpsEventsPage", () => {
     await render();
     await act(async () => buttonLabelled("Who came")!.click());
     expect(text()).toContain(new Date("2026-09-20T10:00:00+05:00").toLocaleString());
+  });
+});
+
+/**
+ * The events console is read at the door, in Tashkent — but also from wherever an admin's
+ * laptop happens to be. On a device three hours behind (Europe/Kyiv in November) it used to
+ * print the device's hours: a 16:00 event listed at 13:00, the door "opening" at 13:00.
+ */
+describe("OpsEventsPage on a device outside Tashkent", () => {
+  /** 16:00 on the 9th in Tashkent — 13:00 on the device. */
+  const FOUR_PM = "2026-11-09T16:00:00+05:00";
+  /** A marking window that has not opened yet whenever this runs: 16:00 in Tashkent. */
+  const DOOR_OPENS = "2030-11-11T16:00:00+05:00";
+  /** The hour, in whichever clock style the runner's locale uses, seconds or not. */
+  const SIXTEEN = /(16:00|\b0?4:00(:00)?\sPM)/;
+  const THIRTEEN = /(13:00|\b0?1:00(:00)?\sPM)/;
+
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date(FOUR_PM).getHours()).toBe(13);
+  });
+
+  it("lists the event at the school's hour", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ starts_at: FOUR_PM, ends_at: "2026-11-09T18:00:00+05:00" })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    expect(text()).toMatch(SIXTEEN);
+    expect(text()).not.toMatch(THIRTEEN);
+  });
+
+  it("says when marking opens by the school's clock", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ status: "PUBLISHED", starts_at: "2030-11-11T18:00:00+05:00", ends_at: "2030-11-11T20:00:00+05:00" })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    useEventRegistrations.mockReturnValue({
+      data: {
+        registrations: [registration()],
+        counts: { registered: 1, attended: 0, missed: 0, not_marked: 1, cancelled: 0 },
+        marking_opens_at: DOOR_OPENS,
+      },
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Who came")!.click());
+    expect(text()).toMatch(/You can mark arrivals from (16:00|04:00\sPM)/);
+  });
+
+  it("shows when a registration came in by the school's clock", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ status: "PUBLISHED", starts_at: "2026-11-12T18:00:00+05:00", ends_at: "2026-11-12T20:00:00+05:00" })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    useEventRegistrations.mockReturnValue({
+      data: {
+        registrations: [registration({ registered_at: FOUR_PM })],
+        counts: { registered: 1, attended: 0, missed: 0, not_marked: 1, cancelled: 0 },
+        marking_opens_at: "2026-11-01T13:00:00+05:00",
+      },
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Who came")!.click());
+    expect(text()).toMatch(SIXTEEN);
+    expect(text()).not.toMatch(THIRTEEN);
+  });
+
+  it("edits a 16:00 event as 16:00 and saves it untouched as 16:00", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ starts_at: FOUR_PM, ends_at: "2026-11-09T18:00:00+05:00" })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Edit")!.click());
+
+    const fields = Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]'));
+    expect(fields.map((f) => f.value)).toEqual(["2026-11-09T16:00", "2026-11-09T18:00"]);
+
+    await act(async () => buttonLabelled("Save draft")!.click());
+    expect(save.mock.calls[0][0].body).toMatchObject({
+      starts_at: "2026-11-09T11:00:00.000Z",
+      ends_at: "2026-11-09T13:00:00.000Z",
+    });
   });
 });

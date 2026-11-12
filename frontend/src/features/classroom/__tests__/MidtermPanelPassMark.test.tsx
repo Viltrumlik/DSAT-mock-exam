@@ -17,7 +17,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const classroomPanel = vi.fn();
 
@@ -60,7 +60,7 @@ function panel(over: { students?: unknown[]; stats?: Record<string, unknown> } =
     midterm: { id: 7, title: "Unit 3 Midterm", subject: "MATH", scoring_scale: "SCALE_100", score_ceiling: 100 },
     schedule: {
       starts_at: "2026-09-20T09:00:00+05:00", deadline: null, ignore_start: false,
-      results_released: false, available_at: null, is_before_start: false, is_open: true,
+      results_released: false, available_at: null as string | null, is_before_start: false, is_open: true,
       access_code: null, requires_code: true, notified_at: null,
     },
     students: over.students ?? [finished()],
@@ -232,5 +232,37 @@ describe("the pass/fail line, on both hosts", () => {
     expect(host.textContent).toContain("Voided");
     for (const word of VERDICT_WORDS) expect(host.textContent).not.toContain(word);
     expect(tintedRows()).toBe(0);
+  });
+});
+
+/**
+ * When a midterm opens is an hour in Tashkent. On a teacher's laptop three hours behind
+ * (Europe/Kyiv in November) the panel used to say it opens at 13:00 for a 16:00 sitting.
+ */
+describe("the midterm panel on a device outside Tashkent", () => {
+  /** 16:00 on the 9th in Tashkent — 13:00 on the device. */
+  const FOUR_PM = "2026-11-09T16:00:00+05:00";
+
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date(FOUR_PM).getHours()).toBe(13);
+  });
+
+  it("says when the midterm opens by the school's clock", async () => {
+    const body = panel({ students: [] });
+    body.schedule = { ...body.schedule, starts_at: FOUR_PM, available_at: FOUR_PM, is_before_start: true, is_open: false };
+    await mount(body, "TEACHER");
+    expect(host.textContent).toMatch(/Opens [\d/.]+,? (16:00|0?4:00(:00)?\sPM)/);
   });
 });

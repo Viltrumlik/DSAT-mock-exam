@@ -3,7 +3,13 @@
  * midterm assignment + schedule pickers). Mirrors the homework picker's "next 7
  * days" date choices, with midterm-specific time slots from 08:00–18:00 in
  * 15-minute steps (8:00, 8:15, 8:30, …).
+ *
+ * The days and the slots are Tashkent's — the hours the class sits in the room — so
+ * "Today" is the school's today and a 16:00 slot is 16:00 in Tashkent on any device.
  */
+
+import { fromLocalInput } from "@/lib/datetimeLocal";
+import { SCHOOL_TIME_ZONE, schoolDateKey, schoolMidday } from "@/lib/schoolTime";
 
 type Opt = { value: string; label: string };
 
@@ -16,19 +22,20 @@ export function time12(hour: number, minute: number): string {
   return `${h12}:${pad(minute)} ${period}`;
 }
 
-/** The next `n` calendar days as YYYY-MM-DD options with weekday labels. */
+const DAY_MS = 86_400_000;
+
+/** The next `n` school days (from Tashkent's today) as YYYY-MM-DD options with weekday labels. */
 export function nextNDays(n = 7): Opt[] {
   const out: Opt[] = [];
-  const today = new Date();
+  const todayMidday = schoolMidday(schoolDateKey(new Date())).getTime();
   for (let i = 0; i < n; i++) {
-    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
-    const value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    const label =
-      i === 0
-        ? `Today · ${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
-        : i === 1
-          ? `Tomorrow · ${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
-          : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    // Midday on a school date stays on that date in Tashkent, so whole days can be added to it.
+    const day = new Date(todayMidday + i * DAY_MS);
+    const value = schoolDateKey(day);
+    const date = day.toLocaleDateString("en-US", {
+      timeZone: SCHOOL_TIME_ZONE, weekday: "short", month: "short", day: "numeric",
+    });
+    const label = i === 0 ? `Today · ${date}` : i === 1 ? `Tomorrow · ${date}` : date;
     out.push({ value, label });
   }
   return out;
@@ -46,20 +53,8 @@ export function timeSlots(startHour = 8, endHour = 18, stepMin = 15): Opt[] {
   return out;
 }
 
-/** Combine a YYYY-MM-DD date + HH:MM time (local) into an ISO string, or null. */
+/** Combine a YYYY-MM-DD date + HH:MM time, both Tashkent's, into an ISO string, or null. */
 export function combineLocalDateTimeIso(date: string, time: string): string | null {
   if (!date || !time) return null;
-  const d = new Date(`${date}T${time}`);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
-
-/** Split an ISO string back into { date: YYYY-MM-DD, time: HH:MM } (local). */
-export function isoToLocalParts(iso: string | null | undefined): { date: string; time: string } {
-  if (!iso) return { date: "", time: "" };
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
-  return {
-    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-  };
+  return fromLocalInput(`${date}T${time}`);
 }

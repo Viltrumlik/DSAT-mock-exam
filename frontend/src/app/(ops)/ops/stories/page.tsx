@@ -36,6 +36,8 @@ import {
 } from "@/features/ops/settings/settingsParts";
 import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import { useAdminStories, useDeleteStory, useSaveStory } from "@/features/stories/storiesHooks";
+import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import type { Story } from "@/features/stories/storiesApi";
 import { normalizeApiError } from "@/lib/apiError";
 import { cn } from "@/lib/cn";
@@ -49,30 +51,6 @@ const EMPTY = {
   ends_at: "",
   is_active: true,
 };
-
-/**
- * `datetime-local` speaks "YYYY-MM-DDTHH:mm" in LOCAL time with no zone; the API speaks ISO
- * with one. These two helpers are the only place that gap is crossed.
- *
- * Going out we hand the browser the local wall-clock reading of the instant, because an admin
- * setting "Friday 09:00" means Friday 09:00 in Tashkent, not in UTC. Coming back we let
- * `new Date(...)` interpret the field in the viewer's own zone and send the resulting instant.
- * Round-tripping is therefore lossless for the person who typed it, which is the only
- * property that matters here.
- */
-function toLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromLocalInput(value: string): string | null {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
 
 /** Why a story is not on the rail — or that it is. The server owns `is_live`; this only
  *  explains it, and never re-derives it. */
@@ -352,10 +330,10 @@ export default function OpsStoriesPage() {
                         <span className="inline-flex items-center gap-1 tabular-nums">
                           <Icon name="cal" size="sm" className="size-3.5 text-ms-fg-3" />
                           {story.starts_at
-                            ? new Date(story.starts_at).toLocaleDateString()
+                            ? new Date(story.starts_at).toLocaleDateString(undefined, { timeZone: SCHOOL_TIME_ZONE })
                             : "now"}
                           {" – "}
-                          {story.ends_at ? new Date(story.ends_at).toLocaleDateString() : "open"}
+                          {story.ends_at ? new Date(story.ends_at).toLocaleDateString(undefined, { timeZone: SCHOOL_TIME_ZONE }) : "open"}
                         </span>
                       ) : null}
                     </p>

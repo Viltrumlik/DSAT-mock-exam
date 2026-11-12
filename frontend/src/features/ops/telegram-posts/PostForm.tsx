@@ -210,7 +210,7 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
             <div className="max-w-[16rem]">
               <input id={`${uid}-send-at`} type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} className={CONTROL} />
             </div>
-            <p className={HINT}>Your device&apos;s time.</p>
+            <p className={HINT}>Tashkent time.</p>
           </div>
         ) : null}
 

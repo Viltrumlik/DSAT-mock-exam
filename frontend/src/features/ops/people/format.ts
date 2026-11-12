@@ -1,6 +1,7 @@
 import type { PeopleSection } from "@/features/ops/changelist/peopleApi";
 import { formatDate, statusLabel } from "@/features/ops/users/peopleColumns";
 import type { PersonCore } from "./personApi";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 
 /** "+998 90 123 45 67" from the stored digits ("998901234567"); anything else as it is. */
 export function formatPhone(phone: string | null | undefined): string {
@@ -31,11 +32,12 @@ export function formatDay(day: string | null | undefined): string {
   return formatDate(/^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day}T00:00:00` : day);
 }
 
-/** "Oct 15, 2026 14:05" — a moment, to the minute. */
+/** "Oct 15, 2026 14:05" — a moment, to the minute, by the school's clock. */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
-  return `${formatDate(iso)} ${time}`;
+  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: SCHOOL_TIME_ZONE });
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: SCHOOL_TIME_ZONE });
+  return `${date} ${time}`;
 }

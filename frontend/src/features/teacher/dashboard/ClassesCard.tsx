@@ -14,6 +14,7 @@
 
 import Link from "next/link";
 import { Clock, DoorOpen, Users } from "lucide-react";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { Card, EmptyState, ErrorState, Pill, Skeleton } from "../ui";
 import type { ClassState, TeacherClass } from "../useTeacherToday";
 
@@ -36,9 +37,9 @@ function whenLabel(iso: string | null, todayIso: string): string {
   if (!iso) return "";
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return "";
-  const time = at.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const time = at.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: SCHOOL_TIME_ZONE });
   const sameDay = iso.slice(0, 10) === todayIso;
-  return sameDay ? `Today ${time}` : `${at.toLocaleDateString("en-US", { weekday: "short" })} ${time}`;
+  return sameDay ? `Today ${time}` : `${at.toLocaleDateString("en-US", { weekday: "short", timeZone: SCHOOL_TIME_ZONE })} ${time}`;
 }
 
 export function ClassesCard({ classes, todayIso, nextLessonDate, loading, failed, onRetry }: {

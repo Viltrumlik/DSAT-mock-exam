@@ -18,6 +18,8 @@
  *    carries the finer state as a subtitle, and every label on screen is explained by
  *    {@link legendFor} under the table it appears in.
  */
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
+
 import type { FinalStatus, MidtermBrief, MidtermState, ReportRow } from "./types";
 
 /**
@@ -251,6 +253,7 @@ export function formatWhen(iso: string | null): string {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: SCHOOL_TIME_ZONE,
   });
 }
 

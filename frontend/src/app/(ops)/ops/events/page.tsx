@@ -21,6 +21,7 @@ import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { CONTROL, FIELD_LABEL, HINT } from "@/features/questionsAdmin/questionLook";
 import type { LearningEvent } from "@/features/events/eventsApi";
 import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { AudiencePicker } from "@/features/ops/telegram-posts/AudiencePicker";
 import { draftChats, draftFrom, type AudienceDraft } from "@/features/ops/telegram-posts/audience";
 import {
@@ -61,7 +62,7 @@ const EMPTY = {
 /** Same date + time format the event list already prints, just for a registration's row. */
 function fmtRegisteredAt(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE });
 }
 
 function statusOf(event: LearningEvent): { tone: BadgeTone; label: string } {
@@ -356,7 +357,7 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
           </p>
           {!open && opensAt ? (
             <Notice tone="info">
-              You can mark arrivals from {opensAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}.
+              You can mark arrivals from {opensAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE })}.
             </Notice>
           ) : null}
           <ul className="divide-y divide-ms-line overflow-hidden rounded-ms-ctl border border-ms-border">
@@ -457,7 +458,7 @@ export default function OpsEventsPage() {
                       </Badge>
                       <span className="inline-flex items-center gap-1.5">
                         <Icon name="cal" size="sm" className="size-3.5 text-ms-fg-3" />
-                        {new Date(event.starts_at).toLocaleString()}
+                        {new Date(event.starts_at).toLocaleString(undefined, { timeZone: SCHOOL_TIME_ZONE })}
                       </span>
                       {event.location ? <span>{event.location}</span> : null}
                       <span className="inline-flex items-center gap-1.5 tabular-nums">

@@ -17,6 +17,8 @@
  * needs to act on — not educational outcome.
  */
 
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
+
 // ─── State type ──────────────────────────────────────────────────────────────
 
 /**
@@ -264,6 +266,7 @@ export function formatAssignmentDueFull(due_at?: string | null): string {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: SCHOOL_TIME_ZONE,
     });
   } catch {
     return due_at;

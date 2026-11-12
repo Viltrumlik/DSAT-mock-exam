@@ -10,7 +10,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 const teacherToday = vi.fn();
@@ -228,5 +228,49 @@ describe("the teacher dashboard — when a load fails", () => {
     expect(text()).toContain("No classes yet");
     expect(text()).not.toContain("Waiting for you to check");
     expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+
+/**
+ * The next lesson is at an hour in Tashkent. On a teacher's laptop three hours behind
+ * (Europe/Kyiv in November) the class list used to say "Today 13:00" for a 16:00 lesson.
+ */
+describe("the teacher dashboard on a device outside Tashkent", () => {
+  /** 16:00 on Monday the 9th in Tashkent — 13:00 on the device. */
+  const FOUR_PM = "2026-11-09T16:00:00+05:00";
+  const TOMORROW_FOUR_PM = "2026-11-10T16:00:00+05:00";
+  const today = {
+    ...PAYLOAD,
+    date: "2026-11-09",
+    now: "2026-11-09T09:00:00+05:00",
+    next_lesson_date: "2026-11-09",
+    classes: [
+      { ...PAYLOAD.classes[1], classroom_id: 3, next_lesson_at: FOUR_PM, lesson_time: "", state: "upcoming" },
+      { ...PAYLOAD.classes[1], classroom_id: 5, name: "Math Senior 4", next_lesson_at: TOMORROW_FOUR_PM, lesson_time: "", state: "upcoming" },
+    ],
+  };
+
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date(FOUR_PM).getHours()).toBe(13);
+  });
+
+  it("names the next lesson's hour by the school's clock", async () => {
+    teacherToday.mockResolvedValue(today);
+    await mount();
+    expect(text()).toContain("Today 16:00");
+    expect(text()).toContain("Tue 16:00");
+    expect(text()).not.toContain("13:00");
   });
 });

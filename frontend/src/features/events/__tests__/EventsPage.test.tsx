@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -320,5 +320,50 @@ describe("EventsPage", () => {
     useTicketDownload.mockReturnValue({ mutate: downloadTicket, isPending: false, isError: true });
     await render();
     expect(text()).toContain("Couldn't download the ticket. Try again.");
+  });
+});
+
+/**
+ * An event happens at an hour in Tashkent. On a device three hours behind it (Europe/Kyiv in
+ * November) this page used to print the device's hour — 13:00 for a 16:00 event — and the day
+ * before for an event just after midnight.
+ */
+describe("EventsPage on a device outside Tashkent", () => {
+  /** 16:00 on the 9th in Tashkent — 13:00 on the device. */
+  const FOUR_PM = "2026-11-09T16:00:00+05:00";
+  /** 01:00 on the 10th in Tashkent — still 22:00 on the 9th on the device. */
+  const AFTER_MIDNIGHT = "2026-11-10T01:00:00+05:00";
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date(FOUR_PM).getHours()).toBe(13);
+  });
+
+  it("prints the event's hour by the school's clock", async () => {
+    useUpcomingEvents.mockReturnValue(
+      query({ data: [row({ starts_at: FOUR_PM, ends_at: "2026-11-09T18:00:00+05:00" })] }),
+    );
+    await render();
+    expect(text()).toMatch(/(16:00|04:00\sPM)/);
+    expect(text()).not.toMatch(/(13:00|01:00\sPM)/);
+  });
+
+  it("puts an event just after midnight on the school's day, not the device's", async () => {
+    useUpcomingEvents.mockReturnValue(
+      query({ data: [row({ starts_at: AFTER_MIDNIGHT, ends_at: "2026-11-10T03:00:00+05:00" })] }),
+    );
+    await render();
+    expect(text()).toMatch(/(Nov 10|10 Nov)/);
+    expect(text()).not.toMatch(/(Nov 9\b|\b9 Nov)/);
   });
 });

@@ -23,6 +23,7 @@ import { use } from "react";
 
 import { Button } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { BOX, Notice } from "@/features/ops/telegram-posts/telegramLook";
 import { useMarkAttendance, useTicket } from "@/features/events/eventsHooks";
 
@@ -31,7 +32,7 @@ function fmtTime(iso: string | null) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? ""
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }
 
 export default function TicketCheckPage({ params }: { params: Promise<{ code: string }> }) {

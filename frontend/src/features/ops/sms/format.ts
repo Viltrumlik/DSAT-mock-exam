@@ -247,12 +247,18 @@ export function hourLabel(hour: number): string {
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
-/** "18 Oct 2026, 10:00" in the viewer's zone, "—" for none. */
+/**
+ * "18 Oct 2026, 10:00" in Tashkent, "—" for none. Tashkent like every other time on this panel:
+ * the composer schedules a campaign at a Tashkent hour, and the campaign page saying when it
+ * "Goes out" must name the same hour on a laptop that keeps another clock.
+ */
 export function dateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("en-GB", {
+    timeZone: "Asia/Tashkent", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  });
 }
 
 /** "2026-11-01" → "1 Nov 2026". Parsed by hand: `new Date("2026-11-01")` is UTC midnight. */

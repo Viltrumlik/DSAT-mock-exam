@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Badge, Button, EmptyState, chipClass, type BadgeTone } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
 import { AREA, FormDialog, FormField, Notice, Panel } from "@/features/ops/settings/settingsParts";
 import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import type { DiagnosticKind, DiagnosticGroup } from "@/features/mobile/mobileApi";
@@ -60,7 +61,7 @@ function when(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }
 
 /** "Loading…", as the page has always said it, beside the console's spinner. */
