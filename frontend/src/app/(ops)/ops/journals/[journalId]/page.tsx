@@ -47,6 +47,12 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 
 const MIDTERM_PICKER_TITLE = "journal-midterm-picker-title";
 
+/**
+ * A refusal the page words itself from the server's data — "Fix incomplete lessons first: 3, 7" from a publish's
+ * `blocking_lessons`. It carries no `response`, so it is shown as it is rather than looked for in `detail`.
+ */
+class JournalActionError extends Error {}
+
 /** The server's own words for a refusal, when it sent any. */
 function serverDetail(e: unknown): string | undefined {
   const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
@@ -114,7 +120,10 @@ export default function JournalDetailPage() {
     try {
       setJournal(await fn());
     } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      // The page's own wording first (it was lost here before: a plain Error has no `response`, so a publish
+      // blocked by incomplete lessons always read "Could not publish."), then the server's `detail`.
+      const detail =
+        e instanceof JournalActionError ? e.message : (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(detail || `Could not ${name}.`);
     } finally {
       setBusy(null);
@@ -188,7 +197,7 @@ export default function JournalDetailPage() {
         const data = (e as { response?: { data?: { blocking_lessons?: Array<{ lesson_number: number }> } } })?.response?.data;
         if (data?.blocking_lessons?.length) {
           const nums = data.blocking_lessons.map((b) => b.lesson_number).join(", ");
-          throw new Error(`Fix incomplete lessons first: ${nums}`);
+          throw new JournalActionError(`Fix incomplete lessons first: ${nums}`);
         }
         throw e;
       }

@@ -262,6 +262,34 @@ describe("journal actions", () => {
     expect(alertText()).toContain("Journal has no sessions.");
   });
 
+  // The server refuses with 409 + `blocking_lessons`; the page names them. This read "Could not publish." before
+  // (PR 23): the page's own Error was looked for in `response.data.detail` and never found.
+  it("names the incomplete lessons that block a publish", async () => {
+    api.publish.mockRejectedValue({
+      response: {
+        status: 409,
+        data: {
+          detail: "Cannot publish: some homework lessons are incomplete.",
+          blocking_lessons: [
+            { lesson_number: 3, reasons: ["no instructions"] },
+            { lesson_number: 7, reasons: ["no assessment"] },
+          ],
+        },
+      },
+    });
+    await render();
+    await click(buttonIn(host, "Publish"));
+    expect(alertText()).toContain("Fix incomplete lessons first: 3, 7");
+    expect(alertText()).not.toContain("Could not publish.");
+  });
+
+  it("keeps its own words when the publish fails with nothing from the server", async () => {
+    api.publish.mockRejectedValue(new Error("Network Error"));
+    await render();
+    await click(buttonIn(host, "Publish"));
+    expect(alertText()).toContain("Could not publish.");
+  });
+
   it("archives, then restores to draft", async () => {
     api.archive.mockResolvedValue(journal({ status: "ARCHIVED" }));
     api.unarchive.mockResolvedValue(journal({ status: "DRAFT" }));
