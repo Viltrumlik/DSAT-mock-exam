@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, ArrowDown } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
+import { Button } from "@/features/console/ui";
 import { ageInDays, ageLabel, formatDay, nameList, personName, plural } from "./format";
 import type { UnsettledBacklog } from "./types";
 
@@ -22,6 +23,9 @@ import type { UnsettledBacklog } from "./types";
  *
  * **All time, never the selected month.** The backend keeps it unbounded by the picker on
  * purpose: a backlog you can page away from is a backlog nobody clears.
+ *
+ * Drawn as the console's attention notice (amber, the warning triangle and the words), with each
+ * owner as a chip that filters the history below.
  */
 export function UnsettledBacklogPanel({
   backlog,
@@ -40,17 +44,17 @@ export function UnsettledBacklogPanel({
   return (
     <div
       role="alert"
-      className="rounded-2xl border border-warning/30 bg-warning-soft p-4 text-sm text-warning-foreground"
+      className="animate-ms-fade-in rounded-ms-card border border-ms-attention-line bg-ms-attention-soft px-4 py-4 text-[14px] leading-5 text-ms-attention-fg"
     >
       <div className="flex flex-wrap items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
-        <div className="min-w-0 flex-1">
-          <p className="text-base font-bold">
+        <Icon name="warn" className="mt-0.5" />
+        <div className="min-w-0 flex-1 basis-[18rem]">
+          <p className="text-ms-h">
             {plural(backlog.unsettled, "support session")} {one ? "has" : "have"} never been
             settled
           </p>
 
-          <p className="mt-1 font-semibold">
+          <p className="mt-1 font-medium">
             {one ? "This hour" : "These hours"} already happened and nobody marked who came, so{" "}
             {one ? "it paid" : "they paid"} nobody — not the student, not anyone. Points are
             awarded only when a session is marked as held, and{" "}
@@ -61,7 +65,7 @@ export function UnsettledBacklogPanel({
           </p>
 
           {backlog.oldest ? (
-            <p className="mt-1.5 text-[13px] font-normal opacity-90">
+            <p className="mt-1.5 text-[13px] leading-[18px] text-ms-fg-2">
               The oldest has been waiting since {formatDay(backlog.oldest)}
               {days != null ? ` — ${ageLabel(days)}` : ""}.
             </p>
@@ -69,32 +73,28 @@ export function UnsettledBacklogPanel({
 
           {owners.length > 0 ? (
             <div className="mt-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">
-                Whose they are
-              </p>
+              <p className="text-ms-over">Whose they are</p>
               <ul className="mt-1.5 flex flex-wrap gap-2">
                 {owners.map((row) => {
                   const name = personName(row.support_teacher);
                   const body = (
                     <>
-                      <span className="font-bold">{name}</span>
-                      <span className="tabular-nums font-bold">{row.unsettled}</span>
+                      <span className="font-semibold">{name}</span>
+                      <span className="tabular-nums font-semibold text-ms-attention-fg">{row.unsettled}</span>
                       {row.oldest ? (
-                        <span className="text-[11px] font-normal opacity-80">
-                          since {formatDay(row.oldest)}
-                        </span>
+                        <span className="text-[12px] text-ms-fg-3">since {formatDay(row.oldest)}</span>
                       ) : null}
                     </>
                   );
                   const className =
-                    "inline-flex items-baseline gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-1";
+                    "inline-flex items-baseline gap-1.5 rounded-full border border-ms-attention-line bg-ms-card px-3 py-1 text-[14px] text-ms-fg";
                   return (
                     <li key={row.support_teacher_id}>
                       {onShowUnsettled ? (
                         <button
                           type="button"
                           onClick={() => onShowUnsettled(row.support_teacher_id)}
-                          className={`ds-ring ${className} text-left transition-colors hover:bg-warning/20`}
+                          className={`ms-press ${className} text-left hover:bg-ms-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-ring`}
                           title={`Show ${name}'s ${plural(row.unsettled, "unsettled session")} in the history below`}
                         >
                           {body}
@@ -115,21 +115,16 @@ export function UnsettledBacklogPanel({
             </div>
           ) : null}
 
-          <p className="mt-3 text-[13px] font-normal opacity-90">
+          <p className="mt-3 text-[13px] leading-[18px] text-ms-fg-2">
             A support teacher settles these from their own diary, on the session itself — this
             console reports them, it does not close them.
           </p>
         </div>
 
         {onShowUnsettled ? (
-          <button
-            type="button"
-            onClick={() => onShowUnsettled(null)}
-            className="ds-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-warning/30 px-3 py-1.5 text-[13px] font-bold transition-colors hover:bg-warning/20"
-          >
-            <ArrowDown className="h-3.5 w-3.5" aria-hidden />
+          <Button variant="secondary" size="sm" icon="down" onClick={() => onShowUnsettled(null)}>
             Show me which
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

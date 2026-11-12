@@ -12,15 +12,13 @@ import { BUILDER_CONSOLE, isBuilderEditorRoute } from "@/features/builderShell/b
  * 2026-10-15: a sidebar stuck to the left edge, a thin top bar with "Builder › <section>", and the
  * page across the rest of the window. See features/builderShell/builderNav for the nav.
  *
- * The console is set in the body's Georgia — it never took the app shell's `ds-app` — so its dialogs
- * and toasts are too, rather than being the one sans thing in it. See OverlayFace.
+ * Its pages are set in the redesign's UI sans (`.ms`, from OpsShell) and so are their overlays. The
+ * full-screen editors show a question exactly as the student reads it, in the body's Georgia, so they
+ * — and their dialogs — keep the body face here. The module editor puts `.ms` on its own frame (top
+ * bar and outline, PR 14a); the question inside it, and the set editor, are next.
  */
 export default function BuilderLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <OverlayFaceProvider face="body">
-      <BuilderConsole>{children}</BuilderConsole>
-    </OverlayFaceProvider>
-  );
+  return <BuilderConsole>{children}</BuilderConsole>;
 }
 
 function BuilderConsole({ children }: { children: React.ReactNode }) {
@@ -31,7 +29,9 @@ function BuilderConsole({ children }: { children: React.ReactNode }) {
   if (isBuilderEditorRoute(pathname)) {
     return (
       <AuthGuard adminOnly>
-        <div className="min-h-screen bg-background text-foreground">{children}</div>
+        <OverlayFaceProvider face="body">
+          <div className="min-h-screen bg-background text-foreground">{children}</div>
+        </OverlayFaceProvider>
       </AuthGuard>
     );
   }

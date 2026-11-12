@@ -281,7 +281,7 @@ describe("MidtermStatsPage", () => {
   it("keeps the school total in the tiles wherever the reader has drilled to", async () => {
     monthly.mockResolvedValue(payload());
     await render();
-    const before = container?.querySelector("div.rounded-2xl")?.textContent;
+    const before = container?.querySelector("div.rounded-ms-card")?.textContent;
     const btn = [...(container?.querySelectorAll("button") ?? [])].find((b) =>
       b.textContent?.includes("Math"),
     ) as HTMLElement;
@@ -290,7 +290,7 @@ describe("MidtermStatsPage", () => {
     });
     // The five tiles are the whole school on purpose — a reader inside one department needs
     // the total to compare against — which is why the card below states its own scope.
-    expect(container?.querySelector("div.rounded-2xl")?.textContent).toBe(before);
+    expect(container?.querySelector("div.rounded-ms-card")?.textContent).toBe(before);
     expect(container?.textContent).toContain("Teachers in Math");
   });
 

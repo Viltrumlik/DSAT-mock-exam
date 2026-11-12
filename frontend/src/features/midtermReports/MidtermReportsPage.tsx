@@ -1,20 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  RefreshCw,
-  School,
-  Search,
-  Timer,
-} from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
+import { Badge, Button, EmptyState, inputShell } from "@/features/console/ui";
 import { cn } from "@/lib/cn";
 import { levelLabel } from "@/lib/levels";
 import { errText, midtermReportsApi } from "./api";
 import { MidtermEvidence } from "./MidtermEvidence";
+import { Notice } from "./reportParts";
 import { CountChip } from "./StatusPill";
 import { classroomSubjectLabel, formatWhen, isGraded, retakeCountOf } from "./status";
 import type { ClassroomDetail, ClassroomListRow, ClassroomMidtermRow } from "./types";
@@ -111,65 +104,62 @@ export default function MidtermRecordsBrowser() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-2xl text-sm text-muted-foreground">
+        <p className="min-w-0 max-w-2xl flex-1 basis-[18rem] text-[14px] leading-5 text-ms-fg-2">
           Every classroom that has ever been given a midterm, whichever month it was sat in.
           Pass/fail results come from the record frozen when each student was scored.
         </p>
-        <button
-          type="button"
-          onClick={refreshAll}
-          className="ds-ring inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden />
+        <Button variant="secondary" size="sm" icon="refresh" onClick={refreshAll}>
           Refresh
-        </button>
+        </Button>
       </div>
 
       {listError && <ErrorBox message={listError} onRetry={() => void loadClassrooms()} />}
 
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
         {/* Classroom list */}
-        <aside className="rounded-2xl border border-border bg-card p-3 lg:sticky lg:top-4 lg:self-start">
-          <div className="relative mb-2">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
+        <aside className="animate-ms-card-in rounded-ms-card bg-ms-card p-3 shadow-ms-1 lg:sticky lg:top-4 lg:self-start">
+          {/* A plain field, not the debounced SearchField: the list filters as each letter lands. */}
+          <label className={cn(inputShell(), "mb-2")}>
+            <Icon name="search" size="sm" className="text-ms-fg-3" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search classrooms"
               aria-label="Search classrooms"
-              className="w-full rounded-xl border border-border bg-surface-2 py-2 pl-9 pr-3 text-sm font-semibold text-foreground placeholder:font-normal placeholder:text-muted-foreground"
+              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-ms-fg-3"
             />
-          </div>
+          </label>
 
           {/* Four branches, and the first two are the ones that get confused: a failed list
               is not an empty list. The error branch comes first so a 500 can never fall
               through to the "No midterm activity" copy below it. */}
           {listError ? (
-            <div className="px-2 py-8 text-center">
-              <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-danger" aria-hidden />
-              <p className="text-sm font-bold text-foreground">Classroom list unavailable</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+            <div className="flex flex-col items-center gap-1 px-2 py-8 text-center">
+              <span className="mb-1 grid size-10 place-items-center rounded-full bg-ms-critical-soft text-ms-critical-fg">
+                <Icon name="alert" />
+              </span>
+              <p className="text-[14px] font-semibold text-ms-fg">Classroom list unavailable</p>
+              <p className="text-[13px] leading-[18px] text-ms-fg-3">
                 This is not an empty school — the list could not be loaded. Retry above.
               </p>
             </div>
           ) : classrooms == null ? (
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5" aria-busy>
               {[0, 1, 2].map((i) => (
-                <div key={i} className="h-14 animate-pulse rounded-xl bg-surface-2" />
+                <div key={i} className="animate-ms-shimmer h-14 rounded-ms-ctl" />
               ))}
             </div>
           ) : filteredClassrooms.length === 0 ? (
-            <div className="px-2 py-8 text-center">
-              <School className="mx-auto mb-2 h-6 w-6 text-muted-foreground" aria-hidden />
-              <p className="text-sm font-bold text-foreground">
+            <div className="flex flex-col items-center gap-1 px-2 py-8 text-center">
+              <span className="mb-1 grid size-10 place-items-center rounded-full bg-ms-surface-2 text-ms-fg-3">
+                <Icon name={classrooms.length === 0 ? "ms-room" : "search"} />
+              </span>
+              <p className="text-[14px] font-semibold text-ms-fg">
                 {classrooms.length === 0 ? "No midterm activity" : "No match"}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="text-[13px] leading-[18px] text-ms-fg-3">
                 {classrooms.length === 0
                   ? "Classrooms appear here once a midterm is assigned or scheduled for them."
                   : "No classroom matches that search."}
@@ -186,19 +176,19 @@ export default function MidtermRecordsBrowser() {
                     onClick={() => setSelectedId(c.id)}
                     aria-current={active ? "true" : undefined}
                     className={cn(
-                      "ds-ring rounded-xl px-3 py-2 text-left transition-colors",
-                      active ? "bg-surface-2" : "hover:bg-surface-2",
+                      "ms-transition rounded-ms-ctl px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ms-ring",
+                      active ? "bg-ms-primary-soft" : "hover:bg-ms-surface",
                     )}
                   >
                     <p
                       className={cn(
-                        "truncate text-sm font-bold",
-                        active ? "text-foreground" : "text-muted-foreground",
+                        "truncate text-[14px] font-semibold",
+                        active ? "text-ms-primary-text" : "text-ms-fg",
                       )}
                     >
                       {c.name}
                     </p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    <p className="mt-0.5 truncate text-[12px] text-ms-fg-3">
                       {c.teacher_name || "No teacher assigned"} · {c.student_count} student
                       {c.student_count === 1 ? "" : "s"} · {c.midterm_count} midterm
                       {c.midterm_count === 1 ? "" : "s"}
@@ -211,40 +201,40 @@ export default function MidtermRecordsBrowser() {
         </aside>
 
         {/* Selected classroom */}
-        <section className="min-w-0 space-y-3">
+        <section className="flex min-w-0 flex-col gap-3">
           {detailError ? (
             <ErrorBox message={detailError} />
           ) : detailLoading || (selectedId != null && !detail) ? (
-            <div className="h-40 animate-pulse rounded-2xl border border-border bg-card" />
+            <div aria-busy className="animate-ms-shimmer h-40 rounded-ms-card" />
           ) : !detail ? (
             /* "Pick a classroom" is an invitation, and it is only honest when there IS a
                list to pick from. With the list request failed there is nothing on the left,
                and the invitation reads as "we found nothing for you". */
             listError ? (
-              <div className="rounded-2xl border border-danger/25 bg-danger-soft p-10 text-center text-danger-foreground">
-                <AlertTriangle className="mx-auto mb-3 h-7 w-7" aria-hidden />
-                <p className="font-bold">Nothing could be listed</p>
-                <p className="mt-1 text-sm font-semibold opacity-90">
+              <div className="animate-ms-fade-in flex flex-col items-center gap-1 rounded-ms-card border border-ms-critical-line bg-ms-critical-soft px-5 py-10 text-center text-ms-critical-fg">
+                <Icon name="alert" size="lg" className="mb-2" />
+                <p className="font-semibold">Nothing could be listed</p>
+                <p className="max-w-md text-[14px] leading-5">
                   The classroom list failed to load, so there is nothing to pick. Nothing here
                   says this school has no midterms — retry above.
                 </p>
               </div>
             ) : (
-              <div className="rounded-2xl border border-border bg-card p-10 text-center">
-                <FileText className="mx-auto mb-3 h-7 w-7 text-muted-foreground" aria-hidden />
-                <p className="font-bold text-foreground">Pick a classroom</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Select a classroom on the left to see its midterms.
-                </p>
+              <div className="animate-ms-card-in rounded-ms-card bg-ms-card shadow-ms-1">
+                <EmptyState
+                  icon="file"
+                  title="Pick a classroom"
+                  detail="Select a classroom on the left to see its midterms."
+                />
               </div>
             )
           ) : (
             <>
-              <div className="rounded-2xl border border-border bg-card px-5 py-4">
-                <h3 className="text-lg font-extrabold tracking-tight text-foreground">
+              <div className="animate-ms-card-in rounded-ms-card bg-ms-card px-5 py-4 shadow-ms-1">
+                <h3 className="text-[20px] font-bold leading-7 text-ms-fg">
                   {detail.classroom.name}
                 </h3>
-                <p className="mt-0.5 text-sm text-muted-foreground">
+                <p className="mt-0.5 text-[14px] text-ms-fg-2">
                   {[
                     detail.classroom.teacher_name || "No teacher assigned",
                     // Never the raw enum: the API sends ENGLISH / MATH here.
@@ -257,12 +247,12 @@ export default function MidtermRecordsBrowser() {
               </div>
 
               {detail.midterms.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
-                  <Timer className="mx-auto mb-3 h-7 w-7 text-muted-foreground" aria-hidden />
-                  <p className="font-bold text-foreground">No midterms in this classroom</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Nothing has been scheduled or assigned to {detail.classroom.name} yet.
-                  </p>
+                <div className="animate-ms-card-in rounded-ms-card bg-ms-card shadow-ms-1">
+                  <EmptyState
+                    icon="timer"
+                    title="No midterms in this classroom"
+                    detail={`Nothing has been scheduled or assigned to ${detail.classroom.name} yet.`}
+                  />
                 </div>
               ) : (
                 detail.midterms.map((m) => (
@@ -310,26 +300,22 @@ function MidtermCard({
     rosterSize == null ? null : Math.max(0, rosterSize - counts.absent - counts.pending);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <div className="animate-ms-card-in overflow-hidden rounded-ms-card bg-ms-card shadow-ms-1">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
         aria-controls={panelId}
-        className="ds-ring w-full px-4 py-3 text-left transition-colors hover:bg-surface-2"
+        className="ms-transition w-full px-4 py-3 text-left hover:bg-ms-surface focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ms-ring"
       >
         <span className="flex items-center gap-2">
-          {expanded ? (
-            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-          ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-          )}
-          <span className="truncate font-bold text-foreground">{midterm.title}</span>
-          <span className="shrink-0 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+          <Icon name={expanded ? "down" : "right"} size="sm" className="text-ms-fg-3" />
+          <span className="truncate font-semibold text-ms-fg">{midterm.title}</span>
+          <Badge tone="line" className="shrink-0">
             {TYPE_LABELS[midterm.midterm_type] ?? midterm.midterm_type}
-          </span>
+          </Badge>
         </span>
-        <span className="ml-6 mt-0.5 block text-xs text-muted-foreground">
+        <span className="ml-6 mt-0.5 block text-[13px] text-ms-fg-3">
           {midterm.subject_label} · {formatWhen(midterm.scheduled_at)}
           {retakes == null
             ? midterm.retake
@@ -349,9 +335,9 @@ function MidtermCard({
             </>
           ) : (
             <>
-              <span className="inline-flex items-center rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs font-bold text-muted-foreground">
+              <Badge tone="neutral" icon="circle">
                 Not graded
-              </span>
+              </Badge>
               {scored != null && <CountChip tone="ungraded" count={scored} label="scored" />}
             </>
           )}
@@ -373,7 +359,7 @@ function MidtermCard({
       </button>
 
       {expanded && (
-        <div id={panelId} className="border-t border-border px-4 py-4">
+        <div id={panelId} className="border-t border-ms-line px-4 py-4">
           {/* The exact count from this list's own payload. `MidtermEvidence` re-counts from
               its own response and prefers that; this is what it falls back to. */}
           <MidtermEvidence
@@ -389,26 +375,19 @@ function MidtermCard({
 
 function ErrorBox({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div
+    <Notice
+      tone="critical"
       role="alert"
-      className="flex flex-wrap items-start gap-3 rounded-2xl border border-danger/25 bg-danger-soft p-3 text-sm font-semibold text-danger-foreground"
+      action={
+        onRetry ? (
+          <Button variant="secondary" size="sm" icon="refresh" onClick={onRetry}>
+            Try again
+          </Button>
+        ) : null
+      }
     >
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1">
-        {message}
-        <span className="mt-0.5 block text-xs font-normal opacity-90">
-          Nothing below is empty — it is unknown.
-        </span>
-      </span>
-      {onRetry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="ds-ring shrink-0 rounded-lg border border-danger/30 px-2.5 py-1 text-xs font-bold hover:bg-danger/10"
-        >
-          Try again
-        </button>
-      ) : null}
-    </div>
+      <span className="font-semibold">{message}</span>
+      <span className="mt-0.5 block text-ms-fg-2">Nothing below is empty — it is unknown.</span>
+    </Notice>
   );
 }

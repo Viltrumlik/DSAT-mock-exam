@@ -18,7 +18,7 @@ export interface QbChangeListPage extends ChangeListData<QbQuestionListItem> {
 }
 
 /** The filter keys the endpoint understands (anything else in the address is not sent). */
-export const QB_FILTER_KEYS = ["subject", "status", "difficulty", "classified", "source"] as const;
+export const QB_FILTER_KEYS = ["subject", "status", "difficulty", "classified", "answer", "source"] as const;
 
 /** The query string the endpoint takes, from the list's address state. */
 export function qbChangeListQuery(params: ChangeListParams): Record<string, string | number> {

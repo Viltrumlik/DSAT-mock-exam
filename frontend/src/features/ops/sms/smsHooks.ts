@@ -22,8 +22,8 @@ import {
  * The overview's balance is cached on the server for 5 minutes, so a refetch never costs an
  * eskiz login.
  *
- * **No mutation here is retried** (`retry: false`). QueryProvider retries every mutation once by
- * default, and a POST that reached the server before it failed — a timeout, a dropped
+ * **No mutation here is retried** (`retry: false`, kept explicit though the app-wide default is
+ * now the same). A POST that reached the server before it failed — a timeout, a dropped
  * connection — has already sent its SMS: a retry would put it on a parent's phone twice, at our
  * cost. A paid POST (a campaign, "Send now", a test SMS) that fails with no answer refreshes the
  * panel, so whatever did go out shows.

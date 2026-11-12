@@ -9,6 +9,7 @@ import {
   type Tab as AnyTab,
 } from "@/features/ops/detail/tabs";
 import { CalendarCheck, History, MessageSquare, School, ShieldCheck, Trophy, UserRound, Users, Wallet } from "lucide-react";
+import { Tabs } from "@/features/console/ui";
 import type { PersonCore } from "./personApi";
 
 /**
@@ -67,6 +68,31 @@ export const tabHref = (path: string, search: URLSearchParams, key: TabKey): str
 export const tabId = (key: TabKey) => tabOf("person", key);
 export const panelId = (key: TabKey) => panelOf("person", key);
 
-export function TabBar({ tabs, active, onSelect }: { tabs: Tab[]; active: TabKey; onSelect: (key: TabKey) => void }) {
-  return <Bar scope="person" label="Account sections" tabs={tabs} active={active} onSelect={onSelect} />;
+/** What a tab holds, said on the tab when worth knowing before opening (Controls board · Tabs). */
+export function tabCounts(person: PersonCore): Partial<Record<TabKey, { count: number | string; tone?: "critical" | "attention" }>> {
+  const out: Partial<Record<TabKey, { count: number | string; tone?: "critical" | "attention" }>> = {};
+  if (person.groups.length) out.groups = { count: person.groups.length };
+  const rate = person.glance?.attendance_rate;
+  if (rate != null) out.attendance = { count: `${Math.round(rate)} %`, tone: rate < 60 ? "critical" : rate < 85 ? "attention" : undefined };
+  const balance = person.lcup?.balance ?? null;
+  if (balance !== null && balance < 0) out.payments = { count: "owes", tone: "critical" };
+  if (person.staff) out.classes = { count: person.staff.classes.length };
+  return out;
 }
+
+/** The console's underline tabs (`?tab=` kept by the caller), with the counts above. */
+export function TabBar({ tabs, active, onSelect, person }: { tabs: Tab[]; active: TabKey; onSelect: (key: TabKey) => void; person?: PersonCore }) {
+  const counts = person ? tabCounts(person) : {};
+  return (
+    <Tabs<TabKey>
+      label="Account sections"
+      value={active}
+      onChange={onSelect}
+      ids={{ tab: tabId, panel: panelId }}
+      tabs={tabs.map((t) => ({ id: t.key, label: t.label, count: counts[t.key]?.count, tone: counts[t.key]?.tone }))}
+    />
+  );
+}
+
+/** The old bar, kept for pages not redesigned yet. */
+export const LegacyTabBar = Bar;

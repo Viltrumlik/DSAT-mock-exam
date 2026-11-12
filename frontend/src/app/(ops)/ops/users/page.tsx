@@ -14,5 +14,5 @@ export default function OpsUsersRedirectPage() {
   useEffect(() => {
     router.replace(usersRedirectTarget(window.location.search));
   }, [router]);
-  return <p className="text-[13px] text-muted-foreground">Redirecting…</p>;
+  return <p className="text-[13px] text-ms-fg-3">Redirecting…</p>;
 }

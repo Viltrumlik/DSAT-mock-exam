@@ -17,12 +17,17 @@
  * Per-row auto-save was the obvious alternative and is wrong here: switching Tuesday off and
  * then fixing Wednesday's hours would fire two writes, and an admin who changed their mind
  * half way would have already half-applied a schedule students can book against.
+ *
+ * Drawn in the console's look (design handoff v0.3): notices in the verdict colours, the week as
+ * one hairline list, native selects in the console's field shell.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { Info, TriangleAlert } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { Alert, Button, Select, Skeleton, Switch } from "@/components/ui";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { Button, Switch } from "@/features/console/ui";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
+import { cn } from "@/lib/cn";
 import type { SupportWorkingDay } from "./opsSupportApi";
 import { useSetSupportWorkingHours, useSupportWorkingHours } from "./opsSupportHooks";
 
@@ -40,6 +45,29 @@ function sameSchedule(a: SupportWorkingDay[], b: SupportWorkingDay[]): boolean {
     d.end_hour === b[i].end_hour,
   );
 }
+
+type NoticeTone = "info" | "attention" | "critical" | "positive";
+
+const NOTICE: Record<NoticeTone, { box: string; icon: IconName }> = {
+  info: { box: "border-ms-info-line bg-ms-info-soft text-ms-info-fg", icon: "info" },
+  attention: { box: "border-ms-attention-line bg-ms-attention-soft text-ms-attention-fg", icon: "warn" },
+  critical: { box: "border-ms-critical-line bg-ms-critical-soft text-ms-critical-fg", icon: "alert" },
+  positive: { box: "border-ms-positive-line bg-ms-positive-soft text-ms-positive-fg", icon: "ok" },
+};
+
+/** A standing line above the week, in the colour of what it says, always with its icon. */
+function Notice({ tone, children }: { tone: NoticeTone; children: ReactNode }) {
+  const t = NOTICE[tone];
+  return (
+    <div role="status" className={cn("animate-ms-fade-in flex items-start gap-2.5 rounded-ms-ctl border px-3.5 py-2.5 text-[14px] leading-5", t.box)}>
+      <Icon name={t.icon} size="sm" className="mt-0.5" />
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+/** "Try again" inside a notice: a link-like button in the notice's own colour. */
+const RETRY = "rounded-[6px] font-semibold underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-ring";
 
 export function WeeklyHoursEditor({
   supportTeacherId,
@@ -133,7 +161,9 @@ export function WeeklyHoursEditor({
     });
   }
 
-  if (schedule.isPending) return <Skeleton className="h-64 rounded-xl" />;
+  if (schedule.isPending) {
+    return <div aria-busy className="animate-ms-shimmer h-64 rounded-ms-card" />;
+  }
 
   // A failed fetch must never render as "this teacher works no days" — that reads as a
   // decision somebody made, and an admin acting on it would save it as one.
@@ -146,25 +176,25 @@ export function WeeklyHoursEditor({
   // says so.
   if (!draft) {
     return (
-      <Alert tone="danger">
+      <Notice tone="critical">
         The weekly schedule didn&apos;t load.{" "}
-        <button className="underline" onClick={() => void schedule.refetch()}>
+        <button type="button" className={RETRY} onClick={() => void schedule.refetch()}>
           Try again
         </button>
-      </Alert>
+      </Notice>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       {/* No heading of its own: the panel this sits inside already carries one, and two
           titles stacked on the same box is what made the old version look cluttered. */}
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
+        <p className="min-w-0 flex-1 basis-[16rem] text-[14px] leading-5 text-ms-fg-2">
           Set once — {teacherName} is bookable at these hours every week, until you change them.
         </p>
         {(draft ?? []).some((d) => d.is_working) ? (
-          <Button size="sm" variant="secondary" onClick={applyToAll} disabled={save.isPending}>
+          <Button size="sm" variant="secondary" icon="switch" onClick={applyToAll} disabled={save.isPending}>
             Same hours every day
           </Button>
         ) : null}
@@ -173,34 +203,29 @@ export function WeeklyHoursEditor({
       {/* "Nobody has set this up" and "somebody chose 08:00–18:00" look identical on screen
           and mean very different things. Say which one this is. */}
       {schedule.data && !schedule.data.configured ? (
-        <Alert tone="info">
-          <span className="inline-flex items-start gap-2">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>
-              No schedule has been set yet, so {teacherName} is currently bookable{" "}
-              {hourLabel(openHour)}–{hourLabel(closeHour)} every day — the platform default.
-              Save below to replace it.
-            </span>
-          </span>
-        </Alert>
+        <Notice tone="info">
+          No schedule has been set yet, so {teacherName} is currently bookable{" "}
+          {hourLabel(openHour)}–{hourLabel(closeHour)} every day — the platform default.
+          Save below to replace it.
+        </Notice>
       ) : null}
 
       {/* The form is still usable and still saveable — the last read just failed, so what is
           on screen may be behind the server. Said plainly rather than swallowed: an admin
           about to save needs to know they might be overwriting somebody else's edit. */}
       {schedule.isError ? (
-        <Alert tone="warning">
+        <Notice tone="attention">
           Couldn&apos;t refresh these hours just now, so they may be out of date.{" "}
-          <button className="underline" onClick={() => void schedule.refetch()}>
+          <button type="button" className={RETRY} onClick={() => void schedule.refetch()}>
             Try again
           </button>
-        </Alert>
+        </Notice>
       ) : null}
 
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-      {saved ? <Alert tone="success">{saved}</Alert> : null}
+      {error ? <Notice tone="critical">{error}</Notice> : null}
+      {saved ? <Notice tone="positive">{saved}</Notice> : null}
 
-      <div className="overflow-hidden rounded-xl border border-border">
+      <div className="overflow-hidden rounded-ms-ctl border border-ms-border">
         {draft.map((day, i) => (
           // A GRID, not a wrapping flex row. The controls are too wide to sit beside a day
           // name in the console's narrow right-hand column, so a flex row wrapped them onto
@@ -209,40 +234,30 @@ export function WeeklyHoursEditor({
           // vertical line and the eye can run down the week.
           <div
             key={day.weekday}
-            className={`grid grid-cols-1 items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:grid-cols-[minmax(0,9rem)_1fr] ${
-              i > 0 ? "border-t border-border" : ""
-            } ${day.is_working ? "" : "bg-surface-2"}`}
+            className={cn(
+              "ms-transition grid grid-cols-1 items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:grid-cols-[minmax(0,10rem)_1fr]",
+              i > 0 && "border-t border-ms-line",
+              day.is_working ? "bg-ms-card" : "bg-ms-surface",
+            )}
           >
-            <div className="flex items-center gap-2.5">
-              {/* `id` + our own <label>, never the Switch's `label` prop — that prop renders
-                  as VISIBLE text, so passing it printed the day name twice. A <button> is a
-                  labelable element, so htmlFor still gives the switch its accessible name. */}
-              <Switch
-                id={`workday-${day.weekday}`}
-                checked={day.is_working}
-                onCheckedChange={(next) => patch(day.weekday, { is_working: next })}
-                disabled={save.isPending}
-              />
-              <label
-                htmlFor={`workday-${day.weekday}`}
-                className={`cursor-pointer text-sm font-bold ${
-                  day.is_working ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                {day.label}
-              </label>
-            </div>
+            {/* The day's name is the switch's own label, so it names the switch for a
+                screen reader and is printed once. */}
+            <Switch
+              checked={day.is_working}
+              onChange={(next) => patch(day.weekday, { is_working: next })}
+              label={<span className="font-semibold">{day.label}</span>}
+              busy={save.isPending}
+            />
 
             {day.is_working ? (
-              /* Each Select is boxed in a fixed-width wrapper. `Select` renders its own
-                 `relative w-full` container around the element, so a width class passed to
-                 the component lands on the inner <select> and the wrapper still claims the
-                 whole row — which stacked the two dropdowns vertically and made every day
-                 three lines tall. Constraining from outside is the only thing that works. */
+              /* Each select is boxed in a fixed-width wrapper: the console's field shell is
+                 full-width, so the box decides how wide it is and the two hours stay on one
+                 line beside "to". */
               <div className="flex flex-wrap items-center gap-2">
-                <div className="w-[5.75rem] shrink-0">
-                  <Select
+                <div className="w-28 shrink-0 tabular-nums">
+                  <select
                     aria-label={`${day.label} — first hour`}
+                    className={CONTROL}
                     value={String(day.start_hour)}
                     disabled={save.isPending}
                     onChange={(e) => patch(day.weekday, { start_hour: Number(e.target.value) })}
@@ -250,12 +265,13 @@ export function WeeklyHoursEditor({
                     {startOptions.map((h) => (
                       <option key={h} value={String(h)}>{hourLabel(h)}</option>
                     ))}
-                  </Select>
+                  </select>
                 </div>
-                <span className="text-xs font-bold text-muted-foreground">to</span>
-                <div className="w-[5.75rem] shrink-0">
-                  <Select
+                <span className="text-[14px] text-ms-fg-3">to</span>
+                <div className="w-28 shrink-0 tabular-nums">
+                  <select
                     aria-label={`${day.label} — last hour`}
+                    className={CONTROL}
                     value={String(day.end_hour)}
                     disabled={save.isPending}
                     onChange={(e) => patch(day.weekday, { end_hour: Number(e.target.value) })}
@@ -265,35 +281,30 @@ export function WeeklyHoursEditor({
                       .map((h) => (
                         <option key={h} value={String(h)}>{hourLabel(h)}</option>
                       ))}
-                  </Select>
+                  </select>
                 </div>
                 {/* The end is exclusive, and an admin has no way to know that from two
                     dropdowns. Say what it means in sessions, which is the unit they think in. */}
-                <span className="whitespace-nowrap text-[11px] font-semibold text-muted-foreground">
+                <span className="whitespace-nowrap text-[13px] tabular-nums text-ms-fg-3">
                   last session {hourLabel(day.end_hour - 1)}
                 </span>
               </div>
             ) : (
-              <span className="text-sm font-semibold text-muted-foreground">Not working</span>
+              <span className="text-[14px] text-ms-fg-3">Not working</span>
             )}
           </div>
         ))}
       </div>
 
       {!draft.some((d) => d.is_working) ? (
-        <Alert tone="warning">
-          <span className="inline-flex items-start gap-2">
-            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>
-              Every day is switched off. Saving this takes {teacherName} off the students&apos;
-              booking calendar entirely.
-            </span>
-          </span>
-        </Alert>
+        <Notice tone="attention">
+          Every day is switched off. Saving this takes {teacherName} off the students&apos;
+          booking calendar entirely.
+        </Notice>
       ) : null}
 
-      <div className="flex items-center gap-2">
-        <Button onClick={submit} loading={save.isPending} disabled={!dirty}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" onClick={submit} state={save.isPending ? "busy" : "idle"} disabled={!dirty}>
           Save working hours
         </Button>
         {dirty ? (

@@ -16,19 +16,19 @@ const COLUMNS: ChangeListColumn<PublicRow>[] = [
         <>
           {r.email}
           {r.email_verified ? (
-            <span className="ml-1 text-muted-foreground" title="Email verified" aria-label="verified">
+            <span className="ml-1 text-ms-positive-fg" title="Email verified" aria-label="verified">
               ✓
             </span>
           ) : null}
         </>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-ms-fg-3">—</span>
       ),
   },
   {
     key: "phone",
     label: "Phone",
-    render: (r) => (r.phone ? <span className="tabular-nums">{r.phone}</span> : <span className="text-muted-foreground">—</span>),
+    render: (r) => (r.phone ? <span className="tabular-nums">{r.phone}</span> : <span className="text-ms-fg-3">—</span>),
   },
   statusColumn<PublicRow>(),
   joinedColumn<PublicRow>(),

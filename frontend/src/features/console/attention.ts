@@ -1,0 +1,265 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+
+import type { IconName } from "@/components/ui/Icon";
+import { financeApi, type FinanceSummary } from "@/features/finance/financeApi";
+import { financeKeys } from "@/features/finance/financeHooks";
+import { lcupApi, type LcupFollowups, type LcupStatus } from "@/features/lcup/lcupApi";
+import { lcupKeys } from "@/features/lcup/lcupHooks";
+import { smsApi, type SmsOverview } from "@/features/ops/sms/smsApi";
+import { smsKeys } from "@/features/ops/sms/smsHooks";
+import api from "@/lib/api";
+import { formatSom } from "./entitySearch";
+import { fetchLessonsToday, lessonsTodayKey, notMarkedItem } from "./lessonsToday";
+import { useStudioSummary, type StudioSummary } from "./studio/summary";
+
+/**
+ * "Needs you" (design handoff v0.3, AdminToday / BuilderHome boards and the top bar's bell): the
+ * things someone has to act on now, most urgent first. Each comes from an endpoint that already
+ * exists, under that endpoint's own react-query key, so the bell, the dashboard and the page the
+ * item links to share one fetch.
+ *
+ * Every source keeps its own state: still loading, failed (said so, with Retry — a failed source is
+ * never shown as "nothing to do"), or done, with an item only when its count is above zero.
+ */
+export type AttentionItem = {
+  id: string;
+  icon: IconName;
+  tone: "critical" | "attention" | "info";
+  title: string;
+  detail?: string;
+  action: { label: string; href: string };
+};
+
+export type AttentionSource = {
+  id: string;
+  /** What the source is, for its error line: "SMS", "lc-up groups". */
+  label: string;
+  status: "loading" | "error" | "done";
+  item: AttentionItem | null;
+  retry: () => void;
+};
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export function smsItem(o: SmsOverview): AttentionItem | null {
+  const s = o.today.by_status;
+  const failed = (s.UNDELIVERED ?? 0) + (s.REJECTED ?? 0) + (s.FAILED ?? 0);
+  if (failed > 0) {
+    return {
+      id: "sms",
+      icon: "ms-undelivered",
+      tone: "critical",
+      title: `${plural(failed, "SMS", "SMS")} did not arrive today`,
+      detail: o.eskiz.last_error || (o.forecast.short ? "The balance is too low for the next 24 hours" : undefined),
+      action: { label: "Open SMS", href: "/ops/sms" },
+    };
+  }
+  if (o.forecast.short) {
+    return {
+      id: "sms",
+      icon: "wallet",
+      tone: "attention",
+      title: "SMS balance runs short in the next 24 hours",
+      detail: o.balance !== null ? `${formatSom(o.balance)} left · ${formatSom(o.forecast.total)} needed` : undefined,
+      action: { label: "Open SMS", href: "/ops/sms" },
+    };
+  }
+  return null;
+}
+
+export function trialsItem(f: LcupFollowups): AttentionItem | null {
+  if (!f.pending) return null;
+  const missing = f.not_on_list?.length ?? 0;
+  return {
+    id: "trials",
+    icon: "ms-trial",
+    tone: "attention",
+    title: `${plural(f.pending, "trial student", "trial students")} to call back`,
+    detail: missing ? `${plural(missing, "lc-up member", "lc-up members")} missing from a class list` : undefined,
+    action: { label: "Open trials", href: "/ops/trials" },
+  };
+}
+
+export function debtItem(s: FinanceSummary): AttentionItem | null {
+  if (!s.debtors) return null;
+  const detail = [s.frozen ? `${s.frozen} frozen for debt` : "", s.exempt ? `${s.exempt} exempt` : ""].filter(Boolean).join(" · ");
+  return {
+    id: "debt",
+    icon: "wallet",
+    tone: "critical",
+    title: `${plural(s.debtors, "student owes", "students owe")} ${formatSom(s.total_debt)}`,
+    detail: detail || undefined,
+    action: { label: "Debtors", href: "/ops/finance" },
+  };
+}
+
+export function pairingItem(s: LcupStatus): AttentionItem | null {
+  const n = s.counts?.groups_pending ?? 0;
+  if (!n) return null;
+  return {
+    id: "lcup",
+    icon: "ms-sync",
+    tone: "attention",
+    title: `${plural(n, "lc-up group", "lc-up groups")} to pair with a class`,
+    action: { label: "Pair", href: "/ops/lcup" },
+  };
+}
+
+type Facet = { key: string; options: { value: string; label: string; count: number }[] };
+type FacetPage = { count: number; filters?: Facet[] };
+
+/** Active classes with no teacher: the list's count minus the teacher facet (one teacher per class). */
+export function noTeacherCount(page: FacetPage): number {
+  const teacher = page.filters?.find((f) => f.key === "teacher");
+  if (!teacher) return 0;
+  return Math.max(0, page.count - teacher.options.reduce((sum, o) => sum + (o.count ?? 0), 0));
+}
+
+export function noTeacherItem(page: FacetPage): AttentionItem | null {
+  const n = noTeacherCount(page);
+  if (!n) return null;
+  return {
+    id: "teacher",
+    icon: "warn",
+    tone: "attention",
+    title: n === 1 ? "1 class has no teacher" : `${n} classes have no teacher`,
+    action: { label: "Assign", href: "/ops/classrooms?status=active" },
+  };
+}
+
+/** "3 days", "1 day", "today": how long the oldest question has waited. */
+export function waited(iso: string | null, now = new Date()): string {
+  if (!iso) return "";
+  const days = Math.floor((now.getTime() - new Date(iso).getTime()) / 86_400_000);
+  return days <= 0 ? "today" : days === 1 ? "1 day" : `${days} days`;
+}
+
+/** "12:05" today, else "8 Nov", by the learning center's clock. */
+export function clockOrDay(iso: string, now = new Date()): string {
+  const tz = "Asia/Tashkent";
+  const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const at = new Date(iso);
+  return day(at) === day(now)
+    ? new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(at)
+    : new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "short" }).format(at);
+}
+
+// ── The Builder's three kinds (BuilderHome board), all from one Studio summary ───────────────────────
+
+export function noKeyItem(s: StudioSummary): AttentionItem | null {
+  const n = s.no_key.count;
+  if (!n) return null;
+  const live = s.no_key.live;
+  return {
+    id: "no-key",
+    icon: "ms-answerkey",
+    tone: live ? "critical" : "attention",
+    title: n === 1 ? "1 question has no answer key" : `${n} questions have no answer key`,
+    detail: live
+      ? `${live} ${live === 1 ? "is" : "are"} in live tests — students can’t be scored on ${live === 1 ? "it" : "them"}`
+      : "None of them is in a live test",
+    action: { label: "Fix keys", href: "/builder/question-bank?answer=no" },
+  };
+}
+
+/** "R&W 2 needs 8 more · Math 2 is empty". */
+export function gapLine(gaps: readonly { module: string; have: number; need: number }[]): string {
+  return gaps.map((g) => (g.have === 0 ? `${g.module} is empty` : `${g.module} needs ${g.need - g.have} more`)).join(" · ");
+}
+
+export function mockItem(s: StudioSummary): AttentionItem | null {
+  const m = s.mocks.not_ready[0];
+  if (!m) return null;
+  const more = s.mocks.not_ready_count - 1;
+  return {
+    id: "mock",
+    icon: "ms-fullmock",
+    tone: "attention",
+    title: m.ready ? `${m.title} is ${plural(m.short, "question", "questions")} short` : `${m.title} can’t be published yet`,
+    detail: [gapLine(m.gaps) || m.block_reason, more > 0 ? `+${plural(more, "more mock", "more mocks")}` : ""].filter(Boolean).join(" · "),
+    action: { label: "Open", href: `/builder/full-mocks/${m.id}` },
+  };
+}
+
+export function unclassifiedItem(s: StudioSummary): AttentionItem | null {
+  const n = s.no_skill.count;
+  if (!n) return null;
+  return {
+    id: "unclassified",
+    icon: "tag",
+    tone: "info",
+    title: `${plural(n, "question", "questions")} without a skill`,
+    detail: "They won’t show in students’ error reports",
+    action: { label: "Classify", href: "/builder/question-bank?classified=no" },
+  };
+}
+
+/** This month, by the learning center's clock: "2026-11". */
+export function tashkentMonth(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit" }).format(now);
+}
+
+function source<T>(
+  id: string,
+  label: string,
+  q: { status: "pending" | "error" | "success"; data: T | undefined; refetch: () => unknown },
+  derive: (data: T) => AttentionItem | null,
+): AttentionSource {
+  const retry = () => void q.refetch();
+  if (q.status === "pending") return { id, label, status: "loading", item: null, retry };
+  if (q.status === "error" || q.data === undefined) return { id, label, status: "error", item: null, retry };
+  try {
+    return { id, label, status: "done", item: derive(q.data), retry };
+  } catch {
+    // A reply that is not the shape we know is a failure to read it — never "nothing to do".
+    return { id, label, status: "error", item: null, retry };
+  }
+}
+
+/** Admin's sources. `enabled` only for super admins and admins: every endpoint here refuses others. */
+export function useAdminAttention(enabled: boolean): AttentionSource[] {
+  const lessons = useQuery({ queryKey: lessonsTodayKey, queryFn: fetchLessonsToday, enabled, staleTime: 60_000, refetchInterval: 120_000 });
+  const sms = useQuery({ queryKey: smsKeys.overview, queryFn: () => smsApi.overview(), enabled, staleTime: 60_000 });
+  const trials = useQuery({ queryKey: lcupKeys.followups, queryFn: () => lcupApi.followups(), enabled, refetchInterval: 60_000 });
+  const month = tashkentMonth();
+  const debt = useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month), enabled, staleTime: 60_000 });
+  const lcup = useQuery({ queryKey: lcupKeys.status, queryFn: () => lcupApi.status(), enabled, staleTime: 60_000 });
+  const teacher = useQuery({
+    queryKey: ["console", "attention", "classes-no-teacher"],
+    queryFn: async () => (await api.get<FacetPage>("/classes/admin/classrooms/", { params: { status: "active", page_size: 25 } })).data,
+    enabled,
+    staleTime: 60_000,
+  });
+  if (!enabled) return [];
+  return [
+    source("lessons", "today's lessons", lessons, notMarkedItem),
+    source("sms", "SMS", sms, smsItem),
+    source("debt", "debts", debt, debtItem),
+    source("trials", "trials", trials, trialsItem),
+    source("lcup", "lc-up groups", lcup, pairingItem),
+    source("teacher", "classes", teacher, noTeacherItem),
+  ];
+}
+
+/**
+ * The Builder's three kinds, in the board's order; one Studio summary request answers all of them. The review
+ * queue and failed imports were two more until the owner removed both pages (2026-11-12).
+ */
+export function useBuilderAttention(enabled: boolean, withRecent = false): AttentionSource[] {
+  const summary = useStudioSummary(enabled, withRecent);
+  if (!enabled) return [];
+  // One request answers all three: while it loads or after it failed, say so once, not three times.
+  if (summary.data === undefined || summary.isError) return [source("studio", "what needs the team", summary, () => null)];
+  return [
+    source("no-key", "answer keys", summary, noKeyItem),
+    source("mock", "full mocks", summary, mockItem),
+    source("unclassified", "questions", summary, unclassifiedItem),
+  ];
+}
+
+/** How many KINDS of problem there are (the bell's number), not how many people. */
+export function attentionCount(sources: readonly AttentionSource[]): number {
+  return sources.filter((s) => s.item).length;
+}

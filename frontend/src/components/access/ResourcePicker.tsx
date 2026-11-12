@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Loader2, Search } from "lucide-react";
+
+import { Icon } from "@/components/ui/Icon";
 import { accessApi, resourceTypeLabel, HIDDEN_PICKER_TYPES, type ResourcePickerItem } from "@/lib/accessApi";
 import { cn } from "@/lib/cn";
-import { accClass, Chip, Pill } from "./accessUi";
-import { CheckBox } from "./StudentMultiSelect";
+import { EMPTY_BOX, EYEBROW, FilterPill, PickMark, RemovableChip, ROW, ROW_OFF, ROW_ON, SearchInput, TEXT_ACTION } from "./accessConsole";
 
 export type SelectedResource = { resource_type: string; resource_id: number; label: string };
 
@@ -99,11 +99,12 @@ export function ResourcePicker({
     return Array.from(groups.entries());
   }, [type, visible]);
 
+  // The test's subject in the console's subject colours: Math violet, R&W rose.
   const iconTint = (subs: string[]) => {
     const s = (subs ?? []).map((x) => x.toLowerCase());
-    if (s.includes("math")) return "bg-blue-100 text-blue-700";
-    if (s.includes("english") || s.includes("reading")) return "bg-emerald-100 text-emerald-700";
-    return "bg-primary/10 text-primary";
+    if (s.includes("math")) return "bg-ms-math-soft text-ms-math-fg";
+    if (s.includes("english") || s.includes("reading")) return "bg-ms-rw-soft text-ms-rw-fg";
+    return "bg-ms-primary-soft text-ms-primary-text";
   };
 
   const renderRow = (it: ResourcePickerItem) => {
@@ -116,38 +117,36 @@ export function ResourcePicker({
       <button
         type="button"
         key={`${it.resource_type}:${it.resource_id}`}
+        aria-pressed={checked}
         onClick={() => toggle(it)}
-        className={cn(
-          "flex w-full items-center gap-3 px-3.5 py-3 text-left",
-          checked ? accClass.selectableOn : accClass.selectable,
-        )}
+        className={cn(ROW, checked ? ROW_ON : ROW_OFF)}
       >
-        <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", iconTint(it.subjects))}>
-          <FileText className="h-4 w-4" />
+        <span className={cn("grid size-9 shrink-0 place-items-center rounded-[8px]", iconTint(it.subjects))}>
+          <Icon name="file" size="sm" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold text-foreground">{it.label}</span>
-          {subtitle && <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>}
+          <span className="block truncate text-[14px] font-semibold text-ms-fg">{it.label}</span>
+          {subtitle && <span className="block truncate text-[13px] text-ms-fg-3">{subtitle}</span>}
         </span>
-        <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-bold text-muted-foreground">
+        <span className="shrink-0 rounded-[6px] bg-ms-surface-2 px-1.5 py-0.5 font-ms-mono text-[12px] text-ms-fg-2">
           #{it.resource_id}
         </span>
-        <CheckBox checked={checked} />
+        <PickMark checked={checked} />
       </button>
     );
   };
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       {/* Resource-type tabs */}
       {!single && types.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className={accClass.eyebrow}>Tests / resources</span>
+          <span className={EYEBROW}>Tests / resources</span>
           <div className="flex flex-wrap gap-2">
             {types.map((t) => (
-              <Pill key={t} active={type === t} onClick={() => setType(t)}>
+              <FilterPill key={t} active={type === t} onClick={() => setType(t)}>
                 {resourceTypeLabel(t)}
-              </Pill>
+              </FilterPill>
             ))}
           </div>
         </div>
@@ -155,28 +154,20 @@ export function ResourcePicker({
 
       {/* Subject filter pills + search */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className={accClass.eyebrow}>Subject</span>
+        <span className={EYEBROW}>Subject</span>
         {SUBJECT_FILTERS.map((s) => (
-          <Pill key={s.key} active={subject === s.key} onClick={() => setSubject(s.key)}>
+          <FilterPill key={s.key} active={subject === s.key} onClick={() => setSubject(s.key)}>
             {s.label}
-          </Pill>
+          </FilterPill>
         ))}
       </div>
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by title or id…"
-          className={accClass.search}
-        />
-      </div>
+      <SearchInput value={search} onChange={setSearch} placeholder="Search by title or id…" />
 
       {/* Selected tests (chips) */}
       {value.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {value.map((v) => (
-            <Chip
+            <RemovableChip
               key={`${v.resource_type}:${v.resource_id}`}
               label={v.label}
               onRemove={() =>
@@ -184,32 +175,24 @@ export function ResourcePicker({
               }
             />
           ))}
-          <button
-            type="button"
-            onClick={() => onChange([])}
-            className="text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
-          >
+          <button type="button" onClick={() => onChange([])} className={TEXT_ACTION}>
             Clear all
           </button>
         </div>
       )}
 
       {/* Result list */}
-      <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+      <div className="flex max-h-[360px] flex-col gap-2 overflow-y-auto pr-1">
         {loading ? (
-          <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Searching…
+          <div role="status" className="flex items-center gap-2 p-4 text-[14px] text-ms-fg-3">
+            <Icon name="loader" size="sm" className="animate-ms-spin" /> Searching…
           </div>
         ) : visible.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            No resources found.
-          </p>
+          <p className={EMPTY_BOX}>No resources found.</p>
         ) : grouped ? (
           grouped.map(([group, rows]) => (
-            <div key={group} className="space-y-2">
-              <div className="px-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                {group}
-              </div>
+            <div key={group} className="flex flex-col gap-2">
+              <div className="text-ms-over px-1 pt-1 text-ms-fg-3">{group}</div>
               {rows.map(renderRow)}
             </div>
           ))

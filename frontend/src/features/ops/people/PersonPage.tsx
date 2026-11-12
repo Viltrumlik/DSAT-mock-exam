@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { recordRecent } from "@/features/console/recent";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronLeft } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { peopleKeys, type PeopleSection } from "@/features/ops/changelist/peopleApi";
@@ -45,9 +46,9 @@ function SameNameNotice({ person }: { person: PersonCore }) {
   return (
     <div
       data-testid="same-name"
-      className="flex gap-3 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3.5 text-sm text-warning-foreground"
+      className="flex gap-3 rounded-[16px] border border-ms-attention-line bg-ms-attention-soft px-4 py-3.5 text-[14px] text-ms-attention-fg"
     >
-      <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+      <Icon name="warn" size="sm" className="mt-0.5 size-4" />
       <div className="min-w-0 space-y-1">
         <p className="font-semibold">
           Same name as {n} other account{n === 1 ? "" : "s"} — check which one is theirs
@@ -79,6 +80,10 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
   const query = usePerson(id);
   const person = query.data;
   const backHref = listHrefFrom(search, `/ops/${section}`);
+  // Today's "Recently opened" (this browser only): the person moves to the front.
+  useEffect(() => {
+    if (person) recordRecent({ kind: "person", id: person.id, name: person.name || person.username || `User ${person.id}`, href: `/ops/${section}/${person.id}` });
+  }, [person, section]);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [otpGiven, setOtpGiven] = useState<{ login: string; code: string; expires_at: string | null } | null>(null);
@@ -100,8 +105,8 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
     return (
       <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6" aria-busy>
         <span className="sr-only">Loading…</span>
-        <div className="h-44 animate-pulse rounded-2xl bg-surface-2" />
-        <div className="h-64 animate-pulse rounded-2xl bg-surface-2" />
+        <div className="h-44 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+        <div className="h-64 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
       </div>
     );
   }
@@ -109,7 +114,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
     const missing = isNotFound(query.error);
     return (
       <div className="mx-auto w-full max-w-6xl space-y-2 p-4 text-sm md:p-6">
-        <p className="text-muted-foreground">
+        <p className="text-ms-fg-3">
           {missing ? "This account does not exist or is outside your scope." : "Could not load this account."}
         </p>
         <p className="flex gap-3">
@@ -193,23 +198,22 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
     <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
       <Link
         href={backHref}
-        className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-sm font-medium text-ms-fg-3 hover:text-ms-fg"
       >
-        <ChevronLeft aria-hidden className="h-4 w-4" />
+        <Icon name="left" size="sm" className="size-4" />
         {LIST_LABEL[section]}
       </Link>
 
       <PersonHeader
         person={person}
-        glance={tab === "overview"}
         busy={busy}
         onToggleFreeze={() => void bulk(person.is_frozen ? "unfreeze" : "freeze")}
         onOneTimePassword={() => setDialog("otp")}
         onRevoke={() => setDialog("revoke")}
         onDelete={() => setDialog("delete")}
-      />
-
-      <TabBar tabs={tabs} active={tab} onSelect={openTab} />
+      >
+        <TabBar tabs={tabs} active={tab} onSelect={openTab} person={person} />
+      </PersonHeader>
 
       {/* Only the open tab is rendered, so only its part is fetched. */}
       <div role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)} className="min-w-0 space-y-5">
@@ -228,7 +232,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         {tab === "groups" ? <GroupsSection person={person} onChanged={refresh} /> : null}
         {tab === "payments" && person.lcup ? <LcupSection lcup={person.lcup} /> : null}
         {tab === "attendance" ? <AttendanceSection id={id} /> : null}
-        {tab === "results" ? <ResultsSection id={id} section={section} /> : null}
+        {tab === "results" ? <ResultsSection id={id} section={section} target={person.sat.target_score} /> : null}
         {tab === "security" ? (
           <SecuritySection id={id} person={person} onOneTimePassword={() => setDialog("otp")} />
         ) : null}
@@ -266,7 +270,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
                 Their current password stops working and every device is signed out. They sign in once with their
                 phone number and its last four digits, then choose a new password straight away.
               </p>
-              <p className="rounded-lg bg-surface-2 px-3 py-2 font-medium text-foreground tabular-nums">
+              <p className="rounded-ms-ctl bg-ms-surface-2 px-3 py-2 font-medium text-ms-fg tabular-nums">
                 {formatPhone(person.phone)} · password {lastFour}
               </p>
               <p>It works for 14 days.</p>
@@ -284,7 +288,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
           body={
             <>
               <p>Tell {person.first_name || person.name} to sign in with:</p>
-              <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 rounded-lg bg-success-soft px-4 py-3 text-success-foreground">
+              <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 rounded-ms-ctl bg-ms-positive-soft px-4 py-3 text-ms-positive-fg">
                 <dt>Login</dt>
                 <dd className="font-semibold tabular-nums">{formatPhone(otpGiven.login)}</dd>
                 <dt>Password</dt>

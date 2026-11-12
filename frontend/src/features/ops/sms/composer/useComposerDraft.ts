@@ -46,11 +46,15 @@ function fromCampaign(c: Campaign): ComposerDraft {
 
 /**
  * What the composer opens with: `?from=<campaign>` is Repeat, the campaign's template, slots and
- * audience; `?student=<id>` is that one student; otherwise nothing yet.
+ * audience; `?student=<id>` is that one student; `?classroom=<id>` is that one class (the class page's
+ * "Message class"); `?audience=debtors` is every learner who owes (Finance › Debtors' "Remind all");
+ * otherwise nothing yet.
  */
 export function useComposerDraft(search: URLSearchParams) {
   const from = wholeId(search.get("from"));
   const student = wholeId(search.get("student"));
+  const classroom = wholeId(search.get("classroom"));
+  const debtors = !student && !classroom && search.get("audience") === "debtors";
   const source = useSmsCampaign(from, false);
   if (from) {
     return {
@@ -63,7 +67,12 @@ export function useComposerDraft(search: URLSearchParams) {
     };
   }
   const draft: ComposerDraft = {
-    who: { audience: student ? "student" : "group", ids: student ? [student] : [], filter: EMPTY_FILTER, excluded: [] },
+    who: {
+      audience: student ? "student" : debtors ? "debtors" : "group",
+      ids: student ? [student] : classroom ? [classroom] : [],
+      filter: EMPTY_FILTER,
+      excluded: [],
+    },
     message: { templateId: null, roles: [], texts: [] },
   };
   return { isPending: false, isError: false, refetch: source.refetch, draft };

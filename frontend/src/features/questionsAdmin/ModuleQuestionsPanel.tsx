@@ -7,18 +7,18 @@ import {
   DragOverlay,
   PointerSensor,
   closestCenter,
+  defaultDropAnimationSideEffects,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type DropAnimation,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
-  useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import {
   examsModuleQuestionsApi,
   useCreateModuleQuestion,
@@ -31,28 +31,31 @@ import {
 } from "@/features/questionsAdmin/hooks";
 import type { AdminModuleQuestion } from "@/features/questionsAdmin/types";
 import { DownloadQuestionsCsvButton } from "@/features/questionsAdmin/DownloadQuestionsCsvButton";
+import { OutlineGhost, OutlineLegend, OutlineRow, detectMidtermFormat, type MidtermFormat } from "@/features/questionsAdmin/ModuleOutline";
 import {
   bankSubjectForQuestionType,
   useSkillTaxonomyQuery,
 } from "@/features/questionsAdmin/skillTaxonomy";
 import { normalizeApiError } from "@/lib/apiError";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { Badge, Button, EmptyState, buttonClass, prefersReducedMotion } from "@/features/console/ui";
 import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  GripVertical,
-  ImagePlus,
-  Loader2,
-  Plus,
-  RefreshCcw,
-  Save,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
-import { StudioSpinner } from "@/components/studio/StudioSpinner";
+  CHOICE,
+  CHOICE_IDLE,
+  CHOICE_KEY,
+  CONTROL,
+  FIELD_LABEL,
+  HINT,
+  LETTER,
+  LETTER_IDLE,
+  LETTER_KEY,
+  PICK,
+  PICK_OFF,
+  PICK_ON,
+  SERIF_AREA,
+  hasMarkup,
+} from "@/features/questionsAdmin/questionLook";
+import { cn } from "@/lib/cn";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
 import { MathText } from "@/components/MathText";
 import {
@@ -69,9 +72,6 @@ import {
 import { getMidtermModuleProgress } from "@/lib/midtermRules";
 
 // ─── Draft type ──────────────────────────────────────────────────────────────
-
-/** Answer format shown in the midterm question editor instead of SAT types. */
-type MidtermFormat = "mc" | "numeric" | "short_text" | "true_false";
 
 type QuestionDraft = {
   question_type: "MATH" | "READING" | "WRITING";
@@ -90,17 +90,6 @@ type QuestionDraft = {
   /** Only meaningful when examKind === "MIDTERM". */
   midtermFormat: MidtermFormat;
 };
-
-/** Infer midterm answer format from existing question fields. */
-function detectMidtermFormat(q: AdminModuleQuestion): MidtermFormat {
-  if (q.is_math_input) return "numeric";
-  const a = (q.option_a ?? "").trim().toLowerCase();
-  const b = (q.option_b ?? "").trim().toLowerCase();
-  if (a === "true" && b === "false" && !(q.option_c ?? "").trim() && !(q.option_d ?? "").trim()) {
-    return "true_false";
-  }
-  return "mc";
-}
 
 function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string, examKind?: string): QuestionDraft {
   // Use existing type, but if it's wrong for the subject, fall back to the first allowed type.
@@ -126,10 +115,7 @@ function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string, examKi
   };
 }
 
-// Re-export canonical tokens under local aliases so the rest of this file
-// uses concise names, while the source of truth lives in studio/primitives.ts.
-const FIELD_LABEL = STUDIO_FIELD_LABEL;
-const INPUT = STUDIO_INPUT;
+// The question pane's look (PR 14b) lives in ./questionLook, shared with the question bank's editor (PR 16a).
 
 // ─── Question editor pane ────────────────────────────────────────────────────
 
@@ -335,698 +321,590 @@ function QuestionEditor({
     [],
   );
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Header — save button row (never scrolls) */}
-      <div className="shrink-0 border-b border-border bg-card">
-        <div className="flex items-center justify-between gap-3 px-5 py-3">
-          <div className="min-w-0">
-            <p className="text-xs font-extrabold text-foreground">Q{question.order + 1} — #{question.id}</p>
-            <p className="text-[10px] text-muted-foreground">Question editor</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {saveOk && (
-              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Saved
-              </span>
-            )}
+  // The answer key, read from the Correct answer field as it is typed: its choice card turns green.
+  const keyLetter = isMC ? draft.correct_answer.trim().toUpperCase() : "";
+
+  /** Upload / Replace / Remove / Cancel for one image slot — the same four as before, as console buttons. */
+  const imageControls = (imgKey: ImageKey, existing: string | null | undefined, words: { add: string; change: string; replace: string }, alt: string, size: "lg" | "sm") => {
+    const file = imageFiles[imgKey];
+    const cleared = clearImages[imgKey];
+    const thumb = size === "lg" ? "max-h-32 rounded-[12px]" : "max-h-16 rounded-[10px]";
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {existing && !cleared && !file && (
+          <>
+            <img src={existing} alt={alt} className={cn(thumb, "border border-ms-border bg-ms-card object-contain")} />
             <button
               type="button"
-              disabled={isBusy}
-              onClick={() => void handleSave()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              onClick={() => setClearImages((c) => ({ ...c, [imgKey]: true }))}
+              className={buttonClass({ variant: "ghost", size: "sm", className: "text-ms-critical-fg hover:text-ms-critical-fg" })}
             >
-              {update.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )}
-              Save
+              <Icon name="x" size="sm" /> Remove
             </button>
+          </>
+        )}
+        {file && (
+          <>
+            <img src={URL.createObjectURL(file)} alt="Preview" className={cn(thumb, "border border-ms-border bg-ms-card object-contain")} />
+            <button
+              type="button"
+              onClick={() => setImageFiles((f) => { const n = { ...f }; delete n[imgKey]; return n; })}
+              className={buttonClass({ variant: "ghost", size: "sm" })}
+            >
+              <Icon name="x" size="sm" /> Cancel
+            </button>
+          </>
+        )}
+        <label className={buttonClass({ variant: size === "lg" ? "secondary" : "ghost", size: "sm", className: "cursor-pointer" })}>
+          <Icon name="image" size="sm" />
+          {file ? words.change : existing && !cleared ? words.replace : words.add}
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) { setImageFiles((prev) => ({ ...prev, [imgKey]: f })); setClearImages((c) => ({ ...c, [imgKey]: false })); }
+            }}
+          />
+        </label>
+      </div>
+    );
+  };
+
+  const saveButton = (where: "top" | "bottom") => (
+    <Button
+      variant="primary"
+      size={where === "top" ? "sm" : "md"}
+      state={update.isPending ? "busy" : "idle"}
+      busyLabel={where === "bottom" ? "Saving…" : undefined}
+      disabled={del.isPending}
+      onClick={() => void handleSave()}
+    >
+      {where === "top" ? "Save" : "Save question"}
+    </Button>
+  );
+
+  const properties = (
+    <aside
+      aria-label="Properties"
+      className="flex shrink-0 flex-col gap-5 border-ms-border bg-ms-card p-[18px] max-lg:border-b lg:order-2 lg:w-[300px] lg:overflow-y-auto lg:border-l"
+    >
+      <h2 className="font-ms-display text-[16px] font-bold leading-6 text-ms-fg">Properties</h2>
+
+      {/* Type row — midterms use answer-format selector; SAT uses type + score */}
+      {isMidterm ? (
+        <>
+          <div>
+            <label htmlFor={`q${question.id}-format`} className={FIELD_LABEL}>Answer format</label>
+            <select
+              id={`q${question.id}-format`}
+              className={CONTROL}
+              value={draft.midtermFormat}
+              onChange={(e) => patch({ midtermFormat: e.target.value as MidtermFormat })}
+            >
+              <option value="mc">Multiple choice (A / B / C / D)</option>
+              <option value="numeric">Numeric (student enters a number)</option>
+              <option value="short_text">Short text (student types an answer)</option>
+              <option value="true_false">True / False</option>
+            </select>
           </div>
-        </div>
-      </div>
-
-      {/* Formula toolbar — always visible, never scrolls away */}
-      <div className="shrink-0 border-b border-border bg-card">
-        <div className="px-3 pt-2 pb-0">
-          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
-            Formula insert — click a symbol, then type in a field below
-          </p>
-        </div>
-        <FormulaToolbar onInsert={handleFormulaInsert} />
-      </div>
-
-      {/* Error banners */}
-      {(updateErr || deleteErr) && (
-        <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 shrink-0">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          <span>{updateErr ?? deleteErr}</span>
-        </div>
-      )}
-
-      {/* Scrollable form body */}
-      <div className="flex-1 overflow-y-auto">
-      <div className="space-y-5 p-5">
-
-        {/* Type row — midterms use answer-format selector; SAT uses type + score */}
-        {isMidterm ? (
-          <div className={isScale800Midterm ? "grid grid-cols-2 gap-4" : ""}>
+          {/* 800-point midterms weight questions onto the SAT curve. */}
+          {isScale800Midterm && (
             <div>
-              <label className={FIELD_LABEL}>Answer format</label>
+              <label htmlFor={`q${question.id}-score`} className={FIELD_LABEL}>Score weight</label>
               <select
-                className={INPUT}
-                value={draft.midtermFormat}
-                onChange={(e) => patch({ midtermFormat: e.target.value as MidtermFormat })}
+                id={`q${question.id}-score`}
+                className={CONTROL}
+                value={draft.score}
+                onChange={(e) => patch({ score: Number(e.target.value) })}
               >
-                <option value="mc">Multiple choice (A / B / C / D)</option>
-                <option value="numeric">Numeric (student enters a number)</option>
-                <option value="short_text">Short text (student types an answer)</option>
-                <option value="true_false">True / False</option>
+                <option value={10}>10 ball</option>
+                <option value={20}>20 ball</option>
+                <option value={40}>40 ball</option>
               </select>
             </div>
-            {/* 800-point midterms weight questions onto the SAT curve. */}
-            {isScale800Midterm && (
-              <div>
-                <label className={FIELD_LABEL}>Score weight</label>
-                <select
-                  className={INPUT}
-                  value={draft.score}
-                  onChange={(e) => patch({ score: Number(e.target.value) })}
-                >
-                  <option value={10}>10 ball</option>
-                  <option value={20}>20 ball</option>
-                  <option value={40}>40 ball</option>
-                </select>
+          )}
+        </>
+      ) : (
+        <>
+          <div>
+            <label htmlFor={`q${question.id}-type`} className={FIELD_LABEL}>Question type</label>
+            <select
+              id={`q${question.id}-type`}
+              className={CONTROL}
+              value={draft.question_type}
+              onChange={(e) => patchQuestionType(e.target.value as QuestionDraft["question_type"])}
+            >
+              {allowedTypes.map((t) => (
+                <option key={t} value={t}>
+                  {SAT_QUESTION_TYPE_LABEL[t as SatQuestionType] ?? t}
+                </option>
+              ))}
+            </select>
+            {/* SAT type mismatch warning */}
+            {typeWarning && (
+              <div className="mt-2 flex items-start gap-2 rounded-[10px] border border-ms-attention-line bg-ms-attention-soft px-2.5 py-2 text-ms-attention-fg">
+                <Icon name="warn" size="sm" className="mt-px size-3.5" />
+                <p className="text-[13px] font-medium leading-[18px]">{typeWarning}</p>
               </div>
             )}
           </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={FIELD_LABEL}>Question type</label>
-                <select
-                  className={INPUT}
-                  value={draft.question_type}
-                  onChange={(e) => patchQuestionType(e.target.value as QuestionDraft["question_type"])}
-                >
-                  {allowedTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {SAT_QUESTION_TYPE_LABEL[t as SatQuestionType] ?? t}
-                    </option>
-                  ))}
-                </select>
-                {/* SAT type mismatch warning */}
-                {typeWarning && (
-                  <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5">
-                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-                    <p className="text-[11px] font-semibold leading-snug text-amber-800">{typeWarning}</p>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className={FIELD_LABEL}>Score weight</label>
-                <select
-                  className={INPUT}
-                  value={draft.score}
-                  onChange={(e) => patch({ score: Number(e.target.value) })}
-                >
-                  <option value={10}>10 ball</option>
-                  <option value={20}>20 ball</option>
-                  <option value={40}>40 ball</option>
-                </select>
-              </div>
-            </div>
+          <div>
+            <label htmlFor={`q${question.id}-score`} className={FIELD_LABEL}>Score weight</label>
+            <select
+              id={`q${question.id}-score`}
+              className={CONTROL}
+              value={draft.score}
+              onChange={(e) => patch({ score: Number(e.target.value) })}
+            >
+              <option value={10}>10 ball</option>
+              <option value={20}>20 ball</option>
+              <option value={40}>40 ball</option>
+            </select>
+          </div>
 
-            {/* Math input toggle — SAT only */}
-            <div className="flex items-center gap-3">
+          {/* Math input toggle — SAT only */}
+          <label htmlFor="is_math_input" className="flex cursor-pointer select-none items-start gap-2.5 text-[14px] font-medium leading-5 text-ms-fg">
+            <span className="relative mt-px inline-flex size-[18px] shrink-0">
               <input
                 type="checkbox"
                 id="is_math_input"
                 checked={draft.is_math_input}
                 onChange={(e) => patch({ is_math_input: e.target.checked })}
-                className="h-4 w-4 rounded border-border accent-primary"
+                className="peer ms-transition size-[18px] cursor-pointer appearance-none rounded-[6px] border border-ms-border-strong bg-ms-card checked:border-ms-primary checked:bg-ms-primary"
               />
-              <label htmlFor="is_math_input" className="text-sm font-semibold text-foreground cursor-pointer select-none">
-                Student types numeric answer (no A/B/C/D choices)
-              </label>
-            </div>
-          </>
-        )}
+              <Icon name="check" size="sm" className="pointer-events-none absolute inset-0 m-auto size-3 text-white opacity-0 peer-checked:opacity-100" />
+            </span>
+            Student types numeric answer (no A/B/C/D choices)
+          </label>
+        </>
+      )}
 
-        {/* SAT skill, or the level's own topic — optional tag; feeds the student's report. */}
-        <div>
-          <label className={FIELD_LABEL}>{isTopicList ? "Topic (optional)" : "SAT skill (optional)"}</label>
-          <select
-            className={INPUT}
-            value={draft.skill ?? ""}
-            onChange={(e) => patch({ skill: e.target.value ? Number(e.target.value) : null })}
-          >
-            <option value="">Unclassified</option>
-            {skillIsOffList && (
-              <option value={String(draft.skill)}>
-                {question.skill_name || `Skill #${draft.skill}`}
-                {question.domain_name ? ` (${question.domain_name})` : ""}
-                {isTopicList ? " — not a topic of this list, pick one below" : ""}
-              </option>
-            )}
-            {taxonomyDomains.map((d) => (
-              <optgroup key={d.domain_id} label={d.domain}>
-                {d.skills.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {taxonomy.isLoading
-              ? "Loading skills…"
-              : taxonomy.isError
-              ? "Skill list unavailable — the question can still be saved unclassified."
-              : taxonomyDomains.length === 0
-              ? "No skills seeded for this subject yet."
-              : isTopicList
-              ? "The student sees this topic in their midterm report. Leave unclassified if unsure."
-              : "Groups the question in the student's error report. Leave unclassified if unsure."}
-          </p>
-        </div>
-
-        {/* Question text */}
-        <div>
-          <label className={FIELD_LABEL}>Question text (stem)</label>
-          <textarea
-            className={`${INPUT} min-h-[140px] leading-relaxed`}
-            placeholder="Enter the full question text here. LaTeX math is supported: \( x^2 + 1 = 0 \)"
-            value={draft.question_text}
-            onChange={(e) => patch({ question_text: e.target.value })}
-            onFocus={(e) => {
-              activeFieldRef.current = {
-                el: e.currentTarget,
-                setVal: (v) => patch({ question_text: v }),
-              };
-            }}
-          />
-          {draft.question_text.trim() && (
-            <div className="mt-2 rounded-xl border border-border/60 bg-surface-2/50 px-3 py-2.5">
-              <p className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                Preview
-              </p>
-              <MathText text={draft.question_text} className="text-sm leading-relaxed text-foreground" />
-            </div>
+      {/* SAT skill, or the level's own topic — optional tag; feeds the student's report. */}
+      <div>
+        <label htmlFor={`q${question.id}-skill`} className={FIELD_LABEL}>{isTopicList ? "Topic (optional)" : "SAT skill (optional)"}</label>
+        <select
+          id={`q${question.id}-skill`}
+          className={CONTROL}
+          value={draft.skill ?? ""}
+          onChange={(e) => patch({ skill: e.target.value ? Number(e.target.value) : null })}
+        >
+          <option value="">Unclassified</option>
+          {skillIsOffList && (
+            <option value={String(draft.skill)}>
+              {question.skill_name || `Skill #${draft.skill}`}
+              {question.domain_name ? ` (${question.domain_name})` : ""}
+              {isTopicList ? " — not a topic of this list, pick one below" : ""}
+            </option>
           )}
-          {/* Question image */}
-          <div className="mt-3">
-            <label className={FIELD_LABEL}>Question image (optional)</label>
-            <div className="mt-1 space-y-2">
-              {question.question_image && !clearImages.question && !imageFiles.question && (
-                <div className="flex items-center gap-2">
-                  <img src={question.question_image} alt="Question" className="max-h-32 rounded-xl border border-border object-contain" />
-                  <button
-                    type="button"
-                    onClick={() => setClearImages((c) => ({ ...c, question: true }))}
-                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
-                  >
-                    <X className="h-3 w-3" /> Remove
-                  </button>
-                </div>
-              )}
-              {imageFiles.question && (
-                <div className="flex items-center gap-2">
-                  <img src={URL.createObjectURL(imageFiles.question)} alt="Preview" className="max-h-32 rounded-xl border border-border object-contain" />
-                  <button
-                    type="button"
-                    onClick={() => setImageFiles((f) => { const n = { ...f }; delete n.question; return n; })}
-                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
-                  >
-                    <X className="h-3 w-3" /> Cancel
-                  </button>
-                </div>
-              )}
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/30 px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
-                <ImagePlus className="h-3.5 w-3.5" />
-                {imageFiles.question ? "Change image" : question.question_image && !clearImages.question ? "Replace image" : "Upload image"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) { setImageFiles((prev) => ({ ...prev, question: f })); setClearImages((c) => ({ ...c, question: false })); }
+          {taxonomyDomains.map((d) => (
+            <optgroup key={d.domain_id} label={d.domain}>
+              {d.skills.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className={HINT}>
+          {taxonomy.isLoading
+            ? "Loading skills…"
+            : taxonomy.isError
+            ? "Skill list unavailable — the question can still be saved unclassified."
+            : taxonomyDomains.length === 0
+            ? "No skills seeded for this subject yet."
+            : isTopicList
+            ? "The student sees this topic in their midterm report. Leave unclassified if unsure."
+            : "Groups the question in the student's error report. Leave unclassified if unsure."}
+        </p>
+      </div>
+    </aside>
+  );
+
+  return (
+    <div className="flex flex-col lg:h-full">
+      {/* Header — save button row (never scrolls) */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-ms-border bg-ms-card px-5 py-2.5">
+        <div className="min-w-0">
+          <p className="font-ms-mono text-[13px] font-semibold leading-5 text-ms-fg">Q{question.order + 1} — #{question.id}</p>
+          <p className="text-[12px] leading-4 text-ms-fg-3">Question editor</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {saveOk && (
+            <span className="animate-ms-fade-in flex items-center gap-1.5 text-[13px] font-semibold text-ms-positive-fg">
+              <Icon name="ok" size="sm" className="size-4" />
+              Saved
+            </span>
+          )}
+          {saveButton("top")}
+        </div>
+      </div>
+
+      {/* Formula toolbar — always visible, never scrolls away */}
+      <div className="shrink-0 border-b border-ms-border bg-ms-surface">
+        <p className="px-4 pt-2.5 text-ms-over uppercase text-ms-fg-3">Formula insert — click a symbol, then type in a field below</p>
+        <FormulaToolbar look="console" onInsert={handleFormulaInsert} />
+      </div>
+
+      {/* Error banners */}
+      {(updateErr || deleteErr) && (
+        <div className="shrink-0 px-5 pt-3">
+          <Notice tone="critical">{updateErr ?? deleteErr}</Notice>
+        </div>
+      )}
+
+      <div className="flex flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
+        {properties}
+
+        {/* The question as the student reads it: Georgia, on the page. */}
+        <div className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <div className="mx-auto flex max-w-[800px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10 lg:py-7">
+            {/* Question text */}
+            <div>
+              <label htmlFor={`q${question.id}-stem`} className={FIELD_LABEL}>Question text (stem)</label>
+              <div className="font-ms-serif">
+                <textarea
+                  id={`q${question.id}-stem`}
+                  className={cn(SERIF_AREA, "min-h-[140px] text-[17px] leading-7")}
+                  placeholder="Enter the full question text here. LaTeX math is supported: \( x^2 + 1 = 0 \)"
+                  value={draft.question_text}
+                  onChange={(e) => patch({ question_text: e.target.value })}
+                  onFocus={(e) => {
+                    activeFieldRef.current = {
+                      el: e.currentTarget,
+                      setVal: (v) => patch({ question_text: v }),
+                    };
                   }}
                 />
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Secondary prompt */}
-        <div>
-          <label className={FIELD_LABEL}>Stimulus / passage excerpt (optional)</label>
-          <textarea
-            className={`${INPUT} min-h-[80px] leading-relaxed`}
-            placeholder="Secondary text shown above the answer choices — e.g. a short passage excerpt or graph description."
-            value={draft.question_prompt}
-            onChange={(e) => patch({ question_prompt: e.target.value })}
-            onFocus={(e) => {
-              activeFieldRef.current = {
-                el: e.currentTarget,
-                setVal: (v) => patch({ question_prompt: v }),
-              };
-            }}
-          />
-        </div>
-
-        {/* MC choices — True/False mode shows static True/False labels; regular MC shows editable A-D */}
-        {isMC && draft.midtermFormat === "true_false" ? (
-          <div className="rounded-2xl border border-border bg-surface-2/30 p-4">
-            <p className={`${FIELD_LABEL} mb-3`}>Answer choices (True / False)</p>
-            <div className="flex gap-3">
-              {(["True", "False"] as const).map((label) => (
-                <div
-                  key={label}
-                  className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground"
-                >
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-2 text-xs font-extrabold text-muted-foreground">
-                    {label === "True" ? "A" : "B"}
-                  </span>
-                  {label}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : isMC && (
-          <div className="rounded-2xl border border-border bg-surface-2/30 p-4 space-y-3">
-            <p className={FIELD_LABEL}>Answer choices</p>
-            {(["a", "b", "c", "d"] as const).map((letter) => {
-              const key = `option_${letter}` as keyof QuestionDraft;
-              const val = draft[key] as string;
-              return (
-                <div key={letter} className="space-y-1">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-extrabold text-foreground">
-                      {letter.toUpperCase()}
-                    </div>
-                    <textarea
-                      className={`${INPUT} flex-1 resize-none overflow-hidden`}
-                      rows={1}
-                      placeholder={`Option ${letter.toUpperCase()}`}
-                      value={val}
-                      ref={(el) => {
-                        if (el) {
-                          el.style.height = "auto";
-                          el.style.height = `${el.scrollHeight}px`;
-                        }
-                      }}
-                      onChange={(e) => {
-                        patch({ [key]: e.target.value } as Partial<QuestionDraft>);
-                        e.currentTarget.style.height = "auto";
-                        e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
-                      }}
-                      onFocus={(e) => {
-                        activeFieldRef.current = {
-                          el: e.currentTarget,
-                          setVal: (v) => patch({ [key]: v } as Partial<QuestionDraft>),
-                        };
-                      }}
-                    />
-                  </div>
-                  {val.trim() && (
-                    <div className="ml-9 rounded-lg border border-border/50 bg-card px-2.5 py-1.5">
-                      <MathText text={val} className="text-xs leading-relaxed text-foreground" />
-                    </div>
-                  )}
-                  {/* Option image */}
-                  <div className="ml-9 flex flex-wrap items-center gap-2">
-                    {(() => {
-                      const imgKey = letter as ImageKey;
-                      const existingImg = question[`option_${letter}_image` as keyof typeof question] as string | null | undefined;
-                      const file = imageFiles[imgKey];
-                      const cleared = clearImages[imgKey];
-                      return (
-                        <>
-                          {existingImg && !cleared && !file && (
-                            <>
-                              <img src={existingImg} alt={`Option ${letter.toUpperCase()}`} className="max-h-16 rounded-lg border border-border object-contain" />
-                              <button
-                                type="button"
-                                onClick={() => setClearImages((c) => ({ ...c, [imgKey]: true }))}
-                                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
-                              >
-                                <X className="h-3 w-3" /> Remove
-                              </button>
-                            </>
-                          )}
-                          {file && (
-                            <>
-                              <img src={URL.createObjectURL(file)} alt="Preview" className="max-h-16 rounded-lg border border-border object-contain" />
-                              <button
-                                type="button"
-                                onClick={() => setImageFiles((f) => { const n = { ...f }; delete n[imgKey]; return n; })}
-                                className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
-                              >
-                                <X className="h-3 w-3" /> Cancel
-                              </button>
-                            </>
-                          )}
-                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-border bg-surface-2/30 px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
-                            <ImagePlus className="h-3 w-3" />
-                            {file ? "Change" : existingImg && !cleared ? "Replace" : "Add image"}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="sr-only"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) { setImageFiles((prev) => ({ ...prev, [imgKey]: f })); setClearImages((c) => ({ ...c, [imgKey]: false })); }
-                              }}
-                            />
-                          </label>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Correct answer — format-aware for midterms */}
-        <div>
-          {isMidterm && draft.midtermFormat === "true_false" ? (
-            <>
-              <label className={FIELD_LABEL}>Correct answer</label>
-              <div className="flex gap-3 mt-1">
-                {(["True", "False"] as const).map((label, i) => {
-                  const letter = i === 0 ? "A" : "B";
-                  const isSelected = draft.correct_answer.toUpperCase() === letter;
-                  return (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => patch({ correct_answer: letter })}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition-colors ${
-                        isSelected
-                          ? "border-emerald-400 bg-emerald-50 text-emerald-800"
-                          : "border-border bg-card text-foreground hover:bg-surface-2"
-                      }`}
-                    >
-                      {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />}
-                      {label}
-                    </button>
-                  );
-                })}
               </div>
-            </>
-          ) : isMidterm && draft.midtermFormat === "mc" ? (
-            <>
-              <label className={FIELD_LABEL}>Correct answer</label>
-              <div className="flex gap-2 mt-1">
-                {(["A", "B", "C", "D"] as const).map((letter) => {
-                  const isSelected = draft.correct_answer.toUpperCase() === letter;
-                  return (
-                    <button
-                      key={letter}
-                      type="button"
-                      onClick={() => patch({ correct_answer: letter })}
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl border text-sm font-extrabold transition-colors ${
-                        isSelected
-                          ? "border-emerald-400 bg-emerald-50 text-emerald-800"
-                          : "border-border bg-card text-foreground hover:bg-surface-2"
-                      }`}
-                    >
-                      {letter}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <>
-              <label className={FIELD_LABEL}>
-                {isMidterm && draft.midtermFormat === "numeric"
-                  ? "Correct answer (number — separate multiple valid forms with commas)"
-                  : isMidterm && draft.midtermFormat === "short_text"
-                  ? "Correct answer (text — case-insensitive, comma-separated alternatives)"
-                  : isMC
-                  ? "Correct answer (A, B, C, or D)"
-                  : "Correct answer (comma-separated for multiple valid forms, e.g. 2/3, 0.667)"}
-              </label>
-              <input
-                className={INPUT}
-                placeholder={
-                  isMidterm && draft.midtermFormat === "numeric"
-                    ? "e.g. 42 or 2/3, 0.667"
-                    : isMidterm && draft.midtermFormat === "short_text"
-                    ? "e.g. Paris or paris"
-                    : isMC
-                    ? "A"
-                    : "e.g. 42 or 2/3, 0.666, 0.667"
-                }
-                value={draft.correct_answer}
-                onChange={(e) => patch({ correct_answer: e.target.value })}
-                onFocus={(e) => {
-                  activeFieldRef.current = {
-                    el: e.currentTarget,
-                    setVal: (v) => patch({ correct_answer: v }),
-                  };
-                }}
-              />
-              {!isMidterm && isMC && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Must exactly match one of the choice letters above (case-insensitive).
-                </p>
+              {draft.question_text.trim() && (
+                <div className="animate-ms-fade-in mt-2.5 rounded-ms-ctl border border-ms-border bg-ms-card px-4 py-3">
+                  <p className="mb-1 text-ms-over uppercase text-ms-fg-3">Preview</p>
+                  <MathText text={draft.question_text} className="font-ms-serif text-[17px] leading-7 text-ms-fg" />
+                </div>
               )}
-            </>
-          )}
-        </div>
-
-        {/* Explanation */}
-        <div>
-          <label className={FIELD_LABEL}>Explanation / solution rationale</label>
-          <textarea
-            className={`${INPUT} min-h-[100px] leading-relaxed`}
-            placeholder="Explain why the correct answer is right. Students see this after the test."
-            value={draft.explanation}
-            onChange={(e) => patch({ explanation: e.target.value })}
-            onFocus={(e) => {
-              activeFieldRef.current = {
-                el: e.currentTarget,
-                setVal: (v) => patch({ explanation: v }),
-              };
-            }}
-          />
-        </div>
-
-        {/* Save button (bottom) */}
-        <div className="flex items-center justify-between border-t border-border pt-4">
-          <button
-            type="button"
-            disabled={isBusy}
-            onClick={() => void handleSave()}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {update.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {update.isPending ? "Saving…" : "Save question"}
-          </button>
-
-          {/* Delete */}
-          {confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-red-700">Delete this question?</span>
-              <button
-                type="button"
-                disabled={del.isPending}
-                onClick={() => void handleDelete()}
-                className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-              >
-                {del.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes, delete"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
-              >
-                Cancel
-              </button>
+              {/* Question image */}
+              <div className="mt-4">
+                <p className={FIELD_LABEL}>Question image (optional)</p>
+                {imageControls("question", question.question_image, { add: "Upload image", change: "Change image", replace: "Replace image" }, "Question", "lg")}
+              </div>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
-            </button>
-          )}
+
+            {/* Secondary prompt */}
+            <div>
+              <label htmlFor={`q${question.id}-prompt`} className={FIELD_LABEL}>Stimulus / passage excerpt (optional)</label>
+              <div className="font-ms-serif">
+                <textarea
+                  id={`q${question.id}-prompt`}
+                  className={cn(SERIF_AREA, "min-h-[80px] text-[16px] leading-[26px]")}
+                  placeholder="Secondary text shown above the answer choices — e.g. a short passage excerpt or graph description."
+                  value={draft.question_prompt}
+                  onChange={(e) => patch({ question_prompt: e.target.value })}
+                  onFocus={(e) => {
+                    activeFieldRef.current = {
+                      el: e.currentTarget,
+                      setVal: (v) => patch({ question_prompt: v }),
+                    };
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* MC choices — True/False mode shows static True/False labels; regular MC shows editable A-D */}
+            {isMC && draft.midtermFormat === "true_false" ? (
+              <div className="flex flex-col gap-2.5">
+                <p className={FIELD_LABEL}>Answer choices (True / False)</p>
+                <div className="flex gap-3">
+                  {(["True", "False"] as const).map((label) => {
+                    const letter = label === "True" ? "A" : "B";
+                    const isKey = keyLetter === letter;
+                    return (
+                      <div key={label} className={cn(CHOICE, "flex-1 items-center gap-3", isKey ? CHOICE_KEY : CHOICE_IDLE)}>
+                        <span className={cn(LETTER, isKey ? LETTER_KEY : LETTER_IDLE)}>
+                          {isKey ? <Icon name="check" size="sm" className="size-4" /> : letter}
+                          {isKey ? <span className="sr-only">{letter}</span> : null}
+                        </span>
+                        <span className="font-ms-serif text-[16px] leading-6 text-ms-fg">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : isMC && (
+              <div className="flex flex-col gap-2.5">
+                <p className={FIELD_LABEL}>Answer choices</p>
+                {(["a", "b", "c", "d"] as const).map((letter) => {
+                  const key = `option_${letter}` as keyof QuestionDraft;
+                  const val = draft[key] as string;
+                  const L = letter.toUpperCase();
+                  const isKey = keyLetter === L;
+                  return (
+                    <div key={letter} className={cn(CHOICE, "flex-col focus-within:border-ms-primary", isKey ? CHOICE_KEY : CHOICE_IDLE)}>
+                      <div className="flex items-start gap-3">
+                        <span className={cn(LETTER, isKey ? LETTER_KEY : LETTER_IDLE)}>
+                          {isKey ? <Icon name="check" size="sm" className="size-4" /> : L}
+                          {isKey ? <span className="sr-only">{L}</span> : null}
+                        </span>
+                        <div className="min-w-0 flex-1 font-ms-serif">
+                          <textarea
+                            className="min-h-7 w-full resize-none overflow-hidden bg-transparent py-0.5 text-[16px] leading-6 text-ms-fg outline-none placeholder:text-ms-fg-3"
+                            rows={1}
+                            aria-label={`Option ${L}`}
+                            placeholder={`Option ${L}`}
+                            value={val}
+                            ref={(el) => {
+                              if (el) {
+                                el.style.height = "auto";
+                                el.style.height = `${el.scrollHeight}px`;
+                              }
+                            }}
+                            onChange={(e) => {
+                              patch({ [key]: e.target.value } as Partial<QuestionDraft>);
+                              e.currentTarget.style.height = "auto";
+                              e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
+                            }}
+                            onFocus={(e) => {
+                              activeFieldRef.current = {
+                                el: e.currentTarget,
+                                setVal: (v) => patch({ [key]: v } as Partial<QuestionDraft>),
+                              };
+                            }}
+                          />
+                        </div>
+                        {isKey ? (
+                          <Badge tone="positive" className="mt-0.5 shrink-0">
+                            Answer key · {L}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {/* The preview only when the choice carries math or markup (\\( … \\), $, **, <u>): a plain
+                          choice already reads as itself in the card. */}
+                      {hasMarkup(val) && (
+                        <div className="ml-10 mt-2 rounded-[10px] bg-ms-surface px-3 py-2">
+                          <MathText text={val} className="font-ms-serif text-[15px] leading-6 text-ms-fg" />
+                        </div>
+                      )}
+                      {/* Option image */}
+                      <div className="ml-10 mt-2">
+                        {imageControls(
+                          letter as ImageKey,
+                          question[`option_${letter}_image` as keyof typeof question] as string | null | undefined,
+                          { add: "Add image", change: "Change", replace: "Replace" },
+                          `Option ${L}`,
+                          "sm",
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Correct answer — format-aware for midterms */}
+            <div>
+              {isMidterm && draft.midtermFormat === "true_false" ? (
+                <>
+                  <p className={FIELD_LABEL}>Correct answer</p>
+                  <div className="flex gap-3">
+                    {(["True", "False"] as const).map((label, i) => {
+                      const letter = i === 0 ? "A" : "B";
+                      const isSelected = draft.correct_answer.toUpperCase() === letter;
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => patch({ correct_answer: letter })}
+                          className={cn(PICK, "h-11 flex-1 gap-2 text-[15px]", isSelected ? PICK_ON : PICK_OFF)}
+                        >
+                          {isSelected && <Icon name="ok" size="sm" className="size-4" />}
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : isMidterm && draft.midtermFormat === "mc" ? (
+                <>
+                  <p className={FIELD_LABEL}>Correct answer</p>
+                  <div className="flex gap-2">
+                    {(["A", "B", "C", "D"] as const).map((letter) => {
+                      const isSelected = draft.correct_answer.toUpperCase() === letter;
+                      return (
+                        <button
+                          key={letter}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => patch({ correct_answer: letter })}
+                          className={cn(PICK, "size-11 text-[15px]", isSelected ? PICK_ON : PICK_OFF)}
+                        >
+                          {letter}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label htmlFor={`q${question.id}-answer`} className={FIELD_LABEL}>
+                    {isMidterm && draft.midtermFormat === "numeric"
+                      ? "Correct answer (number — separate multiple valid forms with commas)"
+                      : isMidterm && draft.midtermFormat === "short_text"
+                      ? "Correct answer (text — case-insensitive, comma-separated alternatives)"
+                      : isMC
+                      ? "Correct answer (A, B, C, or D)"
+                      : "Correct answer (comma-separated for multiple valid forms, e.g. 2/3, 0.667)"}
+                  </label>
+                  <input
+                    id={`q${question.id}-answer`}
+                    className={CONTROL}
+                    placeholder={
+                      isMidterm && draft.midtermFormat === "numeric"
+                        ? "e.g. 42 or 2/3, 0.667"
+                        : isMidterm && draft.midtermFormat === "short_text"
+                        ? "e.g. Paris or paris"
+                        : isMC
+                        ? "A"
+                        : "e.g. 42 or 2/3, 0.666, 0.667"
+                    }
+                    value={draft.correct_answer}
+                    onChange={(e) => patch({ correct_answer: e.target.value })}
+                    onFocus={(e) => {
+                      activeFieldRef.current = {
+                        el: e.currentTarget,
+                        setVal: (v) => patch({ correct_answer: v }),
+                      };
+                    }}
+                  />
+                  {!isMidterm && isMC && (
+                    <p className={HINT}>
+                      Must exactly match one of the choice letters above (case-insensitive).
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Explanation */}
+            <div>
+              <label htmlFor={`q${question.id}-explanation`} className={FIELD_LABEL}>Explanation / solution rationale</label>
+              <div className="font-ms-serif">
+                <textarea
+                  id={`q${question.id}-explanation`}
+                  className={cn(SERIF_AREA, "min-h-[100px] text-[16px] leading-[26px]")}
+                  placeholder="Explain why the correct answer is right. Students see this after the test."
+                  value={draft.explanation}
+                  onChange={(e) => patch({ explanation: e.target.value })}
+                  onFocus={(e) => {
+                    activeFieldRef.current = {
+                      el: e.currentTarget,
+                      setVal: (v) => patch({ explanation: v }),
+                    };
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Save button (bottom) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ms-line pt-5">
+              {saveButton("bottom")}
+
+              {/* Delete */}
+              {confirmDelete ? (
+                <div className="animate-ms-fade-in flex flex-wrap items-center gap-2">
+                  <span className="text-[14px] font-semibold text-ms-critical-fg">Delete this question?</span>
+                  <Button variant="danger" size="sm" state={del.isPending ? "busy" : "idle"} onClick={() => void handleDelete()}>
+                    Yes, delete
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="trash"
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-ms-critical-fg hover:text-ms-critical-fg"
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
       </div>
     </div>
   );
 }
 
-// ─── Sortable question row ────────────────────────────────────────────────────
+// ─── The frame's pieces ──────────────────────────────────────────────────────
 
-function SortableQRow({
-  q,
-  index,
-  selected,
-  reordering,
-  hasTypeMismatch,
-  examKind,
-  onSelect,
+type NoticeTone = "positive" | "attention" | "critical";
+
+const NOTICE: Record<NoticeTone, { box: string; icon: IconName }> = {
+  positive: { box: "border-ms-positive-line bg-ms-positive-soft text-ms-positive-fg", icon: "ok" },
+  attention: { box: "border-ms-attention-line bg-ms-attention-soft text-ms-attention-fg", icon: "warn" },
+  critical: { box: "border-ms-critical-line bg-ms-critical-soft text-ms-critical-fg", icon: "alert" },
+};
+
+/** A line under the top bar in its verdict's soft tone; the words are the panel's own. */
+function Notice({
+  tone,
+  title,
+  children,
+  onDismiss,
 }: {
-  q: AdminModuleQuestion;
-  index: number;
-  selected: boolean;
-  reordering: boolean;
-  /** True when this question's type is wrong for the section subject */
-  hasTypeMismatch?: boolean;
-  examKind?: string;
-  onSelect: () => void;
+  tone: NoticeTone;
+  title?: string;
+  children: React.ReactNode;
+  onDismiss?: () => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: q.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 10 : undefined,
-  };
-
-  const typeColor: Record<string, string> = {
-    MATH: "bg-purple-100 text-purple-700",
-    READING: "bg-blue-100 text-blue-700",
-    WRITING: "bg-teal-100 text-teal-700",
-  };
-  const color = typeColor[q.question_type] ?? "bg-surface-2 text-muted-foreground";
-  const isMidtermRow = examKind === "MIDTERM";
-
-  // For midterm rows, show the answer format instead of SAT type.
-  const midtermFormatLabel = (() => {
-    if (!isMidtermRow) return null;
-    const fmt = detectMidtermFormat(q);
-    if (fmt === "true_false") return { label: "T/F", color: "bg-violet-100 text-violet-700" };
-    if (fmt === "numeric") return { label: "Num", color: "bg-amber-100 text-amber-700" };
-    if (fmt === "short_text") return { label: "Text", color: "bg-teal-100 text-teal-700" };
-    return { label: "MC", color: "bg-blue-100 text-blue-700" };
-  })();
-
+  const look = NOTICE[tone];
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      className={`group flex w-full items-start gap-1.5 rounded-xl border transition-colors ${
-        selected
-          ? "border-primary/40 bg-primary/8 ring-1 ring-primary/20"
-          : "border-border bg-card hover:border-primary/20 hover:bg-surface-2/60"
-      } ${reordering ? "pointer-events-none" : ""}`}
+      role={tone === "positive" ? "status" : "alert"}
+      className={cn("animate-ms-fade-in flex items-start gap-2.5 rounded-ms-ctl border px-3.5 py-2.5 text-[14px] leading-5", look.box)}
     >
-      {/* Drag handle */}
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        className="flex shrink-0 cursor-grab items-center self-stretch rounded-l-xl px-1.5 text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing transition-colors focus:outline-none"
-        aria-label="Drag to reorder"
-        tabIndex={-1}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </button>
-
-      {/* Row body — clicking selects the question */}
-      <button
-        type="button"
-        onClick={onSelect}
-        className="min-w-0 flex-1 py-3 pr-3 text-left"
-      >
-        <div className="mb-1 flex items-center gap-1.5">
-          <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-muted-foreground">
-            Q{index + 1}
-          </span>
-          {midtermFormatLabel ? (
-            <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${midtermFormatLabel.color}`}>
-              {midtermFormatLabel.label}
-            </span>
-          ) : (
-            <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${color}`}>
-              {q.question_type}
-            </span>
-          )}
-          {!isMidtermRow && q.is_math_input && (
-            <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700">
-              INPUT
-            </span>
-          )}
-          {!isMidtermRow && (
-            <span className="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-emerald-700">
-              {q.score ?? 10}b
-            </span>
-          )}
-          {hasTypeMismatch && (
-            <span title="Wrong question type for this section">
-              <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
-            </span>
-          )}
-        </div>
-        <p className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">
-          {q.question_text?.trim() || <em className="text-muted-foreground/50">No text yet</em>}
-        </p>
-      </button>
+      <Icon name={look.icon} size="sm" className="mt-0.5" />
+      <div className="min-w-0 flex-1">
+        {title ? <p className="font-semibold">{title}</p> : null}
+        <div className={title ? "mt-0.5" : undefined}>{children}</div>
+      </div>
+      {onDismiss ? (
+        <button type="button" onClick={onDismiss} aria-label="Dismiss" className="ms-transition -m-1 rounded-[8px] p-1 opacity-70 hover:opacity-100">
+          <Icon name="x" size="sm" />
+        </button>
+      ) : null}
     </div>
   );
 }
 
-/** Ghost card shown under the pointer during a drag */
-function DragGhostRow({ q, index }: { q: AdminModuleQuestion; index: number }) {
-  const typeColor: Record<string, string> = {
-    MATH: "bg-purple-100 text-purple-700",
-    READING: "bg-blue-100 text-blue-700",
-    WRITING: "bg-teal-100 text-teal-700",
-  };
-  const color = typeColor[q.question_type] ?? "bg-surface-2 text-muted-foreground";
+/** The section's subject in its colour, as the Builder shows it everywhere. */
+const SUBJECT_CHIP: Record<string, { icon: IconName; look: string; label: string }> = {
+  MATH: { icon: "sigma", look: "bg-ms-math-soft text-ms-math-fg", label: "Mathematics" },
+  READING_WRITING: { icon: "book", look: "bg-ms-rw-soft text-ms-rw-fg", label: "Reading & Writing" },
+};
 
-  return (
-    <div className="flex w-72 items-start gap-1.5 rounded-xl border border-primary/40 bg-card shadow-xl ring-1 ring-primary/20">
-      <div className="flex shrink-0 cursor-grabbing items-center self-stretch rounded-l-xl px-1.5 text-muted-foreground">
-        <GripVertical className="h-3.5 w-3.5" />
-      </div>
-      <div className="min-w-0 flex-1 py-3 pr-3">
-        <div className="mb-1 flex items-center gap-1.5">
-          <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-muted-foreground">
-            Q{index + 1}
-          </span>
-          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${color}`}>
-            {q.question_type}
-          </span>
-        </div>
-        <p className="line-clamp-1 text-xs font-semibold leading-snug text-foreground">
-          {q.question_text?.trim() || <em className="text-muted-foreground/50">No text yet</em>}
-        </p>
-      </div>
-    </div>
-  );
-}
+const EYEBROW = "text-ms-over uppercase text-ms-fg-3";
+
+/** "Others slide 200 ms", and the drop settles on the same curve; nothing moves for reduced motion. */
+const DROP: DropAnimation = {
+  duration: 200,
+  easing: "cubic-bezier(.2,.8,.2,1)",
+  sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: "0" } } }),
+};
 
 // ─── Main panel ──────────────────────────────────────────────────────────────
 
+/**
+ * The module editor (design handoff v0.3, PR 14a): the whole window, no sidebar — a top bar with the way
+ * back, the module and its actions; the outline on the left (the module's health, then every question,
+ * dragged or ⌥↑ / ⌥↓ to reorder); the question open in the middle. The Builder's corners and colours.
+ */
 export default function ModuleQuestionsPanel(props: {
   testId: number;
   moduleId: number;
@@ -1050,7 +928,7 @@ export default function ModuleQuestionsPanel(props: {
   /** Backend adapter. Default = exams practice-test API; full mocks pass a mocks adapter. */
   api?: ModuleQuestionsApi;
 }) {
-  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale, midtermModuleQuestionLimit, midtermLevel } = props;
+  const { testId, moduleId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale, midtermModuleQuestionLimit, midtermLevel } = props;
   const api = props.api ?? examsModuleQuestionsApi;
 
   const {
@@ -1126,6 +1004,8 @@ export default function ModuleQuestionsPanel(props: {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
+  // Read once: the lift, the slide and the drop all stand still for someone who asked for less motion.
+  const [reduceMotion] = React.useState(prefersReducedMotion);
 
   const [activeId, setActiveId] = React.useState<number | null>(null);
   const activeQ = activeId != null
@@ -1152,8 +1032,38 @@ export default function ModuleQuestionsPanel(props: {
       const newOrder = arrayMove(localOrder, fromIdx, toIdx);
       setLocalOrder(newOrder);
 
-      // Single atomic bulk-reorder: one round-trip, one invalidation.
-      await reorderBulk.mutateAsync(newOrder);
+      // Single atomic bulk-reorder: one round-trip, one invalidation. A failure shows as the reorder
+      // notice and the list goes back to the server's order.
+      await reorderBulk.mutateAsync(newOrder).catch(() => undefined);
+    },
+    [localOrder, reorderBulk],
+  );
+
+  // ── ⌥↑ / ⌥↓: the drag without a mouse ───────────────────────────────────
+  // The same optimistic move and the same single save; the moved row keeps the keyboard focus (the
+  // browser drops it when React moves the node) and a polite line says where it went.
+  const rowRefs = React.useRef(new Map<number, HTMLButtonElement>());
+  const focusAfterMove = React.useRef<number | null>(null);
+  const [moveNote, setMoveNote] = React.useState("");
+
+  React.useEffect(() => {
+    const id = focusAfterMove.current;
+    if (id == null) return;
+    focusAfterMove.current = null;
+    rowRefs.current.get(id)?.focus();
+  }, [orderedQuestions]);
+
+  const handleMove = React.useCallback(
+    (id: number, delta: -1 | 1) => {
+      if (reorderBulk.isPending) return;
+      const fromIdx = localOrder.indexOf(id);
+      const toIdx = fromIdx + delta;
+      if (fromIdx === -1 || toIdx < 0 || toIdx >= localOrder.length) return;
+      const newOrder = arrayMove(localOrder, fromIdx, toIdx);
+      focusAfterMove.current = id;
+      setLocalOrder(newOrder);
+      setMoveNote(`Q${fromIdx + 1} moved to position ${toIdx + 1} of ${newOrder.length}.`);
+      void reorderBulk.mutateAsync(newOrder).catch(() => undefined);
     },
     [localOrder, reorderBulk],
   );
@@ -1208,56 +1118,155 @@ export default function ModuleQuestionsPanel(props: {
     }
   };
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <Link
-            href={backHref ?? `/builder/pastpapers`}
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors shrink-0"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            {backLabel ?? "Past papers"}
-          </Link>
-          {packId && packTitle ? (
-            <>
-              <span className="text-muted-foreground/30">/</span>
-              <span className="text-sm font-semibold text-muted-foreground truncate max-w-[160px]" title={packTitle}>
-                {packTitle}
+  const subject = sectionSubject ? SUBJECT_CHIP[sectionSubject] : undefined;
+  const subjectWord = sectionSubject === "MATH" ? "Mathematics" : "Reading & Writing";
+  const countTone = hasQuestionLimit
+    ? progress.complete
+      ? "font-semibold text-ms-positive-fg"
+      : progress.over
+        ? "font-semibold text-ms-critical-fg"
+        : "text-ms-fg-2"
+    : "text-ms-fg-2";
+
+  // ── The module card at the top of the outline ───────────────────────────
+  const showPoints = !isLoading && questions.length > 0;
+  const showHealth = isSat && !isLoading;
+  const points = (() => {
+    if (!showPoints) return null;
+    if (isMidtermPanel) {
+      const is800 = scoringScale === "SCALE_800";
+      return (
+        // The scale's name takes the card's whole width; the count, the rule and the maximum sit under it.
+        <div className="flex flex-col gap-2">
+          <p className={EYEBROW}>Midterm scoring · {is800 ? "800-point (SAT scaled)" : "100-point (percentage)"}</p>
+          <div className="flex items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-ms-ctl bg-ms-primary-soft text-[15px] font-bold text-ms-primary-text">
+              {is800 ? "Σ" : "%"}
+            </span>
+            <p className="min-w-0 flex-1 text-[14px] font-semibold leading-5 text-ms-fg">
+              {questions.length} question{questions.length !== 1 ? "s" : ""} ·{" "}
+              <span className="font-normal text-ms-fg-2">
+                {is800 ? `${totalScore} pts → SAT 200–800 curve` : `score = correct ÷ ${questions.length} × 100`}
               </span>
-              <span className="text-muted-foreground/30">/</span>
-              <div className="min-w-0">
-                <p className="text-sm font-extrabold text-foreground leading-tight">
-                  {sectionSubject === "MATH" ? "Mathematics" : sectionSubject === "READING_WRITING" ? "Reading & Writing" : `Test #${testId}`}
-                  {moduleOrder ? ` · ${moduleOrder}` : ` · Module #${moduleId}`}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {isLoading ? "Loading…" : (
-                    hasQuestionLimit
-                      ? <span className={progress.complete ? "text-emerald-600 font-bold" : progress.over ? "text-red-600 font-bold" : ""}>
-                          {progress.label} questions
-                        </span>
-                      : `${questions.length} question${questions.length !== 1 ? "s" : ""}`
-                  )}
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <span className="text-muted-foreground/30">/</span>
-              <div>
-                <p className="text-sm font-extrabold text-foreground">
-                  Test #{testId} · Module #{moduleId}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {isLoading ? "Loading…" : `${questions.length} question${questions.length !== 1 ? "s" : ""}`}
-                </p>
-              </div>
-            </>
-          )}
+            </p>
+            <div className="shrink-0 text-right">
+              <p className={EYEBROW}>Max</p>
+              <p className="font-ms-display text-[20px] font-bold leading-7 tabular-nums text-ms-primary-text">{is800 ? 800 : 100}</p>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+      );
+    }
+    const moduleCap = isSat && sectionSubject
+      ? SAT_MODULE_SCORE_CAP[sectionSubject as SatSubject]?.[moduleOrderNum as 1 | 2] ?? null
+      : null;
+    const remainingPts = moduleCap !== null ? Math.max(0, moduleCap - totalScore) : null;
+    return (
+      <div className="flex items-center gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-ms-ctl bg-ms-primary-soft text-ms-primary-text">
+          <Icon name="sigma" size="sm" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={EYEBROW}>Module points</p>
+          <p className="font-ms-display text-[20px] font-bold leading-7 tabular-nums text-ms-fg">
+            {totalScore}
+            {moduleCap !== null && <span className="text-[14px] font-semibold text-ms-fg-3"> / {moduleCap}</span>}
+          </p>
+        </div>
+        {remainingPts !== null && remainingPts > 0 && (
+          <div className="shrink-0 text-right">
+            <p className="text-ms-over uppercase text-ms-attention-fg">Remaining</p>
+            <p className="text-[18px] font-bold leading-7 tabular-nums text-ms-attention-fg">
+              +{remainingPts}
+              <span className="ml-1 text-[11px] font-semibold">pts</span>
+            </p>
+          </div>
+        )}
+        {remainingPts !== null && remainingPts <= 0 && <p className="shrink-0 text-ms-over uppercase text-ms-positive-fg">✓ Complete</p>}
+      </div>
+    );
+  })();
+
+  const health = showHealth ? (
+    <div className={cn("flex flex-col gap-2", points && "border-t border-ms-line pt-3")}>
+      <p className={EYEBROW}>
+        {sectionSubject ? SAT_SUBJECT_LABEL[sectionSubject as keyof typeof SAT_SUBJECT_LABEL] ?? sectionSubject : "Section"} · {moduleOrder ?? `Module ${moduleOrderNum}`}
+      </p>
+      {/* The bar and the count it measures, side by side. */}
+      <div className="flex items-center gap-3">
+        {progress.required !== null && (
+          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-ms-surface-3">
+            <div
+              className={cn("ms-transition h-full rounded-full", progress.complete ? "bg-ms-positive" : progress.over ? "bg-ms-critical" : "bg-ms-primary")}
+              style={{ width: `${Math.min((progress.fraction ?? 0) * 100, 100)}%` }}
+            />
+          </div>
+        )}
+        <span className={cn("ml-auto shrink-0 text-[13px] font-semibold tabular-nums", progress.complete ? "text-ms-positive-fg" : progress.over ? "text-ms-critical-fg" : "text-ms-fg")}>
+          {progress.label}
+          {progress.required !== null && " questions"}
+        </span>
+      </div>
+      {progress.required !== null && !progress.complete && (
+        <p className="text-[13px] leading-[18px] text-ms-fg-2">
+          {progress.over
+            ? `${progress.current - (progress.required ?? 0)} question(s) over the required ${progress.required}. Remove extras before publishing.`
+            : `${(progress.required ?? 0) - progress.current} more question(s) needed to reach the required ${progress.required}.`}
+        </p>
+      )}
+      {typeMismatchIds.size > 0 && (
+        <div className="flex items-start gap-2 rounded-[10px] border border-ms-attention-line bg-ms-attention-soft px-2.5 py-2 text-ms-attention-fg">
+          <Icon name="warn" size="sm" className="mt-px size-3.5" />
+          <p className="text-[13px] font-medium leading-[18px]">
+            {typeMismatchIds.size} question{typeMismatchIds.size !== 1 ? "s have" : " has"} the wrong type for this{" "}
+            {subjectWord} module.
+            Allowed types: {allowedTypesForSubject.join(", ")}.
+          </p>
+        </div>
+      )}
+      {progress.complete && typeMismatchIds.size === 0 && (
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-ms-positive-fg">
+          <Icon name="ok" size="sm" className="size-3.5" />
+          Module is structurally valid — ready to publish.
+        </p>
+      )}
+    </div>
+  ) : null;
+
+  return (
+    <div className="ms flex min-h-dvh flex-col lg:h-dvh" data-ms-temp="builder">
+      {/* Top bar: the way back, the module, its actions (Shell board, "Builder editor · full-screen"). */}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-ms-border bg-ms-card px-3 py-2.5 sm:px-4 lg:min-h-16 lg:px-5">
+        <Link href={backHref ?? `/builder/pastpapers`} className={buttonClass({ variant: "ghost", size: "sm", className: "-ml-1" })}>
+          <Icon name="left" size="sm" />
+          {backLabel ?? "Past papers"}
+        </Link>
+        <span aria-hidden className="h-6 w-px shrink-0 bg-ms-border-strong max-sm:hidden" />
+        {/* On a phone the module takes its own line under the way back, and the actions the next. */}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 max-sm:basis-full">
+          {packTitle ? (
+            <span className="max-w-[280px] truncate text-[14px] font-medium text-ms-fg-2" title={packTitle}>
+              {packTitle}
+            </span>
+          ) : null}
+          {subject ? (
+            <span className={cn("inline-flex h-6 shrink-0 items-center gap-1 rounded-ms-chip px-2 text-[12px] font-semibold", subject.look)}>
+              <Icon name={subject.icon} size="sm" className="size-3.5" />
+              {subject.label}
+            </span>
+          ) : (
+            <span className="text-[14px] font-medium text-ms-fg-2">Test #{testId}</span>
+          )}
+          <h1 className="font-ms-display text-[17px] font-bold leading-6 tracking-[-0.01em] text-ms-fg">{moduleOrder ?? `Module #${moduleId}`}</h1>
+          <span className={cn("text-[13px] tabular-nums", countTone)}>
+            {isLoading
+              ? "Loading…"
+              : hasQuestionLimit
+                ? `${progress.label} questions`
+                : `${questions.length} question${questions.length !== 1 ? "s" : ""}`}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <input
             ref={csvInputRef}
             type="file"
@@ -1265,263 +1274,104 @@ export default function ModuleQuestionsPanel(props: {
             className="hidden"
             onChange={(e) => void handleCsvFile(e.target.files?.[0] ?? null)}
           />
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="upload"
+            state={importCsv.isPending ? "busy" : "idle"}
             onClick={() => csvInputRef.current?.click()}
-            disabled={importCsv.isPending || atCapacity}
+            disabled={atCapacity}
             title={atCapacity ? "This module is already full." : "Append questions from a CSV file"}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
           >
-            {importCsv.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Upload className="h-3.5 w-3.5" />
-            )}
             Import CSV
-          </button>
+          </Button>
           {/* The WHOLE test, not this module — a reviewer wants one file with every
               question and its key. Renders only for super_admin; the endpoint 403s for
               anyone else. */}
           <DownloadQuestionsCsvButton
+            look="console"
             fetchCsv={() => api.exportCsv(testId)}
             fallbackName={`${api.source}-${testId}-questions`}
             title="Download every question on this test, with its answer key"
           />
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            disabled={isFetching}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCcw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+          <Button variant="secondary" size="sm" onClick={() => void refetch()} disabled={isFetching}>
+            <Icon name="refresh" size="sm" className={isFetching ? "animate-ms-spin" : undefined} />
             Refresh
-          </button>
+          </Button>
           {atCapacity ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-muted-foreground">
+            <>
+              <span className="text-[13px] font-medium text-ms-fg-3">
                 Module full ({progress.required}/{progress.required})
               </span>
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
+                icon="plus"
                 disabled
-                title={`This module already has the maximum ${progress.required} questions for a ${sectionSubject === "MATH" ? "Mathematics" : "Reading & Writing"} module.`}
-                className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-xl bg-surface-2 px-3 py-1.5 text-xs font-bold text-muted-foreground opacity-60"
+                title={`This module already has the maximum ${progress.required} questions for a ${subjectWord} module.`}
               >
-                <Plus className="h-3.5 w-3.5" />
                 Add question
-              </button>
-            </div>
+              </Button>
+            </>
           ) : (
-            <button
-              type="button"
-              disabled={mutationBusy}
+            <Button
+              variant="primary"
+              size="sm"
+              icon="plus"
+              state={create.isPending ? "busy" : "idle"}
+              disabled={reorderBulk.isPending}
               onClick={() => void handleAdd()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
-              {create.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="h-3.5 w-3.5" />
-              )}
               Add question
-            </button>
+            </Button>
           )}
         </div>
-      </div>
+      </header>
 
-      {csvMsg && (
-        <div
-          className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
-            csvMsg.ok
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-              : "border-red-300 bg-red-50 text-red-700"
-          }`}
+      {csvMsg || listErrMsg || reorderErrMsg || createErrMsg ? (
+        <div className="flex shrink-0 flex-col gap-2 px-3 pt-3 sm:px-4 lg:px-5">
+          {csvMsg ? (
+            <Notice tone={csvMsg.ok ? "positive" : "critical"} onDismiss={() => setCsvMsg(null)}>
+              {csvMsg.text}
+            </Notice>
+          ) : null}
+          {listErrMsg ? (
+            <Notice tone="critical" title="Could not load questions">
+              {listErrMsg}
+            </Notice>
+          ) : null}
+          {reorderErrMsg || createErrMsg ? <Notice tone="attention">{reorderErrMsg ?? createErrMsg}</Notice> : null}
+        </div>
+      ) : null}
+
+      <div className="flex flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
+        {/* Left: the outline — the module's health, then its questions in order. */}
+        <aside
+          aria-label="Questions in this module"
+          className="flex shrink-0 flex-col border-ms-border bg-ms-card max-lg:max-h-[60vh] max-lg:overflow-y-auto max-lg:border-b lg:w-[300px] lg:border-r"
         >
-          {csvMsg.ok ? (
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          ) : (
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          )}
-          <span className="min-w-0 flex-1">{csvMsg.text}</span>
-          <button type="button" onClick={() => setCsvMsg(null)} className="shrink-0 opacity-60 hover:opacity-100">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+          {points || health ? (
+            <section aria-label="Module" className="animate-ms-fade-in mx-3 mt-3 flex shrink-0 flex-col gap-3 rounded-ms-ctl bg-ms-surface p-3.5">
+              {points}
+              {health}
+            </section>
+          ) : null}
 
-      {/* Error banners */}
-      {listErrMsg && (
-        <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold">Could not load questions</p>
-            <p className="mt-0.5">{listErrMsg}</p>
-          </div>
-        </div>
-      )}
-      {(reorderErrMsg || createErrMsg) && (
-        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800">
-          {reorderErrMsg ?? createErrMsg}
-        </div>
-      )}
-
-      {/* Score calculator — for midterms show proportional scoring info; SAT shows weighted points */}
-      {!isLoading && questions.length > 0 && (() => {
-        if (examKind === "MIDTERM") {
-          const is800 = scoringScale === "SCALE_800";
-          return (
-            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-                <span className="text-sm font-black text-primary">{is800 ? "Σ" : "%"}</span>
+          <div className="flex flex-col gap-1 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            {isLoading ? (
+              <div aria-busy="true" aria-label="Loading questions" className="flex flex-col gap-1.5 p-1">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="h-[62px] animate-ms-shimmer rounded-[12px] bg-ms-surface-2" />
+                ))}
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold uppercase tracking-widest text-primary/70">
-                  Midterm scoring · {is800 ? "800-point (SAT scaled)" : "100-point (percentage)"}
-                </p>
-                <p className="text-sm font-bold text-foreground leading-tight">
-                  {questions.length} question{questions.length !== 1 ? "s" : ""} ·{" "}
-                  <span className="text-muted-foreground font-normal">
-                    {is800
-                      ? `${totalScore} pts → SAT 200–800 curve`
-                      : `score = correct ÷ ${questions.length} × 100`}
-                  </span>
-                </p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Max</p>
-                <p className="text-lg font-black tabular-nums text-primary leading-tight">{is800 ? 800 : 100}</p>
-              </div>
-            </div>
-          );
-        }
-        const moduleCap = isSat && sectionSubject
-          ? SAT_MODULE_SCORE_CAP[sectionSubject as SatSubject]?.[moduleOrderNum as 1 | 2] ?? null
-          : null;
-        const remainingPts = moduleCap !== null ? Math.max(0, moduleCap - totalScore) : null;
-        return (
-          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-              <span className="text-sm font-black text-primary">Σ</span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold uppercase tracking-widest text-primary/70">Module points</p>
-              <p className="text-lg font-black tabular-nums text-primary leading-tight">
-                {totalScore}
-                {moduleCap !== null && (
-                  <span className="text-sm font-bold text-muted-foreground"> / {moduleCap}</span>
-                )}
-              </p>
-            </div>
-            {remainingPts !== null && remainingPts > 0 && (
-              <div className="shrink-0 text-right">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Remaining</p>
-                <p className="text-lg font-black tabular-nums text-amber-600 leading-tight">
-                  +{remainingPts}
-                  <span className="ml-1 text-[10px] font-semibold">pts</span>
-                </p>
-              </div>
-            )}
-            {remainingPts !== null && remainingPts <= 0 && (
-              <div className="shrink-0 text-right">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">✓ Complete</p>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* SAT module health panel */}
-      {isSat && !isLoading && (
-        <div className="mb-4 rounded-2xl border border-border bg-card px-4 py-3 space-y-2">
-          {/* Progress row */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest shrink-0">
-                {sectionSubject ? SAT_SUBJECT_LABEL[sectionSubject as keyof typeof SAT_SUBJECT_LABEL] ?? sectionSubject : "Section"} · {moduleOrder ?? `Module ${moduleOrderNum}`}
-              </p>
-            </div>
-            <span
-              className={`text-xs font-extrabold tabular-nums shrink-0 ${
-                progress.complete
-                  ? "text-emerald-600"
-                  : progress.over
-                  ? "text-red-600"
-                  : "text-foreground"
-              }`}
-            >
-              {progress.label}
-              {progress.required !== null && " questions"}
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          {progress.required !== null && (
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-              <div
-                className={`h-full rounded-full transition-all ${
-                  progress.complete
-                    ? "bg-emerald-500"
-                    : progress.over
-                    ? "bg-red-500"
-                    : "bg-primary"
-                }`}
-                style={{ width: `${Math.min((progress.fraction ?? 0) * 100, 100)}%` }}
-              />
-            </div>
-          )}
-
-          {/* Count violation */}
-          {progress.required !== null && !progress.complete && (
-            <p className="text-[11px] font-semibold text-muted-foreground">
-              {progress.over
-                ? `${progress.current - (progress.required ?? 0)} question(s) over the required ${progress.required}. Remove extras before publishing.`
-                : `${(progress.required ?? 0) - progress.current} more question(s) needed to reach the required ${progress.required}.`}
-            </p>
-          )}
-
-          {/* Type mismatch warning */}
-          {typeMismatchIds.size > 0 && (
-            <div className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-              <p className="text-[11px] font-semibold leading-snug text-amber-800">
-                {typeMismatchIds.size} question{typeMismatchIds.size !== 1 ? "s have" : " has"} the wrong type for this{" "}
-                {sectionSubject === "MATH" ? "Mathematics" : "Reading & Writing"} module.
-                Allowed types: {allowedTypesForSubject.join(", ")}.
-              </p>
-            </div>
-          )}
-
-          {/* All-good state */}
-          {progress.complete && typeMismatchIds.size === 0 && (
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-              <p className="text-[11px] font-semibold text-emerald-700">
-                Module is structurally valid — ready to publish.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Split panel */}
-      {isLoading ? (
-        <StudioSpinner size="lg" center />
-      ) : (
-        <div className="flex min-h-0 flex-1 gap-5">
-          {/* Left: draggable question list */}
-          <div className="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto rounded-2xl border border-border bg-card p-3">
-            {orderedQuestions.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12 text-center">
-                <p className="text-sm font-semibold text-foreground">No questions yet</p>
-                <p className="text-xs text-muted-foreground">
-                  Click &ldquo;Add question&rdquo; to create the first one.
-                </p>
-              </div>
+            ) : orderedQuestions.length === 0 ? (
+              <EmptyState icon="ms-question" title="No questions yet" detail="Click “Add question” to create the first one." />
             ) : (
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
+                onDragCancel={() => setActiveId(null)}
                 onDragEnd={(e) => { void handleDragEnd(e); }}
               >
                 <SortableContext
@@ -1529,23 +1379,29 @@ export default function ModuleQuestionsPanel(props: {
                   strategy={verticalListSortingStrategy}
                 >
                   {orderedQuestions.map((q, i) => (
-                    <SortableQRow
+                    <OutlineRow
                       key={q.id}
                       q={q}
                       index={i}
                       selected={q.id === selectedId}
                       reordering={reorderBulk.isPending}
-                      hasTypeMismatch={typeMismatchIds.has(q.id)}
+                      wrongType={typeMismatchIds.has(q.id)}
                       examKind={examKind}
+                      reduceMotion={reduceMotion}
                       onSelect={() => setSelectedId(q.id)}
+                      onMove={(delta) => handleMove(q.id, delta)}
+                      rowRef={(el) => {
+                        if (el) rowRefs.current.set(q.id, el);
+                        else rowRefs.current.delete(q.id);
+                      }}
                     />
                   ))}
                 </SortableContext>
 
-                {/* Drag overlay — floats under cursor */}
-                <DragOverlay dropAnimation={null}>
+                {/* The lifted question, under the pointer. */}
+                <DragOverlay dropAnimation={reduceMotion ? null : DROP}>
                   {activeQ ? (
-                    <DragGhostRow q={activeQ} index={activeIndex} />
+                    <OutlineGhost q={activeQ} index={activeIndex} examKind={examKind} wrongType={typeMismatchIds.has(activeQ.id)} />
                   ) : null}
                 </DragOverlay>
               </DndContext>
@@ -1553,60 +1409,72 @@ export default function ModuleQuestionsPanel(props: {
 
             {/* Reorder in-progress indicator */}
             {reorderBulk.isPending && (
-              <div className="flex items-center gap-1.5 rounded-xl bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
+              <div className="animate-ms-fade-in mt-1 flex items-center gap-1.5 rounded-[10px] bg-ms-surface-2 px-3 py-2 text-[13px] font-medium text-ms-fg-2">
+                <Icon name="loader" size="sm" className="size-3.5 animate-ms-spin" />
                 Saving order…
               </div>
             )}
+            <p aria-live="polite" className="sr-only">
+              {moveNote}
+            </p>
           </div>
 
-          {/* Right: editor */}
-          <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card">
-            {selectedQ ? (
-              <QuestionEditor
-                key={selectedQ.id}
-                question={selectedQ}
-                testId={testId}
-                moduleId={moduleId}
-                api={api}
-                sectionSubject={sectionSubject}
-                examKind={examKind}
-                scoringScale={scoringScale}
-                midtermLevel={midtermLevel}
-                onSaved={(updated) => {
-                  setSelectedId(updated.id);
-                }}
-                onDeleted={() => {
-                  const remainingIds = orderedQuestions
-                    .filter((q) => q.id !== selectedQ.id)
-                    .map((q) => q.id);
-                  setSelectedId(remainingIds[0] ?? null);
-                }}
-              />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-3 p-12 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2">
-                  <Plus className="h-6 w-6 text-muted-foreground/40" />
-                </div>
-                <p className="font-semibold text-foreground">No question selected</p>
-                <p className="text-sm text-muted-foreground">
-                  Select a question from the list, or add a new one.
-                </p>
-                <button
-                  type="button"
-                  disabled={mutationBusy || atCapacity}
-                  onClick={() => void handleAdd()}
-                  title={atCapacity ? `Module is at capacity (${progress.required} questions max)` : undefined}
-                  className="mt-1 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add first question
-                </button>
+          {!isLoading && orderedQuestions.length > 0 ? <OutlineLegend /> : null}
+        </aside>
+
+        {/* Centre: the open question, its Properties at the right (PR 14b). */}
+        <main className="min-w-0 lg:min-h-0 lg:flex-1">
+          <div className="lg:h-full">
+            {isLoading ? (
+              <div aria-hidden className="flex flex-col gap-4 p-6">
+                <div className="h-6 w-48 animate-ms-shimmer rounded-[8px] bg-ms-surface-2" />
+                <div className="h-36 animate-ms-shimmer rounded-ms-ctl bg-ms-surface-2" />
+                <div className="h-24 animate-ms-shimmer rounded-ms-ctl bg-ms-surface-2" />
               </div>
+            ) : selectedQ ? (
+              <div className="lg:h-full">
+                <QuestionEditor
+                  key={selectedQ.id}
+                  question={selectedQ}
+                  testId={testId}
+                  moduleId={moduleId}
+                  api={api}
+                  sectionSubject={sectionSubject}
+                  examKind={examKind}
+                  scoringScale={scoringScale}
+                  midtermLevel={midtermLevel}
+                  onSaved={(updated) => {
+                    setSelectedId(updated.id);
+                  }}
+                  onDeleted={() => {
+                    const remainingIds = orderedQuestions
+                      .filter((q) => q.id !== selectedQ.id)
+                      .map((q) => q.id);
+                    setSelectedId(remainingIds[0] ?? null);
+                  }}
+                />
+              </div>
+            ) : (
+              <EmptyState
+                icon="plus"
+                title="No question selected"
+                detail="Select a question from the list, or add a new one."
+                action={
+                  <Button
+                    variant="primary"
+                    icon="plus"
+                    disabled={mutationBusy || atCapacity}
+                    onClick={() => void handleAdd()}
+                    title={atCapacity ? `Module is at capacity (${progress.required} questions max)` : undefined}
+                  >
+                    Add first question
+                  </Button>
+                }
+              />
             )}
           </div>
-        </div>
-      )}
+        </main>
+      </div>
     </div>
   );
 }

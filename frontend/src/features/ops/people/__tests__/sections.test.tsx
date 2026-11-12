@@ -246,8 +246,9 @@ describe("Results", () => {
     });
     await render(<ResultsSection id={7} section="students" />);
     const rate = [...host.querySelectorAll("td")].find((td) => td.textContent === "50%")!;
-    expect(rate.className).toContain("text-danger");
-    expect(rate.className).not.toContain("text-foreground");
+    const classes = rate.className.split(/\s+/);
+    expect(classes).toContain("text-ms-critical-fg");
+    expect(classes).not.toContain("text-ms-fg");
   });
 
   it("shows a public user only mock exams, practice tests and events", async () => {
@@ -323,11 +324,13 @@ describe("History", () => {
   it("reads newest first: when, what, and who", async () => {
     serve("history", DATA);
     await render(<HistorySection id={7} />);
+    // The console's timeline (PR 10a): what happened, then who · when; chips count each kind.
     const items = [...host.querySelectorAll("ol > li")].map((li) => li.textContent);
     expect(items).toEqual([
-      "Oct 15, 2026 14:05 · Frozen by an admin · by Bo Ss",
-      "Oct 1, 2026 09:30 · Added to Junior G21 Math",
+      "Frozen by an adminby Bo Ss · Oct 15, 2026 14:05",
+      "Added to Junior G21 MathOct 1, 2026 09:30",
     ]);
+    expect([...host.querySelectorAll("button[aria-pressed]")].map((b) => b.textContent)).toEqual(["All2", "Money0", "Seat1", "Security0", "Admin1"]);
     expect(text()).toContain("Admin edits are recorded from 15 Oct 2026.");
     expect(text()).not.toContain("Showing the latest 200.");
   });
@@ -347,7 +350,7 @@ describe("History", () => {
     });
     await render(<HistorySection id={7} />);
     const items = [...host.querySelectorAll("ol > li")].map((li) => li.textContent);
-    expect(items).toEqual(["Oct 1, 2026 · Payment 650,000 UZS for 2026-10 · by lc-up"]);
+    expect(items).toEqual(["Payment 650,000 UZS for 2026-10by lc-up · Oct 1, 2026"]);
   });
 
   it("says when the list is cut", async () => {

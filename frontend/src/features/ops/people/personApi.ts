@@ -71,6 +71,8 @@ export type PersonGlance = {
   homework: { completed: number; total: number } | null;
   mocks_taken: number;
   last_mock_total: number | null;
+  /** Each live class meeting today, earliest first; `status` null = not marked yet. [] when none meets. */
+  today?: { class_id: number; class_name: string; lesson_time: string; status: string | null }[];
 };
 
 /** An open one-time sign-in (phone + its last four digits) waiting to be used. */
@@ -126,7 +128,7 @@ export type PersonPartName = "attendance" | "results" | "security" | "history";
 
 // ── Parts (backend/users/people_parts.py) ─────────────────────────────────────────────────
 
-/** `GET …/attendance/`: every class with records, and the last 30 days' marks (≤ 60, newest first). */
+/** `GET …/attendance/`: every class with records, and the last nine weeks' marks (≤ 200, newest first). */
 export type PersonAttendance = {
   classes: {
     id: number;
@@ -140,6 +142,9 @@ export type PersonAttendance = {
     absent: number;
     excused: number;
     counted: number;
+    /** The days it meets, 0 = Monday (absent on an older server). */
+    weekdays?: number[];
+    lesson_time?: string;
   }[];
   recent: {
     /** "YYYY-MM-DD". */

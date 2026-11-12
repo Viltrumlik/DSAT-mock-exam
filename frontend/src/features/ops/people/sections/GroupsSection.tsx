@@ -4,10 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Plus, UserRound, Users } from "lucide-react";
 import api from "@/lib/api";
-import { Badge } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
 import { formatDate } from "@/features/ops/users/peopleColumns";
-import { Fieldset, LINK_CLASS, SubHeading } from "../Fieldset";
+import { buttonClass, inputShell } from "@/features/console/ui";
+import { Fieldset, LINK_CLASS, Pill, SubHeading } from "../Fieldset";
 import type { PersonCore } from "../personApi";
 
 /**
@@ -17,9 +17,9 @@ import type { PersonCore } from "../personApi";
  */
 
 /** `info`, not `accent`: the accent badge's cyan text is 2.5:1 on its tint, too faint to read. */
-const SUBJECT: Record<string, { label: string; variant: "primary" | "info" }> = {
-  MATH: { label: "Math", variant: "primary" },
-  ENGLISH: { label: "English", variant: "info" },
+const SUBJECT: Record<string, { label: string }> = {
+  MATH: { label: "Math" },
+  ENGLISH: { label: "English" },
 };
 
 function serverDetail(err: unknown): string | null {
@@ -64,49 +64,49 @@ export function GroupsSection({ person, onChanged }: { person: PersonCore; onCha
       description={n === 0 ? "Not in any class" : `In ${n} class${n === 1 ? "" : "es"}`}
     >
       {n === 0 ? (
-        <p className="rounded-lg bg-surface-2 px-4 py-3 text-muted-foreground">Not in any class.</p>
+        <p className="rounded-ms-ctl bg-ms-surface px-4 py-3 text-ms-fg-2">Not in any class.</p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {person.groups.map((g) => {
             const subject = SUBJECT[g.subject];
             return (
-              <li key={g.id} data-testid="group-card" className="flex flex-col gap-3 rounded-xl border border-border p-4">
+              <li key={g.id} data-testid="group-card" className="flex flex-col gap-3 rounded-[16px] border border-ms-border p-4">
                 <div className="flex items-start justify-between gap-3">
                   <Link href={`/ops/classrooms/${g.id}`} prefetch={false} className={`${LINK_CLASS} min-w-0 text-base`}>
                     {g.name}
                   </Link>
-                  {subject ? <Badge variant={subject.variant}>{subject.label}</Badge> : null}
+                  {subject ? <Pill tone="line">{subject.label}</Pill> : null}
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div className="min-w-0">
-                    <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <dt className="flex items-center gap-1.5 text-xs text-ms-fg-3">
                       <UserRound aria-hidden className="h-3.5 w-3.5" />
                       Teacher
                     </dt>
                     <dd className="mt-0.5 truncate font-medium">{g.teacher || "—"}</dd>
                   </div>
                   <div>
-                    <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <dt className="flex items-center gap-1.5 text-xs text-ms-fg-3">
                       <CalendarDays aria-hidden className="h-3.5 w-3.5" />
                       Joined
                     </dt>
                     <dd className="mt-0.5 font-medium tabular-nums">{formatDate(g.joined_at)}</dd>
                   </div>
                 </dl>
-                <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+                <div className="flex items-center justify-between gap-2 border-t border-ms-border pt-3">
                   {g.lcup_managed ? (
                     <>
-                      <Badge variant="neutral">Synced from lc-up</Badge>
-                      <span className="text-xs text-muted-foreground">Change in lc-up</span>
+                      <Pill>Synced from lc-up</Pill>
+                      <span className="text-xs text-ms-fg-3">Change in lc-up</span>
                     </>
                   ) : (
                     <>
-                      <span className="text-xs text-muted-foreground">Managed here</span>
+                      <span className="text-xs text-ms-fg-3">Managed here</span>
                       <button
                         type="button"
                         disabled={busy}
                         onClick={() => remove(g.id, g.name)}
-                        className="h-8 rounded-lg border border-danger/30 px-3 text-sm font-medium text-danger hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger disabled:opacity-50"
+                        className="ms-press ms-transition h-9 rounded-ms-btn px-3 text-[14px] font-semibold text-ms-critical-fg shadow-[inset_0_0_0_1px_var(--ms-critical-line)] hover:bg-ms-critical-soft disabled:cursor-not-allowed disabled:text-ms-fg-disabled disabled:shadow-none"
                       >
                         Remove
                       </button>
@@ -122,16 +122,16 @@ export function GroupsSection({ person, onChanged }: { person: PersonCore; onCha
       {/* Students only. The roster endpoint enrols student accounts alone, and the owner's rule is that a
           public learner who joins the centre gets a NEW account from lc-up, not a seat for the old one. */}
       {person.section === "students" && person.open_classes.length > 0 ? (
-        <div className="mt-4 flex flex-col gap-3 rounded-xl border border-dashed border-border p-4 sm:flex-row sm:items-end">
+        <div className="mt-4 flex flex-col gap-3 rounded-[16px] border border-dashed border-ms-border-strong p-4 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1 space-y-1.5">
-            <label htmlFor={`add-class-${person.id}`} className="block text-sm font-medium text-foreground">
+            <label htmlFor={`add-class-${person.id}`} className="block text-[14px] font-medium leading-5 text-ms-fg">
               Add to class
             </label>
             <select
               id={`add-class-${person.id}`}
               value={pick}
               onChange={(e) => setPick(e.target.value)}
-              className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className={inputShell({ className: "w-full outline-none" })}
             >
               <option value="">Choose a class not run by lc-up</option>
               {person.open_classes.map((c) => (
@@ -145,7 +145,7 @@ export function GroupsSection({ person, onChanged }: { person: PersonCore; onCha
             type="button"
             disabled={busy || !pick}
             onClick={add}
-            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+            className={buttonClass({ variant: "primary" })}
           >
             <Plus aria-hidden className="h-4 w-4" />
             Add
@@ -156,13 +156,13 @@ export function GroupsSection({ person, onChanged }: { person: PersonCore; onCha
       {person.past_groups.length > 0 ? (
         <div className="mt-6">
           <SubHeading>Earlier groups</SubHeading>
-          <ul className="divide-y divide-border rounded-xl border border-border">
+          <ul className="divide-y divide-ms-line rounded-[16px] border border-ms-border">
             {person.past_groups.map((g) => (
               <li key={g.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                 <Link href={`/ops/classrooms/${g.id}`} prefetch={false} className={`${LINK_CLASS} min-w-0 truncate`}>
                   {g.name}
                 </Link>
-                <span className="shrink-0 text-xs text-muted-foreground">
+                <span className="shrink-0 text-xs text-ms-fg-3">
                   left {g.left_at ? formatDate(g.left_at) : "—"}
                 </span>
               </li>

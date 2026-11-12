@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
-import { Archive, ArrowLeft, Pencil, RotateCcw, Sparkles } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { Icon } from "@/components/ui/Icon";
 import { useQbArchive, useQbQuestion, useQbRestore } from "@/domains/questionBank/hooks";
 import { QbStatusBadge } from "@/domains/questionBank/components/QbStatusBadge";
 import { BankQuestionEditor } from "@/domains/questionBank/components/BankQuestionEditor";
@@ -14,6 +14,15 @@ import {
   resolveImageUrl,
 } from "@/domains/questionBank/utils";
 import type { QbQuestionDetail } from "@/domains/questionBank/types";
+import { recordRecent } from "@/features/console/recent";
+import { Badge, Button, Tabs, buttonClass } from "@/features/console/ui";
+import { CHOICE, CHOICE_IDLE, CHOICE_KEY, LETTER, LETTER_IDLE, LETTER_KEY, keyLetterOf } from "@/features/questionsAdmin/questionLook";
+import { cn } from "@/lib/cn";
+
+/**
+ * One bank question (design handoff v0.3, PR 16a): its QB-ID and status, Preview — the question as the student
+ * reads it, the answer key's choice in green — and Details; Edit opens the bank's editor in place.
+ */
 
 type Tab = "preview" | "details";
 
@@ -23,77 +32,89 @@ export default function QuestionBankDetailPage() {
   const [tab, setTab] = useState<Tab>("preview");
   const [editing, setEditing] = useState(false);
   const { data: q, isLoading, error } = useQbQuestion(id);
+  // Studio home's "Continue where you left off" (BuilderHome board).
+  useEffect(() => {
+    if (q) recordRecent({ kind: "question", id: q.id, name: q.qb_id, href: `/builder/question-bank/${q.id}` });
+  }, [q]);
   const archive = useQbArchive();
   const restore = useQbRestore();
 
-  if (isLoading) return <Centered>Loading…</Centered>;
-  if (error || !q) return <Centered tone="error">Failed to load this question.</Centered>;
+  if (isLoading) {
+    return (
+      <div aria-busy="true" aria-label="Loading" className="flex flex-col gap-4">
+        <div className="h-8 w-56 animate-ms-shimmer rounded-[8px] bg-ms-surface-2" />
+        <div className="h-72 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+      </div>
+    );
+  }
+  if (error || !q) {
+    return (
+      <div role="alert" className="flex items-start gap-2.5 rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3.5 py-3 text-[14px] text-ms-critical-fg">
+        <Icon name="alert" size="sm" className="mt-0.5" />
+        Failed to load this question.
+      </div>
+    );
+  }
 
   const isArchived = q.status === "ARCHIVED";
 
   return (
-    <div className="space-y-5">
-      <Link
-        href="/builder/question-bank"
-        className="inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Question Bank
+    <div className="flex flex-col gap-5">
+      <Link href="/builder/question-bank" className={buttonClass({ variant: "ghost", size: "sm", className: "-ml-2 self-start" })}>
+        <Icon name="left" size="sm" /> Back to Question Bank
       </Link>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <header className="animate-ms-fade-in flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="font-mono text-lg font-bold text-foreground">{q.qb_id}</h1>
+          <h1 className="font-ms-mono text-[22px] font-bold leading-7 text-ms-fg">{q.qb_id}</h1>
           <QbStatusBadge status={q.status} />
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setEditing((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-sm font-bold text-foreground hover:bg-surface-2"
-          >
-            <Pencil className="h-3.5 w-3.5" /> {editing ? "Close editor" : "Edit"}
-          </button>
+          <Button variant="secondary" icon="pencil" onClick={() => setEditing((v) => !v)}>
+            {editing ? "Close editor" : "Edit"}
+          </Button>
           {isArchived ? (
-            <button type="button" disabled={restore.isPending} onClick={() => restore.mutate(id)} className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-              <RotateCcw className="h-3.5 w-3.5" /> Restore
-            </button>
+            <Button variant="secondary" icon="undo" state={restore.isPending ? "busy" : "idle"} onClick={() => restore.mutate(id)}>
+              Restore
+            </Button>
           ) : (
-            <button type="button" disabled={archive.isPending} onClick={() => archive.mutate(id)} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50">
-              <Archive className="h-3.5 w-3.5" /> Archive
-            </button>
+            <Button
+              variant="secondary"
+              icon="archive"
+              state={archive.isPending ? "busy" : "idle"}
+              onClick={() => archive.mutate(id)}
+            >
+              Archive
+            </Button>
           )}
         </div>
-      </div>
+      </header>
 
       {editing ? (
         <BankQuestionEditor existing={q} onSaved={() => setEditing(false)} />
       ) : (
         <>
-          <div className="flex gap-1 border-b border-border">
-            {(["preview", "details"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={
-                  tab === t
-                    ? "border-b-2 border-primary px-4 py-2 text-sm font-bold text-primary"
-                    : "border-b-2 border-transparent px-4 py-2 text-sm font-bold text-muted-foreground hover:text-foreground"
-                }
-              >
-                {t === "preview" ? "Preview" : "Details"}
-              </button>
-            ))}
+          <Tabs<Tab>
+            label="Question"
+            idPrefix="qb"
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { id: "preview", label: "Preview" },
+              { id: "details", label: "Details" },
+            ]}
+          />
+          <div role="tabpanel" id={`qb-${tab}-panel`} aria-labelledby={`qb-${tab}`} className="min-w-0">
+            {tab === "preview" && <PreviewTab q={q} />}
+            {tab === "details" && <DetailsTab q={q} />}
           </div>
-
-          {tab === "preview" && <PreviewTab q={q} />}
-          {tab === "details" && <DetailsTab q={q} />}
         </>
       )}
     </div>
   );
 }
 
+/** The question as the student reads it: in Georgia, the answer key's choice in green. */
 function PreviewTab({ q }: { q: QbQuestionDetail }) {
   const stem = resolveImageUrl(q.question_image);
   const options: Array<{ key: string; text: string; img: string | null }> = [
@@ -102,78 +123,90 @@ function PreviewTab({ q }: { q: QbQuestionDetail }) {
     { key: "C", text: q.option_c, img: q.option_c_image },
     { key: "D", text: q.option_d, img: q.option_d_image },
   ].filter((o) => o.text || o.img);
+  const keyLetter = keyLetterOf(q.correct_answer);
 
   return (
-    <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
-      {q.passage ? (
-        <div className="rounded-xl border border-border bg-surface-2 p-4">
-          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Passage</p>
-          <p className="whitespace-pre-wrap text-sm text-foreground">{q.passage.passage_text}</p>
+    <div className="animate-ms-fade-in rounded-ms-card bg-ms-card p-5 shadow-ms-1 sm:p-8">
+      <div className="mx-auto flex max-w-[760px] flex-col gap-5">
+        {q.passage ? (
+          <div className="rounded-ms-ctl bg-ms-surface p-4">
+            <p className="mb-1.5 text-ms-over uppercase text-ms-fg-3">Passage</p>
+            <p className="whitespace-pre-wrap font-ms-serif text-[16px] leading-[26px] text-ms-fg">{q.passage.passage_text}</p>
+          </div>
+        ) : null}
+
+        {q.question_prompt ? (
+          <p className="whitespace-pre-wrap font-ms-serif text-[16px] font-semibold leading-[26px] text-ms-fg">{q.question_prompt}</p>
+        ) : null}
+        <p className="whitespace-pre-wrap font-ms-serif text-[17px] leading-7 text-ms-fg">{q.question_text}</p>
+        {stem ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={stem} alt="Question diagram" className="max-h-80 self-start rounded-[12px] border border-ms-border" />
+        ) : null}
+
+        {options.length > 0 && (
+          <ul className="flex flex-col gap-2.5">
+            {options.map((o) => {
+              const isKey = keyLetter === o.key;
+              return (
+                <li key={o.key} className={cn(CHOICE, "items-start gap-3", isKey ? CHOICE_KEY : CHOICE_IDLE)}>
+                  <span className={cn(LETTER, isKey ? LETTER_KEY : LETTER_IDLE)}>
+                    {isKey ? <Icon name="check" size="sm" className="size-4" /> : o.key}
+                    {isKey ? <span className="sr-only">{o.key}</span> : null}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    {o.text ? <p className="whitespace-pre-wrap font-ms-serif text-[16px] leading-6 text-ms-fg">{o.text}</p> : null}
+                    {o.img ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={resolveImageUrl(o.img)} alt={`Option ${o.key}`} className="mt-1 max-h-40 rounded-[10px] border border-ms-border" />
+                    ) : null}
+                  </div>
+                  {isKey ? (
+                    <Badge tone="positive" className="shrink-0">
+                      Answer key · {o.key}
+                    </Badge>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="grid gap-4 border-t border-ms-line pt-5 sm:grid-cols-2">
+          <Field label="Correct answer">{formatCorrectAnswer(q.correct_answer)}</Field>
+          <Field label="Points">{String(q.points)}</Field>
         </div>
-      ) : null}
-
-      {q.question_prompt ? (
-        <p className="whitespace-pre-wrap text-sm font-semibold text-foreground">{q.question_prompt}</p>
-      ) : null}
-      <p className="whitespace-pre-wrap text-base text-foreground">{q.question_text}</p>
-      {stem ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={stem} alt="Question diagram" className="max-h-80 rounded-lg border border-border" />
-      ) : null}
-
-      {options.length > 0 && (
-        <ul className="space-y-2">
-          {options.map((o) => (
-            <li key={o.key} className="flex items-start gap-3 rounded-xl border border-border p-3">
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-xs font-bold text-muted-foreground">
-                {o.key}
-              </span>
-              <div className="min-w-0">
-                {o.text ? <p className="whitespace-pre-wrap text-sm text-foreground">{o.text}</p> : null}
-                {o.img ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={resolveImageUrl(o.img)} alt={`Option ${o.key}`} className="mt-1 max-h-40 rounded border border-border" />
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Correct answer">{formatCorrectAnswer(q.correct_answer)}</Field>
-        <Field label="Points">{String(q.points)}</Field>
+        {q.explanation ? (
+          <Field label="Explanation">
+            <span className="whitespace-pre-wrap font-ms-serif text-[16px] leading-[26px]">{q.explanation}</span>
+          </Field>
+        ) : null}
       </div>
-      {q.explanation ? (
-        <Field label="Explanation">
-          <span className="whitespace-pre-wrap">{q.explanation}</span>
-        </Field>
-      ) : null}
     </div>
   );
 }
 
 function DetailsTab({ q }: { q: QbQuestionDetail }) {
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2">
+    <div className="animate-ms-fade-in flex flex-col gap-4">
+      <div className="grid gap-x-6 gap-y-4 rounded-ms-card bg-ms-card p-5 shadow-ms-1 sm:grid-cols-2">
         <Field label="Domain">{q.domain ? q.domain.name : <Unclassified />}</Field>
         <Field label="Skill">{q.skill ? q.skill.name : <Unclassified />}</Field>
         <Field label="Difficulty">{difficultyLabel(q.difficulty)}</Field>
         <Field label="Source">{q.source_type}</Field>
         <Field label="Source reference">{q.source_reference || "—"}</Field>
         <Field label="Content hash">
-          <span className="font-mono text-xs">{q.content_hash || "—"}</span>
+          <span className="font-ms-mono text-[12px]">{q.content_hash || "—"}</span>
         </Field>
         <Field label="Created">{new Date(q.created_at).toLocaleString()}</Field>
       </div>
 
       {q.suggestion ? (
-        <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5">
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-indigo-700">
-            <Sparkles className="h-3.5 w-3.5" /> AI suggestion · advisory only (never auto-applied)
+        <div className="rounded-ms-card border border-ms-info-line bg-ms-info-soft p-5 text-ms-info-fg">
+          <p className="mb-2 flex items-center gap-1.5 text-ms-over uppercase">
+            <Icon name="review" size="sm" className="size-3.5" /> AI suggestion · advisory only (never auto-applied)
           </p>
-          <div className="grid gap-2 text-sm text-indigo-900 sm:grid-cols-2">
+          <div className="grid gap-2 text-[14px] sm:grid-cols-2">
             <span>Domain: {q.suggestion.domain?.name ?? "—"}</span>
             <span>Skill: {q.suggestion.skill?.name ?? "—"}</span>
             <span>Difficulty: {q.suggestion.difficulty ?? "—"}</span>
@@ -182,7 +215,7 @@ function DetailsTab({ q }: { q: QbQuestionDetail }) {
             </span>
           </div>
           {q.suggestion.rationale ? (
-            <p className="mt-2 text-sm italic text-indigo-800">“{q.suggestion.rationale}”</p>
+            <p className="mt-2 text-[14px] italic">“{q.suggestion.rationale}”</p>
           ) : null}
         </div>
       ) : null}
@@ -190,23 +223,15 @@ function DetailsTab({ q }: { q: QbQuestionDetail }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
-      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <div className="mt-0.5 text-sm text-foreground">{children}</div>
+    <div className="min-w-0">
+      <p className="text-ms-over uppercase text-ms-fg-3">{label}</p>
+      <div className="mt-1 break-words text-[14px] text-ms-fg">{children}</div>
     </div>
   );
 }
 
 function Unclassified() {
-  return <span className="italic text-muted-foreground/60">Unclassified</span>;
-}
-
-function Centered({ children, tone }: { children: React.ReactNode; tone?: "error" }) {
-  return (
-    <div className={tone === "error" ? "py-16 text-center text-rose-600" : "py-16 text-center text-muted-foreground"}>
-      {children}
-    </div>
-  );
+  return <span className="italic text-ms-fg-3">Unclassified</span>;
 }

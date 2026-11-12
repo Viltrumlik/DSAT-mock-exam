@@ -1,13 +1,17 @@
-"""/ops Classrooms: changelist, change form and its parts (plan 2026-10-15-ops-detail-pages)."""
+"""/ops Classrooms: changelist, change form and its parts (plan 2026-10-15-ops-detail-pages), and the
+lessons of a day for the ops Today board (plan PR4-lessons-today)."""
 
 from __future__ import annotations
 
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from users.changelist import apply_search, facets, paginate
 
+from .lessons_today import lessons_today
 from .models import Classroom
 from .ops_classrooms import (
     CLASS_FILTERS, CLASS_ORDERING, CLASS_PARTS, CLASS_SEARCH, STUDENT_SEATS, class_row, classroom_core,
@@ -116,3 +120,25 @@ class ClassroomTelegramRemoveView(APIView):
                 status=409,
             )
         return Response({"removed": True})
+
+
+class LessonsTodayView(APIView):
+    """``GET /api/classes/admin/lessons/today/[?date=YYYY-MM-DD]`` — every active class that meets that day
+    (today by the school's clock when left out), its teacher, and what its register says
+    (``classes.lessons_today``). The same people as the classroom changelist: admins only."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not is_ops_admin(request.user):
+            return Response({"detail": "Admins only."}, status=403)
+        raw = (request.query_params.get("date") or "").strip()
+        if not raw:
+            return Response(lessons_today(timezone.localdate()))
+        try:
+            day = parse_date(raw)
+        except ValueError:  # well-formed but impossible, e.g. 2026-02-30
+            day = None
+        if day is None:
+            return Response({"detail": "date must be YYYY-MM-DD."}, status=400)
+        return Response(lessons_today(day))

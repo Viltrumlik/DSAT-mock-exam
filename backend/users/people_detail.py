@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from django.db.models import Count, Max, Q
 from django.db.models.functions import Lower
+from django.utils import timezone
 
 from access import constants as C
 from classes.capabilities import is_global_admin
@@ -180,6 +181,30 @@ def _staff(user) -> dict:
     }
 
 
+def _today(user, rooms) -> list[dict]:
+    """"Did he come today?" — each live class meeting today (by its days, once it has begun, or with a register
+    opened today), earliest lesson first, with today's mark; ``status`` None means not marked yet."""
+    from datetime import time
+
+    from classes.lesson_schedule import has_begun, lesson_weekdays, parse_lesson_time
+    from classes.models_attendance import AttendanceRecord, AttendanceSession
+
+    day = timezone.localdate()
+    ids = [r.pk for r in rooms]
+    marks = dict(
+        AttendanceRecord.objects.filter(student=user, session__date=day, session__classroom_id__in=ids)
+        .values_list("session__classroom_id", "status")
+    )
+    registers = set(AttendanceSession.objects.filter(date=day, classroom_id__in=ids).values_list("classroom_id", flat=True))
+    rows = [
+        {"class_id": r.pk, "class_name": r.name, "lesson_time": r.lesson_time or "", "status": marks.get(r.pk)}
+        for r in rooms
+        if r.pk in registers or r.pk in marks or (day.weekday() in lesson_weekdays(r) and has_begun(r, day))
+    ]
+    rows.sort(key=lambda row: (parse_lesson_time(row["lesson_time"]) or time.max, row["class_name"]))
+    return rows
+
+
 def _glance(user, section: str) -> dict:
     """The page header's at-a-glance figures — what the tabs below hold, said once at the top.
 
@@ -190,9 +215,10 @@ def _glance(user, section: str) -> dict:
     from classes.progress import _homework_for
     from mocks.models import MockAttempt
 
-    out = {"attendance_rate": None, "homework": None, "mocks_taken": 0, "last_mock_total": None}
+    out = {"attendance_rate": None, "homework": None, "mocks_taken": 0, "last_mock_total": None, "today": []}
     if section == "students":
         rooms = [s.classroom for s in _live_seats([user.pk])]
+        out["today"] = _today(user, rooms)
         statuses = list(
             AttendanceRecord.objects.filter(student=user, session__classroom__in=rooms).values_list("status", flat=True)
         )

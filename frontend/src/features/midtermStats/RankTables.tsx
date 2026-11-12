@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import { formatShare, rateReason, rosterNote } from "./format";
-import { OUTCOME } from "./outcome";
+import { OUTCOME_TEXT } from "./look";
 import { SplitBar } from "./SplitBar";
 import { EmptyPanel, Note, Num, RankedTable, RateCell } from "./StatsUI";
 import type { RankedColumn } from "./StatsUI";
@@ -58,7 +58,7 @@ export function tallyColumns<T extends GroupTally>(showPending: boolean): Ranked
       align: "right",
       cell: (row) => (
         <span title={`${row.passed_first} passed first time, ${row.passed_retake} after a retake`}>
-          <Num value={row.passed} className={`font-bold ${OUTCOME.passed.text}`} />
+          <Num value={row.passed} className={`font-semibold ${OUTCOME_TEXT.passed}`} />
         </span>
       ),
     },
@@ -66,7 +66,7 @@ export function tallyColumns<T extends GroupTally>(showPending: boolean): Ranked
       key: "failed",
       header: "Failed",
       align: "right",
-      cell: (row) => <Num value={row.failed} className={row.failed > 0 ? OUTCOME.failed.text : undefined} />,
+      cell: (row) => <Num value={row.failed} className={row.failed > 0 ? OUTCOME_TEXT.failed : undefined} />,
     },
     {
       key: "absent",
@@ -74,7 +74,7 @@ export function tallyColumns<T extends GroupTally>(showPending: boolean): Ranked
       align: "right",
       cell: (row) => (
         <span title="Not coming counts the same as not passing.">
-          <Num value={row.absent} className={row.absent > 0 ? OUTCOME.absent.text : undefined} />
+          <Num value={row.absent} className={row.absent > 0 ? OUTCOME_TEXT.absent : undefined} />
         </span>
       ),
     },
@@ -109,11 +109,11 @@ export function DenominatorNote({ rows }: { rows: readonly GroupTally[] }) {
   const split = rows.some((r) => r.roster !== r.distinct_students);
   if (!split) return null;
   return (
-    <div className="border-t border-border px-5 py-3">
+    <div className="border-t border-ms-line px-5 py-3">
       <Note>
         Some of these students sat more than one exam this month, and each exam counts. So a
         rate here is over the{" "}
-        <strong className="font-bold">exams expected</strong> — the number beside the row&rsquo;s
+        <strong className="font-semibold text-ms-fg">exams expected</strong> — the number beside the row&rsquo;s
         name — and not over the number of people.
       </Note>
     </div>
@@ -132,17 +132,14 @@ function ClassroomNameButton({
     <button
       type="button"
       onClick={() => onSelect(row)}
-      className="ds-ring group -mx-1 flex w-full min-w-0 items-center gap-2 rounded-lg px-1 py-0.5 text-left"
+      className="group -mx-1 flex w-full min-w-0 items-center gap-2 rounded-[8px] px-1 py-0.5 text-left focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ms-ring"
     >
       <span className="min-w-0">
-        <span className="flex items-center gap-2 truncate font-bold text-foreground group-hover:text-primary">
+        <span className="ms-transition flex items-center gap-1.5 truncate font-semibold text-ms-fg group-hover:text-ms-primary-text">
           {row.name}
-          <ChevronRight
-            className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary"
-            aria-hidden
-          />
+          <Icon name="right" size="sm" className="size-3.5 text-ms-fg-3 group-hover:text-ms-primary-text" />
         </span>
-        <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">
+        <span className="mt-0.5 block truncate text-[12px] text-ms-fg-3">
           {[
             row.level_label,
             row.subject_label,

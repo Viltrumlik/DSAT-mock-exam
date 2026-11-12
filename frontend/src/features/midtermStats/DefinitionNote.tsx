@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import { definitionEntries, definitionLine } from "./format";
 import type { StatsDefinition } from "./types";
 
@@ -19,31 +19,28 @@ import type { StatsDefinition } from "./types";
 export function DefinitionNote({ definition }: { definition: StatsDefinition | undefined }) {
   const entries = definitionEntries(definition);
   return (
-    <details className="group rounded-2xl border border-border bg-surface-2 px-4 py-3">
-      <summary className="ds-ring flex cursor-pointer list-none items-start gap-2 text-[13px] leading-relaxed text-muted-foreground marker:content-['']">
-        <ChevronDown
-          className="mt-0.5 h-4 w-4 shrink-0 transition-transform group-open:rotate-180"
-          aria-hidden
-        />
+    <details className="group rounded-ms-card border border-ms-border bg-ms-surface px-4 py-3">
+      <summary className="flex cursor-pointer list-none items-start gap-2 rounded-[6px] text-[13px] leading-[19px] text-ms-fg-2 marker:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-ring">
+        <Icon name="down" size="sm" className="mt-0.5 text-ms-fg-3 transition-[rotate] duration-200 group-open:rotate-180 motion-reduce:transition-none" />
         <span>
           {definitionLine(definition)}{" "}
-          <span className="font-bold text-foreground underline decoration-dotted underline-offset-2">
+          <span className="font-semibold text-ms-primary-text underline decoration-dotted underline-offset-2">
             What these numbers mean
           </span>
         </span>
       </summary>
 
       {entries.length > 0 ? (
-        <dl className="mt-3 grid gap-x-6 gap-y-2 border-t border-border pt-3 text-[13px] sm:grid-cols-[minmax(0,220px)_1fr]">
+        <dl className="mt-3 grid gap-x-6 gap-y-2 border-t border-ms-line pt-3 text-[13px] leading-[19px] sm:grid-cols-[minmax(0,220px)_1fr]">
           {entries.map((e) => (
             <div key={e.key} className="contents">
-              <dt className="font-bold text-foreground">{e.label}</dt>
-              <dd className="text-muted-foreground">{e.text}</dd>
+              <dt className="font-semibold text-ms-fg">{e.label}</dt>
+              <dd className="text-ms-fg-2">{e.text}</dd>
             </div>
           ))}
         </dl>
       ) : (
-        <p className="mt-3 border-t border-border pt-3 text-[13px] text-muted-foreground">
+        <p className="mt-3 border-t border-ms-line pt-3 text-[13px] text-ms-fg-2">
           The server did not send a definition block with this response, so only the summary
           above is available.
         </p>

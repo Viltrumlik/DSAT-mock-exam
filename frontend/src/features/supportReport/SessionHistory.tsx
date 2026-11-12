@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { Icon } from "@/components/ui/Icon";
+import { Button, buttonClass } from "@/features/console/ui";
+import { CONTROL, FIELD_LABEL } from "@/features/questionsAdmin/questionLook";
 
 import { errText, supportReportApi, type SessionFilters } from "./api";
 import {
@@ -220,10 +221,10 @@ export function SessionHistory({
         className: "w-[150px]",
         cell: (row) => (
           <div>
-            <span className="block whitespace-nowrap font-semibold tabular-nums text-foreground">
+            <span className="block whitespace-nowrap font-semibold tabular-nums text-ms-fg">
               {formatDay(row.starts_at)}
             </span>
-            <span className="block whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+            <span className="block whitespace-nowrap text-[12px] tabular-nums text-ms-fg-3">
               {formatTime(row.starts_at)}
               {formatTime(row.ends_at) ? `–${formatTime(row.ends_at)}` : ""}
             </span>
@@ -234,7 +235,7 @@ export function SessionHistory({
         key: "teacher",
         header: "Support teacher",
         cell: (row) => (
-          <span className="font-semibold leading-snug text-foreground">
+          <span className="font-medium leading-snug text-ms-fg">
             {personName(row.support_teacher)}
           </span>
         ),
@@ -250,7 +251,7 @@ export function SessionHistory({
                 setOffset(0);
                 setStudent({ id: row.student_id, name: personName(row.student) });
               }}
-              className="ds-ring rounded text-left leading-snug text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground"
+              className="ms-transition rounded-[6px] text-left leading-snug text-ms-fg underline decoration-ms-border-strong underline-offset-2 hover:text-ms-primary-text hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-ring"
               title={`Show only ${personName(row.student)}'s support sessions`}
             >
               {personName(row.student)}
@@ -258,7 +259,7 @@ export function SessionHistory({
             {/* A student who was invited did not choose this hour. It changes how a missed
                 session on the row reads, so it is shown rather than filed away. */}
             {row.invited_by ? (
-              <span className="block text-[11px] text-muted-foreground">
+              <span className="block text-[12px] text-ms-fg-3">
                 Invited by {personName(row.invited_by)}
               </span>
             ) : null}
@@ -270,10 +271,10 @@ export function SessionHistory({
         header: "Class",
         cell: (row) =>
           row.classroom_name ? (
-            <span className="text-foreground">{row.classroom_name}</span>
+            <span className="text-ms-fg">{row.classroom_name}</span>
           ) : (
             <span
-              className="text-muted-foreground"
+              className="text-ms-fg-3"
               title="This booking was never attributed to a class. Eligibility only needs a shared classroom; the attribution is what the reward ledger uses."
             >
               No class
@@ -287,9 +288,9 @@ export function SessionHistory({
         cell: (row) => {
           const t = topicText(row);
           return t ? (
-            <span className="text-foreground">{t}</span>
+            <span className="text-ms-fg">{t}</span>
           ) : (
-            <span className="text-muted-foreground">{NO_TOPIC}</span>
+            <span className="text-ms-fg-3">{NO_TOPIC}</span>
           );
         },
       },
@@ -309,18 +310,18 @@ export function SessionHistory({
         cell: (row) =>
           row.settled_by ? (
             <div className="min-w-0">
-              <span className="block leading-snug text-foreground">
+              <span className="block leading-snug text-ms-fg">
                 {personName(row.settled_by)}
               </span>
               {row.settled_at ? (
-                <span className="block text-[11px] tabular-nums text-muted-foreground">
+                <span className="block text-[12px] tabular-nums text-ms-fg-3">
                   {formatWhen(row.settled_at)}
                 </span>
               ) : null}
             </div>
           ) : (
             <span
-              className="text-muted-foreground"
+              className="text-ms-fg-3"
               title={
                 row.is_unsettled
                   ? "Nobody has marked who came. Until somebody does, this session pays nobody."
@@ -347,106 +348,87 @@ export function SessionHistory({
       >
         {/* The filters stay mounted through every branch. A reader whose request failed, or
             whose filter matched nothing, needs the controls that got them there. */}
-        <div className="flex flex-wrap items-end gap-3 border-b border-border px-5 py-4">
-          <label className="min-w-[11rem] flex-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-            Support teacher
-            <span className="mt-1 block font-normal normal-case tracking-normal">
-              <Select
-                selectSize="sm"
-                value={teacher == null ? "" : String(teacher)}
-                onChange={(e) =>
-                  refine(setTeacher)(e.target.value ? Number(e.target.value) : null)
-                }
-              >
-                <option value="">Everyone</option>
-                {teacherOptions.map((t) => (
-                  <option key={t.support_teacher_id} value={t.support_teacher_id}>
-                    {personName(t.support_teacher)}
-                  </option>
-                ))}
-              </Select>
-            </span>
+        <div className="flex flex-wrap items-end gap-3 border-b border-ms-line px-5 py-4">
+          <label className="min-w-[11rem] flex-1">
+            <span className={FIELD_LABEL}>Support teacher</span>
+            <select
+              className={CONTROL}
+              value={teacher == null ? "" : String(teacher)}
+              onChange={(e) => refine(setTeacher)(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Everyone</option>
+              {teacherOptions.map((t) => (
+                <option key={t.support_teacher_id} value={t.support_teacher_id}>
+                  {personName(t.support_teacher)}
+                </option>
+              ))}
+            </select>
           </label>
 
-          <label className="min-w-[11rem] flex-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-            Status
-            <span className="mt-1 block font-normal normal-case tracking-normal">
-              <Select
-                selectSize="sm"
-                value={status}
-                onChange={(e) =>
-                  refine(setStatus)((e.target.value || "") as HistoryStatus | "")
-                }
-              >
-                <option value="">Any status</option>
-                {statusOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </span>
+          <label className="min-w-[11rem] flex-1">
+            <span className={FIELD_LABEL}>Status</span>
+            <select
+              className={CONTROL}
+              value={status}
+              onChange={(e) => refine(setStatus)((e.target.value || "") as HistoryStatus | "")}
+            >
+              <option value="">Any status</option>
+              {statusOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </label>
 
-          <label className="min-w-[9.5rem] text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-            From
-            <span className="mt-1 block font-normal normal-case tracking-normal">
-              <Input
-                inputSize="sm"
-                type="date"
-                aria-label="Sessions from"
-                value={from}
-                max={to || undefined}
-                onChange={(e) => refine(setFrom)(e.target.value)}
-              />
-            </span>
+          <label className="min-w-[9.5rem]">
+            <span className={FIELD_LABEL}>From</span>
+            <input
+              type="date"
+              aria-label="Sessions from"
+              className={CONTROL}
+              value={from}
+              max={to || undefined}
+              onChange={(e) => refine(setFrom)(e.target.value)}
+            />
           </label>
 
-          <label className="min-w-[9.5rem] text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-            To
-            <span className="mt-1 block font-normal normal-case tracking-normal">
-              <Input
-                inputSize="sm"
-                type="date"
-                aria-label="Sessions to"
-                value={to}
-                min={from || undefined}
-                onChange={(e) => refine(setTo)(e.target.value)}
-              />
-            </span>
+          <label className="min-w-[9.5rem]">
+            <span className={FIELD_LABEL}>To</span>
+            <input
+              type="date"
+              aria-label="Sessions to"
+              className={CONTROL}
+              value={to}
+              min={from || undefined}
+              onChange={(e) => refine(setTo)(e.target.value)}
+            />
           </label>
 
-          <label className="min-w-[11rem] flex-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-            Student
-            <span className="mt-1 block font-normal normal-case tracking-normal">
-              <Select
-                selectSize="sm"
-                value={student == null ? "" : String(student.id)}
-                onChange={(e) => {
-                  const id = e.target.value ? Number(e.target.value) : null;
-                  const found = students.find((s) => s.id === id);
-                  refine(setStudent)(found ?? null);
-                }}
-              >
-                <option value="">Everyone</option>
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
-            </span>
+          <label className="min-w-[11rem] flex-1">
+            <span className={FIELD_LABEL}>Student</span>
+            <select
+              className={CONTROL}
+              value={student == null ? "" : String(student.id)}
+              onChange={(e) => {
+                const id = e.target.value ? Number(e.target.value) : null;
+                const found = students.find((s) => s.id === id);
+                refine(setStudent)(found ?? null);
+              }}
+            >
+              <option value="">Everyone</option>
+              {students.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
           </label>
 
           {filtered ? (
-            <button
-              type="button"
-              onClick={reset}
-              className="ds-ring inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-[13px] font-bold text-foreground transition-colors hover:bg-surface-2"
-            >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+            <Button variant="secondary" icon="undo" onClick={reset}>
               Clear
-            </button>
+            </Button>
           ) : null}
         </div>
 
@@ -458,8 +440,9 @@ export function SessionHistory({
         ) : loading || data == null ? (
           <TableSkeleton rows={6} />
         ) : data.results.length === 0 ? (
-          <div className="p-5">
+          <div className="px-5">
             <EmptyPanel
+              icon={filtered ? "filter" : "ms-support"}
               title={filtered ? "No sessions match these filters" : "No support sessions yet"}
               body={
                 filtered
@@ -476,38 +459,39 @@ export function SessionHistory({
               rowKey={(row) => row.id}
               minWidthClass="min-w-[1040px]"
             />
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ms-line px-5 py-3">
+              <p className="text-[13px] text-ms-fg-3">
                 <span className="tabular-nums">{pageRange(offset, shown, data.count)}</span>
-                <span className="ml-1 normal-case">
+                <span className="ml-1">
                   {data.count === 1 ? "session" : "sessions"}
                 </span>
               </p>
               {canPrev || canNext ? (
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon="left"
                     disabled={!canPrev}
                     onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                    className="ds-ring inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[13px] font-bold text-foreground transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
                     Newer
-                  </button>
+                  </Button>
+                  {/* The arrow after the word, as the old pager had it: the kit's Button draws only a leading one. */}
                   <button
                     type="button"
                     disabled={!canNext}
                     onClick={() => setOffset(offset + PAGE_SIZE)}
-                    className="ds-ring inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[13px] font-bold text-foreground transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     Older
-                    <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                    <Icon name="right" size="sm" />
                   </button>
                 </div>
               ) : null}
             </div>
             {status === STATUS_UNSETTLED ? (
-              <div className="border-t border-border px-5 py-3">
+              <div className="border-t border-ms-line px-5 py-3">
                 <Note>
                   These are the {plural(data.count, "session")} behind the banner above:{" "}
                   {UNSETTLED_LABEL.toLowerCase()}, so {data.count === 1 ? "it" : "they"} paid

@@ -7,6 +7,7 @@ import ModuleQuestionsPanel from "@/features/questionsAdmin/ModuleQuestionsPanel
 import { examsAdminApi } from "@/features/examsAdmin/api";
 import type { AdminPastpaperSection } from "@/lib/api";
 import { writeStudioSession } from "@/lib/studioSession";
+import { recordRecent } from "@/features/console/recent";
 
 // ─── Context loader ───────────────────────────────────────────────────────────
 
@@ -33,6 +34,13 @@ function PastpaperModuleEditor({
 
   const moduleEntry = section?.modules?.find((m) => m.id === moduleId) ?? null;
   const collectionTitle = (section?.collection_name && section.collection_name.trim()) || section?.title || undefined;
+
+  // Studio home's "Continue where you left off" (BuilderHome board): the test, opened at this module.
+  useEffect(() => {
+    if (!section) return;
+    const base = inPracticeLibrary ? "/builder/practice-tests" : "/builder/pastpapers";
+    recordRecent({ kind: "pastpaper", id: testId, name: collectionTitle || `Test ${testId}`, href: `${base}/${testId}/${moduleId}` });
+  }, [section, testId, moduleId, collectionTitle, inPracticeLibrary]);
 
   // ── Session continuity: persist last-viewed pastpaper module ─────────────
   useEffect(() => {
@@ -61,17 +69,16 @@ function PastpaperModuleEditor({
   }, [testId, moduleId, collectionTitle, section?.subject, moduleEntry?.module_order]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">
-      <ModuleQuestionsPanel
-        testId={testId}
-        moduleId={moduleId}
-        packTitle={collectionTitle}
-        sectionSubject={section?.subject ?? undefined}
-        moduleOrder={moduleEntry?.module_order != null ? `Module ${moduleEntry.module_order}` : undefined}
-        backHref={inPracticeLibrary ? "/builder/practice-tests" : undefined}
-        backLabel={inPracticeLibrary ? "Practice tests" : undefined}
-      />
-    </div>
+    // The panel is the whole window: its own top bar, outline and question (PR 14a).
+    <ModuleQuestionsPanel
+      testId={testId}
+      moduleId={moduleId}
+      packTitle={collectionTitle}
+      sectionSubject={section?.subject ?? undefined}
+      moduleOrder={moduleEntry?.module_order != null ? `Module ${moduleEntry.module_order}` : undefined}
+      backHref={inPracticeLibrary ? "/builder/practice-tests" : undefined}
+      backLabel={inPracticeLibrary ? "Practice tests" : undefined}
+    />
   );
 }
 
@@ -92,9 +99,9 @@ export default function BuilderPastpaperModulePage() {
     return (
       <div className="flex min-h-[40vh] items-center justify-center p-8">
         <div className="text-center">
-          <p className="font-semibold text-foreground">Invalid route parameters.</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Expected <code className="rounded bg-muted px-1">/builder/pastpapers/[testId]/[moduleId]</code>
+          <p className="font-semibold text-ms-fg">Invalid route parameters.</p>
+          <p className="mt-1 text-[14px] text-ms-fg-2">
+            Expected <code className="rounded-[6px] bg-ms-surface-2 px-1 font-ms-mono text-[13px]">/builder/pastpapers/[testId]/[moduleId]</code>
           </p>
         </div>
       </div>

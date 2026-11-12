@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { buttonClass } from "@/features/console/ui";
 import { skipLabel } from "./format";
 import type { Skipped } from "./smsApi";
 
@@ -15,19 +16,20 @@ import type { Skipped } from "./smsApi";
 
 // `cn` does not merge Tailwind classes, so a cell's alignment is never set twice: the shared
 // classes carry no alignment, a cell adds its own.
-export const BOX = "border border-border bg-card";
-export const CAPTION_TEXT = "text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground";
-export const TABLE = "w-full border-separate border-spacing-0 text-[13px] text-foreground";
-export const TH = "h-8 whitespace-nowrap border-b border-border bg-card px-2 text-left text-[12px] font-semibold text-muted-foreground";
-export const TD = "h-[34px] border-b border-border px-2 py-1";
-export const TR = "hover:bg-surface-2 [&:last-child>td]:border-b-0";
+// The console's look (design handoff v0.3, PR 13a): cards, hairline tables, console buttons. `relative`, not
+// `overflow-hidden`: a table scrolls in its own `overflow-x-auto`, and a positioned sr-only label in a cell
+// must stay inside the box.
+export const BOX = "relative rounded-ms-card bg-ms-card shadow-ms-1";
+export const CAPTION_TEXT = "text-ms-over text-ms-fg-3";
+export const TABLE = "w-full border-separate border-spacing-0 text-[14px] text-ms-fg";
+export const TH = "h-10 whitespace-nowrap border-b border-ms-border bg-ms-card px-3 text-left text-[13px] font-medium text-ms-fg-3 first:pl-5 last:pr-5";
+export const TD = "h-11 border-b border-ms-line px-3 py-1 first:pl-5 last:pr-5";
+export const TR = "ms-transition hover:bg-ms-surface [&:last-child>td]:border-b-0";
 /** A link that looks like a small primary Button: where a click goes to another page. */
-export const LINK_BUTTON =
-  "ds-ring inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground hover:bg-primary-hover";
-export const LINK_BUTTON_SECONDARY =
-  "ds-ring inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-3 text-[13px] font-semibold text-foreground hover:border-border-strong hover:bg-surface-2";
+export const LINK_BUTTON = buttonClass({ variant: "primary", size: "sm" });
+export const LINK_BUTTON_SECONDARY = buttonClass({ size: "sm" });
 export const TEXT_BUTTON =
-  "rounded-sm text-[13px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-hover";
+  "rounded-[6px] text-[14px] font-medium text-ms-primary-text hover:underline disabled:cursor-not-allowed disabled:text-ms-fg-disabled disabled:hover:no-underline";
 
 /** A hairline box with a caption row; `actions` sit at the caption's right. */
 export function Section({
@@ -43,7 +45,7 @@ export function Section({
 }) {
   return (
     <section className={cn(BOX, className)}>
-      <div className="flex min-h-9 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
+      <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-ms-line px-5 py-2.5">
         <h2 className={CAPTION_TEXT}>{title}</h2>
         {actions ? <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
@@ -54,17 +56,19 @@ export function Section({
 
 export function Loading() {
   return (
-    <p role="status" className="text-[13px] text-muted-foreground">
-      Loading…
-    </p>
+    <div role="status" aria-busy className="flex flex-col gap-3">
+      <span className="sr-only">Loading…</span>
+      <div className="h-24 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+      <div className="h-48 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+    </div>
   );
 }
 
 /** "The <what> didn't load." and a retry. */
 export function LoadError({ what, onRetry }: { what: string; onRetry: () => void }) {
   return (
-    <div role="alert" className={cn(BOX, "px-3 py-3 text-[13px]")}>
-      <span className="font-semibold text-foreground">The {what} didn&apos;t load.</span>{" "}
+    <div role="alert" className="rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-4 py-3 text-[14px]">
+      <span className="font-semibold text-ms-critical-fg">The {what} didn&apos;t load.</span>{" "}
       <button type="button" onClick={onRetry} className={TEXT_BUTTON}>
         Try again
       </button>
@@ -106,15 +110,15 @@ export function paidErrorText(e: unknown, fallback?: string): string {
 /** Who a send leaves out, by reason, with their names. Reasons with nobody are left out. */
 export function SkippedList({ skipped }: { skipped: Skipped | undefined }) {
   const rows = Object.entries(skipped ?? {}).filter(([, people]) => (people?.length ?? 0) > 0);
-  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">Nobody is skipped.</p>;
+  if (rows.length === 0) return <p className="text-[13px] text-ms-fg-3">Nobody is skipped.</p>;
   return (
     <ul className="space-y-1.5 text-[13px]">
       {rows.map(([reason, people]) => (
         <li key={reason}>
-          <span className="font-semibold text-foreground">
+          <span className="font-semibold text-ms-fg">
             {skipLabel(reason)} · {people!.length}
           </span>
-          <span className="text-muted-foreground">: {people!.map((p) => p.name || `#${p.user_id}`).join(", ")}</span>
+          <span className="text-ms-fg-3">: {people!.map((p) => p.name || `#${p.user_id}`).join(", ")}</span>
         </li>
       ))}
     </ul>

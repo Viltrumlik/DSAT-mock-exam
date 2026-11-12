@@ -17,9 +17,9 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { ArrowLeft } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 
-import { Alert, Badge, Button } from "@/components/ui";
+import { Alert, Badge, Button } from "./consoleKit";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { OperatorChart } from "./charts/OperatorChart";
 import { campaignBadge, dateTime, money, plural, roleLabel, statusBadge, todayInTashkent } from "./format";
@@ -45,18 +45,18 @@ import { NEW_CAMPAIGN_PATH, smsTabHref } from "./smsTabs";
 const BACK = (
   <Link
     href={smsTabHref("campaigns")}
-    className="inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+    className="inline-flex items-center gap-1 text-[13px] font-medium text-ms-fg-3 hover:text-ms-fg"
   >
-    <ArrowLeft className="h-4 w-4" aria-hidden />
+    <Icon name="left" size="sm" className="size-4" />
     Campaigns
   </Link>
 );
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[8rem_1fr] gap-2 border-b border-border px-3 py-1.5 text-[13px] last:border-b-0">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-foreground">{children}</dd>
+    <div className="grid grid-cols-[8rem_1fr] gap-2 border-b border-ms-border px-3 py-1.5 text-[13px] last:border-b-0">
+      <dt className="text-ms-fg-3">{label}</dt>
+      <dd className="min-w-0 break-words text-ms-fg">{children}</dd>
     </div>
   );
 }
@@ -117,7 +117,7 @@ export function CampaignPage({ id }: { id: number }) {
   if (!Number.isInteger(id) || id <= 0) {
     return (
       <div className="space-y-2 py-8 text-center">
-        <p className="text-sm font-semibold text-foreground">That campaign doesn&apos;t exist.</p>
+        <p className="text-sm font-semibold text-ms-fg">That campaign doesn&apos;t exist.</p>
         {BACK}
       </div>
     );
@@ -191,7 +191,7 @@ export function CampaignPage({ id }: { id: number }) {
                 Cancel campaign
               </Button>
             ) : due ? (
-              <span role="status" className="text-[13px] font-medium text-muted-foreground">
+              <span role="status" className="text-[13px] font-medium text-ms-fg-3">
                 Starting…
               </span>
             ) : null}
@@ -226,9 +226,9 @@ export function CampaignPage({ id }: { id: number }) {
         <Section title={`Template #${c.template_eskiz_id}`}>
           <div className="space-y-2 px-3 py-2.5 text-[13px]">
             <p className="whitespace-pre-wrap">{c.original || c.pattern}</p>
-            <p className="whitespace-pre-wrap text-muted-foreground">{c.pattern}</p>
+            <p className="whitespace-pre-wrap text-ms-fg-3">{c.pattern}</p>
             <p>
-              <span className="text-muted-foreground">Slots: </span>
+              <span className="text-ms-fg-3">Slots: </span>
               {slotsLabel(c)}
             </p>
           </div>
@@ -241,7 +241,7 @@ export function CampaignPage({ id }: { id: number }) {
             <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] tabular-nums">
               {RESULT_FIGURES.map(({ key, label }) => (
                 <li key={key}>
-                  <span className="font-semibold text-foreground">{Number(c.result?.[key] ?? 0)}</span> {label}
+                  <span className="font-semibold text-ms-fg">{Number(c.result?.[key] ?? 0)}</span> {label}
                 </li>
               ))}
             </ul>
@@ -258,7 +258,7 @@ export function CampaignPage({ id }: { id: number }) {
       {started && c.status !== "SENDING" ? <Outcome campaign={c} pricePerPart={price} /> : null}
 
       {messages.length === 0 ? (
-        <p className="text-[13px] text-muted-foreground">Nothing has been sent yet.</p>
+        <p className="text-[13px] text-ms-fg-3">Nothing has been sent yet.</p>
       ) : (
         <div className={`${BOX} overflow-x-auto`}>
           <table className={TABLE}>
@@ -286,7 +286,7 @@ export function CampaignPage({ id }: { id: number }) {
                     </td>
                     <td className={`${TD} text-right tabular-nums`}>{m.parts}</td>
                     <td className={`${TD} whitespace-nowrap`}>{dateTime(m.sent_at)}</td>
-                    <td className={`${TD} text-muted-foreground`}>{m.error}</td>
+                    <td className={`${TD} text-ms-fg-3`}>{m.error}</td>
                   </tr>
                 );
               })}

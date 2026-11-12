@@ -3,16 +3,13 @@
 import { useMemo } from "react";
 import type { AssessmentQuestion } from "@/features/assessments/types";
 import { ChoiceEditor, parseAndNormalizeChoices } from "@/features/assessments/components/ChoiceEditor";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { FIELD_LABEL } from "@/features/questionsAdmin/questionLook";
 import {
   parseJson,
   type AssessmentImageKey,
   type AssessmentImageState,
   type AssessmentQuestionEditorDraft,
 } from "@/features/assessments/components/assessmentQuestionEditorShared";
-
-const INPUT = STUDIO_INPUT;
-const LABEL = STUDIO_FIELD_LABEL;
 
 const choiceImgKey = (id: string): AssessmentImageKey | null => {
   const map: Record<string, AssessmentImageKey> = { A: "a", B: "b", C: "c", D: "d" };
@@ -52,8 +49,8 @@ export function MultipleChoiceEditor({
   }, [draft.correctAnswerText]);
 
   return (
-    <div className="rounded-2xl border border-border bg-surface-2/30 p-4 space-y-4">
-      <label className={LABEL}>Answer choices</label>
+    <div className="flex flex-col">
+      <p className={FIELD_LABEL}>Answer choices</p>
       <ChoiceEditor
         choices={choices}
         correctId={correctMcId}
@@ -64,7 +61,6 @@ export function MultipleChoiceEditor({
           });
         }}
         disabled={disabled}
-        inputClassName={INPUT}
         onFocusTextarea={(el, setVal) => { onChoiceFocus(el, setVal); }}
         // Per-choice image state
         getChoiceImageProps={(choiceId) => {

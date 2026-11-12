@@ -67,22 +67,22 @@ export function RangePicker({ value, onChange }: { value: RangeValue; onChange: 
             setEditing(false);
             onChange(p.value);
           }}
-          className={`${CHIP} ${value === p.value ? "border-[var(--sms-accent)] bg-[var(--sms-accent)] text-white" : "border-border text-muted-foreground hover:text-foreground"}`}
+          className={`${CHIP} ${value === p.value ? "border-[var(--sms-accent)] bg-[var(--sms-accent)] text-white" : "border-ms-border text-ms-fg-3 hover:text-ms-fg"}`}
         >
           {p.label}
         </button>
       ))}
       {editing ? (
         <span className="inline-flex flex-wrap items-center gap-1.5 text-[12px]">
-          <input type="date" aria-label="From" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="h-7 border border-border bg-card px-1.5" />
-          <span className="text-muted-foreground">–</span>
-          <input type="date" aria-label="To" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="h-7 border border-border bg-card px-1.5" />
+          <input type="date" aria-label="From" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="ms-transition h-8 rounded-ms-ctl border border-ms-border-input bg-ms-card px-1.5 outline-none focus:border-ms-primary" />
+          <span className="text-ms-fg-3">–</span>
+          <input type="date" aria-label="To" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="ms-transition h-8 rounded-ms-ctl border border-ms-border-input bg-ms-card px-1.5 outline-none focus:border-ms-primary" />
           <button type="button" className={TEXT_BUTTON} disabled={!from || !to || from > to} onClick={() => onChange({ from, to })}>
             Show
           </button>
         </span>
       ) : (
-        <button type="button" onClick={() => setEditing(true)} className={`${CHIP} border-border text-muted-foreground hover:text-foreground`}>
+        <button type="button" onClick={() => setEditing(true)} className={`${CHIP} border-ms-border text-ms-fg-3 hover:text-ms-fg`}>
           Dates…
         </button>
       )}

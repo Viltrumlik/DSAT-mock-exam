@@ -157,7 +157,7 @@ describe("SummaryCards", () => {
     const out = render(
       <SummaryCards stats={stats({ roster: 117, distinct_students: 99, classrooms: 6, midterms: 7 })} />,
     );
-    const card = [...(container?.querySelectorAll("div.rounded-2xl") ?? [])].find((d) =>
+    const card = [...(container?.querySelectorAll("div.rounded-ms-card") ?? [])].find((d) =>
       d.textContent?.startsWith("Students"),
     );
     expect(card?.textContent).toContain("99");
@@ -176,7 +176,7 @@ describe("SummaryCards", () => {
 
   it("brings the four cards in one after another, not all at once", () => {
     render(<SummaryCards stats={stats()} />);
-    const cards = [...(container?.querySelectorAll("div.rounded-2xl.cr-card") ?? [])];
+    const cards = [...(container?.querySelectorAll("div.rounded-ms-card.animate-ms-card-in") ?? [])];
     expect(cards).toHaveLength(4);
     const delays = cards.map((c) => Number((c as HTMLElement).style.animationDelay.replace("ms", "")));
     // Strictly increasing left to right.

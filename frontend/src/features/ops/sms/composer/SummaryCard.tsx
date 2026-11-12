@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { Alert } from "@/components/ui";
+import { Alert } from "../consoleKit";
 import { money, plural } from "../format";
 import { BOX, CAPTION_TEXT, SkippedList, TEXT_BUTTON } from "../panelKit";
 import type { Skipped } from "../smsApi";
@@ -24,9 +24,9 @@ export function figuresLine(f: Figures): string {
 }
 
 function BalanceLine({ cost, balance }: { cost: number; balance: number | null | undefined }) {
-  if (balance === null || balance === undefined) return <p className="text-[13px] text-muted-foreground">balance not known</p>;
-  if (cost <= balance) return <p className="text-[13px] font-medium text-success">balance OK</p>;
-  return <p className="text-[13px] font-semibold text-danger">balance short by {money(cost - balance)}</p>;
+  if (balance === null || balance === undefined) return <p className="text-[13px] text-ms-fg-3">balance not known</p>;
+  if (cost <= balance) return <p className="text-[13px] font-medium text-ms-positive-fg">balance OK</p>;
+  return <p className="text-[13px] font-semibold text-ms-critical-fg">balance short by {money(cost - balance)}</p>;
 }
 
 /** What the send comes to, as the server worked it out for exactly what the cards now say. */
@@ -65,11 +65,11 @@ export function SummaryCard({
           </button>
         </Alert>
       ) : figures ? (
-        <p className={`text-[13px] font-semibold tabular-nums text-foreground ${checking ? "opacity-60" : ""}`} aria-busy={checking}>
+        <p className={`text-[13px] font-semibold tabular-nums text-ms-fg ${checking ? "opacity-60" : ""}`} aria-busy={checking}>
           {figuresLine(figures)}
         </p>
       ) : (
-        <p className="text-[13px] text-muted-foreground">Choose who gets it and what it says.</p>
+        <p className="text-[13px] text-ms-fg-3">Choose who gets it and what it says.</p>
       )}
       {!error && figures?.cost !== undefined ? <BalanceLine cost={figures.cost} balance={balance} /> : null}
       {!error && overLimit && figures ? (

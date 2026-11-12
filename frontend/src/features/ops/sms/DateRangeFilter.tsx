@@ -18,7 +18,7 @@ export function DateRangeFilter({
 }) {
   const today = todayInTashkent();
   const quick = (preset: "7d" | "30d") => onChange(rangeDates(preset, today));
-  const chip = "rounded-full border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:text-foreground";
+  const chip = "rounded-full border border-ms-border px-2 py-0.5 text-[12px] text-ms-fg-3 hover:text-ms-fg";
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
       <button type="button" className={chip} onClick={() => onChange({ from: today, to: today })}>
@@ -36,16 +36,16 @@ export function DateRangeFilter({
         value={from}
         max={to || undefined}
         onChange={(e) => onChange({ from: e.target.value || null, to: to || null })}
-        className="h-7 border border-border bg-card px-1.5"
+        className="ms-transition h-8 rounded-ms-ctl border border-ms-border-input bg-ms-card px-1.5 outline-none focus:border-ms-primary"
       />
-      <span className="text-muted-foreground">–</span>
+      <span className="text-ms-fg-3">–</span>
       <input
         type="date"
         aria-label="To"
         value={to}
         min={from || undefined}
         onChange={(e) => onChange({ from: from || null, to: e.target.value || null })}
-        className="h-7 border border-border bg-card px-1.5"
+        className="ms-transition h-8 rounded-ms-ctl border border-ms-border-input bg-ms-card px-1.5 outline-none focus:border-ms-primary"
       />
     </div>
   );

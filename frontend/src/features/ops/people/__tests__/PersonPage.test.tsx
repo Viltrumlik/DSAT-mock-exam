@@ -180,9 +180,15 @@ const box = (title: string) =>
   ([...host.querySelectorAll("section")].find((s) => s.getAttribute("aria-label") === title) as HTMLElement | undefined) ??
   null;
 
-const tabLabels = () => [...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim());
+/** A tab's name without its count ("Groups", not "Groups1"). */
+const tabName = (t: Element) => {
+  const c = t.cloneNode(true) as Element;
+  c.querySelectorAll("[data-tab-count]").forEach((n) => n.remove());
+  return c.textContent?.trim();
+};
+const tabLabels = () => [...host.querySelectorAll('[role="tab"]')].map(tabName);
 const tab = (label: string) =>
-  [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((t) => t.textContent?.trim() === label);
+  [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((t) => tabName(t) === label);
 
 function input(label: string): HTMLInputElement {
   const el = [...host.querySelectorAll("label")].find((l) => l.textContent?.trim() === label);
@@ -349,7 +355,7 @@ describe("the Overview", () => {
     const summary = box("Summary")!.textContent;
     expect(summary).not.toContain("Owes");
     expect(summary).not.toContain("Joined");
-    expect(host.querySelector("h1")!.closest(".rounded-2xl")!.textContent).toContain("Owes250,000 UZS");
+    expect(host.querySelector("h1")!.closest("section")!.textContent).toContain("Owes250 000so'm");
     expect(summary).toContain("Junior G21 Math");
     expect(summary).toContain("SAT exam date");
     expect(summary).toContain("Created by lc-up");
@@ -559,6 +565,20 @@ describe("the page around the tabs", () => {
     expect(toast).toHaveBeenCalledWith({ tone: "success", message: "Account frozen." });
   });
 
+  it("keeps ⋯ shut while an action is in flight (Codex, #380)", async () => {
+    route(core());
+    let release!: () => void;
+    post.mockImplementation(() => new Promise((r) => (release = () => r({ data: { results: [{ id: 7, ok: true }] } }))));
+    await renderPage();
+    const more = host.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!;
+    expect(more.disabled).toBe(false);
+    await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Freeze")!.click());
+    expect(more.disabled).toBe(true);
+    await act(async () => release());
+    for (let i = 0; i < 3; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(more.disabled).toBe(false);
+  });
+
   it("asks before logging out everywhere, then says how many devices", async () => {
     route(core());
     post.mockResolvedValue({ data: { revoked: 2 } });
@@ -590,30 +610,40 @@ describe("the header", () => {
   it("says what the account is and its state, each in its colour", async () => {
     route(core({ is_frozen: true, frozen_reason: "debt", status: "frozen_debt" }));
     await renderPage();
-    const header = host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
+    const header = host.querySelector("h1")!.closest("section") as HTMLElement;
     expect(header.textContent).toContain("Student");
-    expect(header.textContent).toContain("Frozen — unpaid");
+    expect(header.textContent).toContain("Frozen for debt");
+    // The notice says, in words, what still works and what lifts it (DataDisplay board).
+    expect(header.textContent).toContain("The freeze lifts when lc-up records the payment.");
     expect(header.textContent).toContain("lc-up linked");
     expect(header.textContent).toContain("Never signed in");
     expect(header.textContent).toContain("+998 90 123 45 67");
   });
 
-  it("puts what matters at a glance: the debt, attendance and homework", async () => {
+  it("answers the desk's two questions first: did he come today, does he owe — then attendance", async () => {
     route(core());
     await renderPage();
-    const header = host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
-    expect(header.textContent).toContain("Owes250,000 UZS");
-    expect(header.textContent).toContain("50%");
-    expect(header.textContent).toContain("3 / 4");
+    const facts = [...host.querySelectorAll("dl dt")].map((d) => d.textContent);
+    expect(facts).toEqual(["Today", "Owes", "Attendance", "Last seen"]);
+    const header = host.querySelector("h1")!.closest("section") as HTMLElement;
+    expect(header.textContent).toContain("Owes250 000so'm");
+    expect(header.textContent).toContain("Attendance50 %");
   });
 
-  it("keeps the photo and name on every tab but the figures on the Overview only", async () => {
+  it("says today's mark, the class and its lesson time", async () => {
+    route(core({ glance: { attendance_rate: 50, homework: { completed: 3, total: 4 }, mocks_taken: 0, last_mock_total: null, today: [{ class_id: 21, class_name: "Junior G21 Math", lesson_time: "15:00", status: "LATE" }] } }));
+    await renderPage();
+    const today = [...host.querySelectorAll("dl > *")].find((n) => n.textContent?.startsWith("Today"))!;
+    expect(today.textContent).toBe("TodayLateJunior G21 Math · lesson 15:00");
+  });
+
+  it("keeps the photo, the name and the glance on every tab (the header comes before any tab)", async () => {
     route(core());
     await renderPage("students", "tab=groups");
-    const header = host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
+    const header = host.querySelector("h1")!.closest("section") as HTMLElement;
     expect(header.textContent).toContain("Aziz Tursunov");
-    expect(header.textContent).not.toContain("Owes");
-    expect(header.textContent).not.toContain("Attendance");
+    expect(header.textContent).toContain("Owes");
+    expect(header.querySelector('[role="tablist"]')).not.toBeNull();
   });
 
   it("gives a one-time password after a confirm, and says what to tell them", async () => {

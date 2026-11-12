@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { Briefcase, Link2, School } from "lucide-react";
-import { Badge } from "@/components/ui";
-import { Fieldset, LINK_CLASS, Row, Table, Td, WIDE_ONLY } from "../Fieldset";
+import { Fieldset, LINK_CLASS, Pill, Row, Table, Td, WIDE_ONLY } from "../Fieldset";
 import type { PersonStaff } from "../personApi";
 
 /** A staff member's classes — taught, or helped in as a TA — and what is waiting on them. */
@@ -30,7 +29,7 @@ export function StaffClassesSection({ staff }: { staff: PersonStaff }) {
       </div>
       <div className="mt-5">
         {staff.classes.length === 0 ? (
-          <p className="rounded-lg bg-surface-2 px-4 py-3 text-muted-foreground">No classes.</p>
+          <p className="rounded-ms-ctl bg-ms-surface px-4 py-3 text-ms-fg-2">No classes.</p>
         ) : (
           <Table head={["Class", "As", "Students", { label: "lc-up", className: WIDE_ONLY }]}>
             {staff.classes.map((c) => (
@@ -40,10 +39,10 @@ export function StaffClassesSection({ staff }: { staff: PersonStaff }) {
                     {c.name}
                   </Link>
                 </Td>
-                <Td>{c.as === "ta" ? <Badge variant="info">TA</Badge> : <Badge variant="primary">Teacher</Badge>}</Td>
+                <Td>{c.as === "ta" ? <Pill>TA</Pill> : <Pill tone="info">Teacher</Pill>}</Td>
                 <Td className="font-semibold tabular-nums">{c.students}</Td>
                 <Td className={WIDE_ONLY}>
-                  {c.lcup_managed ? <Badge variant="neutral">Synced</Badge> : <span className="text-muted-foreground">—</span>}
+                  {c.lcup_managed ? <Pill>Synced</Pill> : <span className="text-ms-fg-3">—</span>}
                 </Td>
               </tr>
             ))}

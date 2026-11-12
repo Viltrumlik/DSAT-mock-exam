@@ -1,12 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Clock, Loader2, Plus, Search, ShieldX } from "lucide-react";
+
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { Badge, Button, EmptyState } from "@/features/console/ui";
 import api from "@/lib/api";
 import { accessApi, type ResourceAccessGrant } from "@/lib/accessApi";
 import { cn } from "@/lib/cn";
 import { GrantPanel } from "./GrantPanel";
-import { accClass, Avatar } from "./accessUi";
+import {
+  AccessAvatar,
+  CARD,
+  GrantStatus,
+  LoadingRows,
+  ROW,
+  ROW_OFF,
+  RowAction,
+  SearchInput,
+  TABLE,
+  TABLE_CARD,
+  TD,
+  TH,
+  TH_R,
+  TR,
+} from "./accessConsole";
 
 type UserRow = {
   id: number;
@@ -17,12 +34,6 @@ type UserRow = {
   role?: string;
   /** Absolute URL of the profile photo; null when the account has not uploaded one. */
   profile_image_url?: string | null;
-};
-
-const STATUS_STYLES: Record<string, string> = {
-  ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  REVOKED: "bg-red-50 text-red-700 border-red-200",
-  EXPIRED: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
 function userLabel(u: UserRow): string {
@@ -117,38 +128,28 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* User picker */}
-      <div className="rounded-2xl border border-border bg-card p-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search a user by name, username, or email…"
-            className={accClass.search}
-          />
-        </div>
+      <div className={cn(CARD, "p-3")}>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search a user by name, username, or email…" />
         {!active && (
-          <div className="mt-2 max-h-[360px] space-y-2 overflow-y-auto">
+          <div className="mt-2 flex max-h-[360px] flex-col gap-2 overflow-y-auto">
             {filtered.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No users match.</p>
+              <EmptyState icon="users" title="No users match." />
             ) : (
               filtered.map((u) => (
                 <button
                   key={u.id}
                   type="button"
                   onClick={() => setActive(u)}
-                  className={cn("flex w-full items-center gap-3 px-3.5 py-3 text-left", accClass.selectable)}
+                  className={cn(ROW, ROW_OFF)}
                 >
-                  <Avatar name={userLabel(u)} seed={u.id} size={40} src={u.profile_image_url} />
+                  <AccessAvatar name={userLabel(u)} seed={u.id} size="md" src={u.profile_image_url} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold text-foreground">{userLabel(u)}</span>
-                    {u.email && <span className="block truncate text-xs text-muted-foreground">{u.email}</span>}
+                    <span className="block truncate text-[14px] font-semibold text-ms-fg">{userLabel(u)}</span>
+                    {u.email && <span className="block truncate text-[13px] text-ms-fg-3">{u.email}</span>}
                   </span>
-                  {u.role && (
-                    <span className="shrink-0 rounded-md bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">{u.role}</span>
-                  )}
+                  {u.role && <Badge tone="neutral">{u.role}</Badge>}
                 </button>
               ))
             )}
@@ -157,35 +158,30 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
       </div>
 
       {active && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           {/* Active user header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center gap-3">
-              <Avatar name={userLabel(active)} seed={active.id} size={44} src={active.profile_image_url} />
-              <div>
-                <div className="text-base font-extrabold text-foreground">{userLabel(active)}</div>
-                <div className="text-xs text-muted-foreground">{active.email}</div>
+          <div className={cn(CARD, "flex flex-wrap items-center justify-between gap-3 p-4")}>
+            <div className="flex min-w-0 flex-1 basis-[18rem] items-center gap-3">
+              <AccessAvatar name={userLabel(active)} seed={active.id} size="lg" src={active.profile_image_url} />
+              <div className="min-w-0">
+                <div className="truncate text-[16px] font-bold text-ms-fg">{userLabel(active)}</div>
+                <div className="truncate text-[13px] text-ms-fg-3">{active.email}</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setGranting((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-[var(--primary-hover)]"
-              >
-                <Plus className="h-4 w-4" /> Grant access
-              </button>
-              <button
-                type="button"
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="primary" icon="plus" onClick={() => setGranting((v) => !v)}>
+                Grant access
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => {
                   setActive(null);
                   setGranting(false);
                   setGrants([]);
                 }}
-                className="rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
               >
                 Change user
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -200,86 +196,61 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
             />
           )}
 
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div>
-          )}
+          {error && <LibraryError>{error}</LibraryError>}
 
           {/* Grants table */}
-          <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3">Access to</th>
-                  <th className="px-4 py-3">Source</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Expires</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /></td></tr>
-                ) : grants.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No access grants yet. Use “Grant access” to add some.</td></tr>
-                ) : (
-                  grants.map((g) => (
-                    <tr key={g.id} className="border-b border-border last:border-b-0 hover:bg-surface-2/50">
-                      <td className="px-4 py-3 text-foreground">
-                        {grantTarget(g)}
-                        {g.classroom_name && <div className="text-xs text-muted-foreground">via {g.classroom_name}</div>}
-                      </td>
-                      <td className="px-4 py-3"><span className="text-xs font-semibold text-muted-foreground">{g.source}</span></td>
-                      <td className="px-4 py-3">
-                        <span className={cn("inline-block rounded-md border px-2 py-0.5 text-xs font-bold", STATUS_STYLES[g.status])}>{g.status}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {g.expires_at ? new Date(g.expires_at).toLocaleDateString() : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <IconBtn title="Extend / set expiry" onClick={() => void extend(g)} icon={Clock} busy={busyId === g.id} />
-                          {g.status === "ACTIVE" && (
-                            <IconBtn title="Revoke" danger onClick={() => void revoke(g)} icon={ShieldX} busy={busyId === g.id} />
-                          )}
-                        </div>
+          <div className={TABLE_CARD}>
+            <div className="overflow-x-auto">
+              <table className={TABLE}>
+                <thead>
+                  <tr>
+                    <th scope="col" className={TH}>Access to</th>
+                    <th scope="col" className={TH}>Source</th>
+                    <th scope="col" className={TH}>Status</th>
+                    <th scope="col" className={TH}>Expires</th>
+                    <th scope="col" className={TH_R}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <LoadingRows cols={5} />
+                  ) : grants.length === 0 ? (
+                    <tr>
+                      <td colSpan={5}>
+                        <EmptyState icon="key" title="No access grants yet. Use “Grant access” to add some." />
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    grants.map((g) => (
+                      <tr key={g.id} className={TR}>
+                        <td className={TD}>
+                          {grantTarget(g)}
+                          {g.classroom_name && <div className="text-[13px] text-ms-fg-3">via {g.classroom_name}</div>}
+                        </td>
+                        <td className={cn(TD, "text-[13px] font-medium text-ms-fg-3")}>{g.source}</td>
+                        <td className={TD}>
+                          <GrantStatus status={g.status} />
+                        </td>
+                        <td className={cn(TD, "whitespace-nowrap text-[13px] text-ms-fg-3")}>
+                          {g.expires_at ? new Date(g.expires_at).toLocaleDateString() : "—"}
+                        </td>
+                        <td className={TD}>
+                          <div className="flex items-center justify-end gap-1">
+                            <RowAction title="Extend / set expiry" onClick={() => void extend(g)} icon="clock" busy={busyId === g.id} />
+                            {g.status === "ACTIVE" && (
+                              <RowAction title="Revoke" danger onClick={() => void revoke(g)} icon="shield" busy={busyId === g.id} />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
     </div>
-  );
-}
-
-function IconBtn({
-  title,
-  onClick,
-  icon: Icon,
-  danger,
-  busy,
-}: {
-  title: string;
-  onClick: () => void;
-  icon: React.ElementType;
-  danger?: boolean;
-  busy?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      disabled={busy}
-      className={cn(
-        "rounded-lg border border-border p-1.5 transition-colors hover:bg-surface-2 disabled:opacity-50",
-        danger ? "text-red-600 hover:bg-red-50" : "text-foreground",
-      )}
-    >
-      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
-    </button>
   );
 }

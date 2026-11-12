@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, CalendarClock, Download, FolderOpen, RefreshCw } from "lucide-react";
-import { Select, Tabs } from "@/components/ui";
+import { Icon } from "@/components/ui/Icon";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { Button, TabPanel, Tabs } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import MidtermRecordsBrowser from "@/features/midtermReports/MidtermReportsPage";
-import { cn } from "@/lib/cn";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import { ClassroomMonthPanel } from "./ClassroomMonthPanel";
 import { DefinitionNote } from "./DefinitionNote";
 import { SummaryCards } from "./SummaryCards";
@@ -53,9 +54,9 @@ import type { MonthKey, MonthlyStats, TreeNode, TrendPoint } from "./types";
 
 type TabKey = "statistics" | "records";
 
-const TABS = [
-  { value: "statistics", label: "Results", icon: BarChart3 },
-  { value: "records", label: "Class records", icon: FolderOpen },
+const TABS: { id: TabKey; label: string }[] = [
+  { id: "statistics", label: "Results" },
+  { id: "records", label: "Class records" },
 ];
 
 /** All the drill-down panel needs of a class to open it: an id and something to call it. */
@@ -198,15 +199,15 @@ export default function MidtermStatsPage() {
 
   const monthPicker =
     months.length > 0 ? (
-      <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
-        <CalendarClock className="h-4 w-4" aria-hidden />
+      <label className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-ms-fg-2">
+        <Icon name="cal" size="sm" className="text-ms-fg-3" />
         <span className="sr-only sm:not-sr-only">Month</span>
         {/* Wide enough for "October 2026 (scheduled)" to be read WHILE CLOSED. At w-44 the
             marker was clipped to "October 2026 (sch", which is the one word that had to
             survive. */}
-        <span className="w-[min(15rem,60vw)] sm:w-60">
-          <Select
-            selectSize="sm"
+        <span className="block w-[min(15rem,60vw)] sm:w-60">
+          <select
+            className={CONTROL}
             value={pickerMonth}
             onChange={(e) => openMonth(e.target.value || null)}
             aria-label="Month"
@@ -222,13 +223,13 @@ export default function MidtermStatsPage() {
                 {monthOptionLabel(m, futureMonths)}
               </option>
             ))}
-          </Select>
+          </select>
         </span>
       </label>
     ) : null;
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <OpsPageHeader
         section="Midterms"
         title="Midterm results"
@@ -239,171 +240,160 @@ export default function MidtermStatsPage() {
               {monthPicker}
               {/* One file for everything under this heading: departments, their teachers,
                   every class and every student. It used to take one download per class. */}
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                icon="download"
                 onClick={() => void downloadPdf()}
-                disabled={pdfBusy}
+                state={pdfBusy ? "busy" : "idle"}
+                busyLabel="Preparing…"
                 title={`Download ${pdfLabel} for ${monthLabel(shownMonth) || "this month"} as one PDF — every department, teacher, class and student.`}
-                className="ds-ring inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-60"
               >
-                <Download className={cn("h-4 w-4", pdfBusy && "animate-pulse")} aria-hidden />
-                {pdfBusy ? "Preparing…" : "Download PDF"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void load(month)}
-                className="ds-ring inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
-              >
-                <RefreshCw className="h-4 w-4" aria-hidden />
+                Download PDF
+              </Button>
+              <Button variant="secondary" icon="refresh" onClick={() => void load(month)}>
                 Refresh
-              </button>
+              </Button>
             </>
           ) : null
         }
       />
 
-      <Tabs
-        tabs={TABS}
-        value={tab}
-        onValueChange={(v) => setTab(v as TabKey)}
-        aria-label="Midterm views"
-      />
+      <Tabs label="Midterm views" tabs={TABS} value={tab} onChange={setTab} idPrefix="midterms" />
 
-      {tab === "records" ? (
-        <MidtermRecordsBrowser />
-      ) : selected != null ? (
-        <ClassroomMonthPanel
-          classroomId={selected.id}
-          initialMonth={shownMonth}
-          fallbackName={selected.name}
-          onBack={() => setSelected(null)}
-          backLabel={`Back to ${monthLabel(shownMonth) || "the"} results`}
-        />
-      ) : error ? (
-        <ErrorPanel message={error} onRetry={() => void load(month)} />
-      ) : loading || stats == null ? (
-        <div className="space-y-4" aria-busy>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface-2" />
-            ))}
+      <TabPanel idPrefix="midterms" id={tab}>
+        {tab === "records" ? (
+          <MidtermRecordsBrowser />
+        ) : selected != null ? (
+          <ClassroomMonthPanel
+            classroomId={selected.id}
+            initialMonth={shownMonth}
+            fallbackName={selected.name}
+            onBack={() => setSelected(null)}
+            backLabel={`Back to ${monthLabel(shownMonth) || "the"} results`}
+          />
+        ) : error ? (
+          <ErrorPanel message={error} onRetry={() => void load(month)} />
+        ) : loading || stats == null ? (
+          <div className="flex flex-col gap-4" aria-busy>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="animate-ms-shimmer h-36 rounded-ms-card" />
+              ))}
+            </div>
+            <SectionCard>
+              <TableSkeleton rows={6} />
+            </SectionCard>
           </div>
-          <SectionCard>
-            <TableSkeleton rows={6} />
-          </SectionCard>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {pdfError ? (
-            <Note className="border-danger/25 bg-danger-soft text-danger-foreground">{pdfError}</Note>
-          ) : null}
+        ) : (
+          <div className="flex flex-col gap-4">
+            {pdfError ? <LibraryError>{pdfError}</LibraryError> : null}
 
-          {/* Before any figure: the reader has to know what they are looking at. */}
-          {scheduled && shownMonth ? (
-            <ScheduledBanner
-              month={shownMonth}
-              thisMonth={stats.this_month}
-              latestMonth={latestSatMonth(months, futureMonths)}
-              onOpenLatest={() => openMonth(latestSatMonth(months, futureMonths))}
-              detail={`${plural(stats.totals.midterms, "exam")} booked for ${plural(stats.totals.classrooms, "class", "classes")}, and ${plural(stats.totals.distinct_students, "student")} due to sit them.`}
-            />
-          ) : null}
-
-          {/* No month was selected at all, so there is nothing for a row of cards to be ABOUT.
-              Their zeros would be a description of an empty selection wearing the words
-              "Passed" and "Did not pass". An empty month that genuinely happened still gets
-              them: its zeros describe a month.
-
-              These cards are the WHOLE SCHOOL wherever the reader has drilled to. They do not
-              follow the drill-down on purpose — a reader looking at one department needs the
-              total to compare it against — which is why the card below states whose numbers
-              its own table is showing. */}
-          {noResultsYet ? null : <SummaryCards stats={stats} />}
-
-          {scheduled ? (
-            /* No drill-down and no ranking. Every level of a hierarchy is a comparison, and
-               ordering classes "best first" over a month nobody has sat would be read as a
-               finding about the classes at the bottom. */
-            <SectionCard
-              title={`Booked for ${monthLabel(shownMonth) || "this month"}`}
-              description="What is timetabled, not how it went. Open a class to see which exams it has coming."
-            >
-              <ScheduledClassroomTable rows={stats.classrooms} onSelect={setSelected} />
-            </SectionCard>
-          ) : noResultsYet ? (
-            <SectionCard>
-              <div className="p-5">
-                <EmptyPanel
-                  title="No results yet"
-                  body={`Nobody has sat an exam under this view. Every month it has is still ahead: ${titleList(futureMonths.map(monthLabel))}. Pick one above — marked "scheduled" — to see what is booked.`}
-                />
-              </div>
-            </SectionCard>
-          ) : empty ? (
-            <SectionCard>
-              <div className="p-5">
-                {orphans.length > 0 ? (
-                  /* The month is not empty — it is empty OF THINGS THAT COUNT, and the reason
-                     is sitting in the builder under a name the reader can search for. */
-                  <EmptyPanel
-                    title={`No exams counted in ${monthLabel(shownMonth) || "this month"}`}
-                    body={`The only ${orphans.length === 1 ? "paper" : plural(orphans.length, "paper")} dating into this month ${orphans.length === 1 ? "is a retake" : "are retakes"} with no parent exam — ${titleList(orphans.map((p) => p.title))} — and a retake with no parent is counted nowhere. Nothing else was booked here.`}
-                  />
-                ) : (
-                  <EmptyPanel
-                    title={`No exams in ${monthLabel(shownMonth) || "this month"}`}
-                    body="No class sat an exam that counts in this month. Pick another month above — an exam falls in the month it was booked for, or, when it was never booked, the month somebody first sat it."
-                  />
-                )}
-              </div>
-            </SectionCard>
-          ) : (
-            <>
-              {/* `cr-rise` rather than `cr-card`: this is a grid of two cards, and a hover
-                  lift belongs to each card, not to the pair of them. */}
-              <div className="cr-rise grid gap-4 lg:grid-cols-2" style={{ animationDelay: "300ms" }}>
-                <ResultsDonut stats={stats} />
-                {/* Draws nothing until a level actually branches; the grid then gives the
-                    donut the full width rather than leaving a hole beside it. */}
-                <LevelBars
-                  nodes={view.rows}
-                  level={view.level}
-                  month={shownMonth}
-                  scope={view.parent?.name ?? null}
-                />
-              </div>
-
-              <div className="cr-rise" style={{ animationDelay: "380ms" }}>
-                <TrendChart points={trend} loading={trendLoading} error={trendError} />
-              </div>
-
-              <HierarchyPanel
-                roots={hierarchy.roots}
-                path={path}
-                derived={hierarchy.derived}
+            {/* Before any figure: the reader has to know what they are looking at. */}
+            {scheduled && shownMonth ? (
+              <ScheduledBanner
                 month={shownMonth}
-                onGo={goTo}
-                onOpen={open}
+                thisMonth={stats.this_month}
+                latestMonth={latestSatMonth(months, futureMonths)}
+                onOpenLatest={() => openMonth(latestSatMonth(months, futureMonths))}
+                detail={`${plural(stats.totals.midterms, "exam")} booked for ${plural(stats.totals.classrooms, "class", "classes")}, and ${plural(stats.totals.distinct_students, "student")} due to sit them.`}
               />
-            </>
-          )}
+            ) : null}
 
-          {/* Everything a reader may need and nobody needs FIRST. This is the block that used
-              to sit between the numbers and the table. */}
-          <div className="space-y-3 border-t border-border pt-4">
-            <SplitLegend />
-            {!scheduled && stats.totals.pending > 0 && (
-              <Note>
-                {plural(stats.totals.pending, "result")} in {monthLabel(shownMonth)}{" "}
-                {stats.totals.pending === 1 ? "is" : "are"} still to come. They count as not
-                passed for now, so every rate here can only go up.
-              </Note>
+            {/* No month was selected at all, so there is nothing for a row of cards to be ABOUT.
+                Their zeros would be a description of an empty selection wearing the words
+                "Passed" and "Did not pass". An empty month that genuinely happened still gets
+                them: its zeros describe a month.
+
+                These cards are the WHOLE SCHOOL wherever the reader has drilled to. They do not
+                follow the drill-down on purpose — a reader looking at one department needs the
+                total to compare it against — which is why the card below states whose numbers
+                its own table is showing. */}
+            {noResultsYet ? null : <SummaryCards stats={stats} />}
+
+            {scheduled ? (
+              /* No drill-down and no ranking. Every level of a hierarchy is a comparison, and
+                 ordering classes "best first" over a month nobody has sat would be read as a
+                 finding about the classes at the bottom. */
+              <SectionCard
+                title={`Booked for ${monthLabel(shownMonth) || "this month"}`}
+                description="What is timetabled, not how it went. Open a class to see which exams it has coming."
+              >
+                <ScheduledClassroomTable rows={stats.classrooms} onSelect={setSelected} />
+              </SectionCard>
+            ) : noResultsYet ? (
+              <SectionCard>
+                <div className="px-5">
+                  <EmptyPanel
+                    title="No results yet"
+                    body={`Nobody has sat an exam under this view. Every month it has is still ahead: ${titleList(futureMonths.map(monthLabel))}. Pick one above — marked "scheduled" — to see what is booked.`}
+                  />
+                </div>
+              </SectionCard>
+            ) : empty ? (
+              <SectionCard>
+                <div className="px-5">
+                  {orphans.length > 0 ? (
+                    /* The month is not empty — it is empty OF THINGS THAT COUNT, and the reason
+                       is sitting in the builder under a name the reader can search for. */
+                    <EmptyPanel
+                      title={`No exams counted in ${monthLabel(shownMonth) || "this month"}`}
+                      body={`The only ${orphans.length === 1 ? "paper" : plural(orphans.length, "paper")} dating into this month ${orphans.length === 1 ? "is a retake" : "are retakes"} with no parent exam — ${titleList(orphans.map((p) => p.title))} — and a retake with no parent is counted nowhere. Nothing else was booked here.`}
+                    />
+                  ) : (
+                    <EmptyPanel
+                      title={`No exams in ${monthLabel(shownMonth) || "this month"}`}
+                      body="No class sat an exam that counts in this month. Pick another month above — an exam falls in the month it was booked for, or, when it was never booked, the month somebody first sat it."
+                    />
+                  )}
+                </div>
+              </SectionCard>
+            ) : (
+              <>
+                {/* The grid of two cards arrives as one; each card's own entrance is its own. */}
+                <div className="animate-ms-card-in grid gap-4 lg:grid-cols-2" style={{ animationDelay: "300ms" }}>
+                  <ResultsDonut stats={stats} />
+                  {/* Draws nothing until a level actually branches; the grid then gives the
+                      donut the full width rather than leaving a hole beside it. */}
+                  <LevelBars
+                    nodes={view.rows}
+                    level={view.level}
+                    month={shownMonth}
+                    scope={view.parent?.name ?? null}
+                  />
+                </div>
+
+                <div className="animate-ms-card-in" style={{ animationDelay: "380ms" }}>
+                  <TrendChart points={trend} loading={trendLoading} error={trendError} />
+                </div>
+
+                <HierarchyPanel
+                  roots={hierarchy.roots}
+                  path={path}
+                  derived={hierarchy.derived}
+                  month={shownMonth}
+                  onGo={goTo}
+                  onOpen={open}
+                />
+              </>
             )}
-            <OrphanRetakeNote month={shownMonth ?? null} papers={orphans} />
-            <DefinitionNote definition={stats.definition} />
+
+            {/* Everything a reader may need and nobody needs FIRST. This is the block that used
+                to sit between the numbers and the table. */}
+            <div className="flex flex-col gap-3 border-t border-ms-line pt-4">
+              <SplitLegend />
+              {!scheduled && stats.totals.pending > 0 && (
+                <Note>
+                  {plural(stats.totals.pending, "result")} in {monthLabel(shownMonth)}{" "}
+                  {stats.totals.pending === 1 ? "is" : "are"} still to come. They count as not
+                  passed for now, so every rate here can only go up.
+                </Note>
+              )}
+              <OrphanRetakeNote month={shownMonth ?? null} papers={orphans} />
+              <DefinitionNote definition={stats.definition} />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </TabPanel>
     </div>
   );
 }

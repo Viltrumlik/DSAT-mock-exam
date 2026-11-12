@@ -1,14 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { useId, useMemo } from "react";
+import { CONTROL, FIELD_LABEL, HINT } from "@/features/questionsAdmin/questionLook";
 import {
   parseJson,
   type AssessmentQuestionEditorDraft,
 } from "@/features/assessments/components/assessmentQuestionEditorShared";
-
-const INPUT = STUDIO_INPUT;
-const LABEL = STUDIO_FIELD_LABEL;
 
 // ─── Numeric ──────────────────────────────────────────────────────────────────
 
@@ -21,6 +18,7 @@ export function NumericEditor({
   onPatch: (p: Partial<AssessmentQuestionEditorDraft>) => void;
   disabled?: boolean;
 }) {
+  const id = useId();
   const gradingObj = useMemo(
     () => parseJson<Record<string, unknown>>(draft.gradingConfigText, {}),
     [draft.gradingConfigText],
@@ -41,9 +39,12 @@ export function NumericEditor({
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <div>
-        <label className={LABEL}>Correct value(s)</label>
+        <label htmlFor={`${id}-value`} className={FIELD_LABEL}>
+          Correct value(s)
+        </label>
         <input
-          className={INPUT}
+          id={`${id}-value`}
+          className={CONTROL}
           disabled={disabled}
           type="text"
           placeholder="e.g. 42, 3.14, 1/2 — or 10.25, 21/2"
@@ -70,14 +71,17 @@ export function NumericEditor({
             onPatch({ correctAnswerText: JSON.stringify(raw) });
           }}
         />
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Separate multiple accepted answers with commas (e.g. <span className="font-mono">10.25, 21/2</span>).
+        <p className={HINT}>
+          Separate multiple accepted answers with commas (e.g. <span className="font-ms-mono">10.25, 21/2</span>).
         </p>
       </div>
       <div>
-        <label className={LABEL}>Tolerance (±)</label>
+        <label htmlFor={`${id}-tolerance`} className={FIELD_LABEL}>
+          Tolerance (±)
+        </label>
         <input
-          className={INPUT}
+          id={`${id}-tolerance`}
+          className={CONTROL}
           disabled={disabled}
           type="text"
           inputMode="decimal"

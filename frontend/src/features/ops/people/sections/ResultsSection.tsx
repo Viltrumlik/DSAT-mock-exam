@@ -14,13 +14,13 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { Badge } from "@/components/ui";
 import type { PeopleSection } from "@/features/ops/changelist/peopleApi";
 import { formatDate } from "@/features/ops/users/peopleColumns";
 import { cn } from "@/lib/cn";
-import { Fieldset, IconSquare, PartBody, StatTile, Table, Td, TONE_TEXT, WIDE_ONLY, type Column, type Tone } from "../Fieldset";
+import { Fieldset, IconSquare, PartBody, Pill, StatTile, Table, Td, TONE_TEXT, WIDE_ONLY, type Column, type Tone } from "../Fieldset";
 import { rateTone } from "../PersonHeader";
 import { usePersonPart, type PersonResults } from "../personApi";
+import { MockScores } from "../graphics";
 
 /**
  * Everything a learner has been graded on, one card per kind that has any, newest first, with
@@ -60,9 +60,9 @@ function Part<T>({
 }) {
   return (
     <section
-      className={cn("min-w-0 rounded-xl border p-5", highlight ? "border-warning/40 bg-warning-soft/30" : "border-border")}
+      className={cn("min-w-0 rounded-[16px] border px-[22px] py-5", highlight ? "border-ms-attention-line bg-ms-attention-soft" : "border-ms-border")}
     >
-      <h3 className="mb-3 flex items-center gap-2.5 text-sm font-semibold text-foreground">
+      <h3 className="mb-3 flex items-center gap-2.5 text-sm font-semibold text-ms-fg">
         <IconSquare icon={icon} tone={tone} size="sm" />
         {title}
       </h3>
@@ -76,7 +76,7 @@ type Kind = { title: string; icon: LucideIcon; count: number; card: () => ReactN
 
 /** A date cell; `wide` hides it on a phone, with its `wide(...)` header. */
 const Day = ({ iso, wide: hide = false }: { iso: string | null; wide?: boolean }) => (
-  <Td className={cn("tabular-nums text-muted-foreground", hide && WIDE_ONLY)}>{formatDate(iso)}</Td>
+  <Td className={cn("tabular-nums text-ms-fg-3", hide && WIDE_ONLY)}>{formatDate(iso)}</Td>
 );
 const Title = ({ children }: { children: ReactNode }) => (
   <Td className="max-w-[10rem] truncate font-medium sm:max-w-[16rem]">{children}</Td>
@@ -128,8 +128,8 @@ function kinds(d: PersonResults, centre: boolean): Kind[] {
           row={(o) => (
             <tr key={o.id}>
               <Title>{o.title}</Title>
-              <Td className={`${WIDE_ONLY} max-w-[14rem] truncate text-muted-foreground`}>{o.class_name}</Td>
-              <Td className="tabular-nums font-medium text-warning-foreground">{formatDate(o.due_at)}</Td>
+              <Td className={`${WIDE_ONLY} max-w-[14rem] truncate text-ms-fg-3`}>{o.class_name}</Td>
+              <Td className="tabular-nums font-medium text-ms-attention-fg">{formatDate(o.due_at)}</Td>
             </tr>
           )}
         />
@@ -213,11 +213,11 @@ function kinds(d: PersonResults, centre: boolean): Kind[] {
               <Td className="font-semibold tabular-nums">{outOf(m.score, m.scale)}</Td>
               <Td className={WIDE_ONLY}>
                 {m.passed == null ? (
-                  <span className="text-muted-foreground">—</span>
+                  <span className="text-ms-fg-3">—</span>
                 ) : m.passed ? (
-                  <Badge variant="success">Yes</Badge>
+                  <Pill tone="positive">Yes</Pill>
                 ) : (
-                  <Badge variant="danger">No</Badge>
+                  <Pill tone="critical">No</Pill>
                 )}
               </Td>
               <Day iso={m.at} wide />
@@ -243,18 +243,18 @@ function kinds(d: PersonResults, centre: boolean): Kind[] {
               <Day iso={e.starts_at} />
               <Td className={WIDE_ONLY}>
                 {e.status === "CANCELLED" ? (
-                  <Badge variant="neutral">Cancelled</Badge>
+                  <Pill>Cancelled</Pill>
                 ) : (
-                  <Badge variant="primary">Registered</Badge>
+                  <Pill tone="info">Registered</Pill>
                 )}
               </Td>
               <Td className={WIDE_ONLY}>
                 {e.attendance === "ATTENDED" ? (
-                  <Badge variant="success">Yes</Badge>
+                  <Pill tone="positive">Yes</Pill>
                 ) : e.attendance === "MISSED" ? (
-                  <Badge variant="danger">No</Badge>
+                  <Pill tone="critical">No</Pill>
                 ) : (
-                  <span className="text-muted-foreground">—</span>
+                  <span className="text-ms-fg-3">—</span>
                 )}
               </Td>
             </tr>
@@ -285,12 +285,12 @@ function ResultCards({ kinds: list }: { kinds: Kind[] }) {
         </div>
       ) : null}
       {empty.length > 0 ? (
-        <div data-testid="results-empty" className="rounded-xl border border-dashed border-border px-5 py-4">
-          <p className="text-xs font-medium text-muted-foreground">Nothing yet</p>
+        <div data-testid="results-empty" className="rounded-[16px] border border-dashed border-ms-border-strong px-5 py-4">
+          <p className="text-xs font-medium text-ms-fg-3">Nothing yet</p>
           {/* Plain words, not chips: a filled pill reads as a button to press. */}
           <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
             {empty.map(({ title, icon: Icon }) => (
-              <li key={title} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+              <li key={title} className="inline-flex items-center gap-1.5 text-sm text-ms-fg-3">
                 <Icon aria-hidden className="h-3.5 w-3.5" />
                 {title}
               </li>
@@ -302,7 +302,8 @@ function ResultCards({ kinds: list }: { kinds: Kind[] }) {
   );
 }
 
-export function ResultsSection({ id, section }: { id: number; section: PeopleSection }) {
+/** `target`: the SAT total the student set for themself (the mock scores' target line). */
+export function ResultsSection({ id, section, target = null }: { id: number; section: PeopleSection; target?: number | null }) {
   const query = usePersonPart<PersonResults>(id, "results");
   const centre = section !== "public";
 
@@ -317,6 +318,7 @@ export function ResultsSection({ id, section }: { id: number; section: PeopleSec
               <StatTile label="XP" value={num(d.rewards.xp)} icon={Zap} tone="accent" sub="earned in total" />
               <StatTile label="Coins" value={num(d.rewards.coins)} icon={Coins} tone="warning" sub="to spend in the shop" />
             </div>
+            <MockScores mocks={d.mocks} target={target} />
             <ResultCards kinds={kinds(d, centre)} />
           </div>
         )}

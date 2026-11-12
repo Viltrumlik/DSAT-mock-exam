@@ -38,16 +38,25 @@ def attendance_part(user) -> dict:
             classroom__is_active=True,
         ).values_list("classroom_id", flat=True)
     )
+    from classes.lesson_schedule import lesson_weekdays
+
     classes = []
     for room in _student_rooms(user):
         stats = _attendance_for(room, user)
         if stats:
-            classes.append({"id": room.pk, "name": room.name, "active": room.pk in live_ids, **stats})
+            classes.append({
+                "id": room.pk, "name": room.name, "active": room.pk in live_ids, **stats,
+                # The days it meets (0 = Monday) and when: the attendance pattern draws weeks × these days.
+                "weekdays": sorted(lesson_weekdays(room)), "lesson_time": room.lesson_time or "",
+            })
 
-    since = timezone.localdate() - timedelta(days=30)
+    # Nine weeks (this one and the eight before): the pattern's span. No row cap: a cap shared by every class
+    # dropped the oldest marks of a learner in many classes, and the pattern read them as unmarked (Codex,
+    # #380). The window bounds the reply anyway — at most one mark per class per day.
+    since = timezone.localdate() - timedelta(days=62)
     rows = list(
         AttendanceRecord.objects.filter(student=user, session__date__gte=since)
-        .select_related("session__classroom").order_by("-session__date", "-pk")[:60]
+        .select_related("session__classroom").order_by("-session__date", "-pk")
     )
     reasons = dict(LcupAbsenceReason.objects.values_list("lcup_reason_id", "title"))
     pushes = {

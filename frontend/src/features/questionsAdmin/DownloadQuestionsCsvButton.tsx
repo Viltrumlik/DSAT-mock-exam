@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Download, Loader2 } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
+import { buttonClass } from "@/features/console/ui";
 import { useMe } from "@/hooks/useMe";
 import { downloadBlob } from "@/lib/download";
 import { normalizeApiError } from "@/lib/apiError";
@@ -18,12 +20,14 @@ import { normalizeApiError } from "@/lib/apiError";
  * containing slashes or quotes. `fallbackName` is used only if the header is missing.
  */
 export function DownloadQuestionsCsvButton({
-  fetchCsv, fallbackName, label = "Download CSV", title,
+  fetchCsv, fallbackName, label = "Download CSV", title, look = "studio",
 }: {
   fetchCsv: () => Promise<Blob>;
   fallbackName: string;
   label?: string;
   title?: string;
+  /** "console": the module editor's frame (PR 14a); the set editor keeps the studio button for now. */
+  look?: "studio" | "console";
 }) {
   const { me } = useMe();
   const [busy, setBusy] = useState(false);
@@ -42,6 +46,26 @@ export function DownloadQuestionsCsvButton({
     } finally {
       setBusy(false);
     }
+  }
+
+  if (look === "console") {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void run()}
+          disabled={busy}
+          aria-busy={busy || undefined}
+          title={title ?? "Download every question and its answer key as a CSV"}
+          className={buttonClass({ variant: "secondary", size: "sm" })}
+        >
+          <Icon name={busy ? "loader" : "download"} size="sm" className={busy ? "animate-ms-spin" : undefined} />
+          {label}
+        </button>
+        {/* A failed download otherwise looks like a button that does nothing. */}
+        {error ? <span className="text-[13px] font-medium text-ms-critical-fg">{error}</span> : null}
+      </span>
+    );
   }
 
   return (

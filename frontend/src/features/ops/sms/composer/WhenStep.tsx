@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 
-import { Alert, Button, Field, Input, SegmentedControl } from "@/components/ui";
+import { Alert, Button, Field, Input, SegmentedControl } from "../consoleKit";
 import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
 import { isNightInTashkent, tashkentDateTime, tashkentHour, tashkentTime, todayInTashkent } from "../format";
 
@@ -89,7 +89,7 @@ export function WhenStep({
           />
         </Field>
       ) : (
-        <p className="text-[13px] text-muted-foreground">It goes out as soon as it is confirmed.</p>
+        <p className="text-[13px] text-ms-fg-3">It goes out as soon as it is confirmed.</p>
       )}
       {problem && value.at ? <Alert tone="danger">{problem}</Alert> : null}
       {goesOut && isNightInTashkent(goesOut) ? <Alert tone="warning">Students get this at night.</Alert> : null}

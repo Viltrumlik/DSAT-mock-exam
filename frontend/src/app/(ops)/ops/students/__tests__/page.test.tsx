@@ -137,19 +137,20 @@ describe("/ops/students", () => {
     expect(get).toHaveBeenCalledWith("/users/admin/people/", {
       params: { section: "students", status: "frozen_debt", o: "debt", page_size: 50 },
     });
-    expect(host.querySelector("h1")?.textContent).toBe("Students · 3");
+    expect(host.querySelector("h1")?.textContent).toBe("Students 3");
   });
 
   it("shows a debt in red only when lc-up's balance is below zero", async () => {
     await renderPage();
     const owes = cell("Aziz Tursunov", "Debt");
-    expect(owes.textContent).toBe("250,000 UZS");
-    expect(owes.querySelector("span")?.className).toContain("text-danger");
+    // Money as the console writes it (design handoff v0.3, rule 8).
+    expect(owes.textContent).toBe("250 000 so'm");
+    expect(owes.querySelector("span")?.className).toContain("text-ms-critical-fg");
 
     // In credit: no amount, nothing red.
     const credit = cell("Malika Karimova", "Debt");
     expect(credit.textContent).toBe("—");
-    expect(credit.innerHTML).not.toContain("text-danger");
+    expect(credit.innerHTML).not.toContain("text-ms-critical-fg");
     expect(credit.textContent).not.toContain("120,000");
 
     // Not linked at all.
@@ -158,11 +159,13 @@ describe("/ops/students", () => {
 
   it("says who is linked to lc-up, which groups they sit in, and the status in words", async () => {
     await renderPage();
-    expect(cell("Aziz Tursunov", "lc-up").querySelector('[aria-label="Linked"]')?.textContent?.trim()).toBe("✓");
+    expect(cell("Aziz Tursunov", "lc-up").textContent?.trim()).toBe("Linked");
     expect(cell("Bekzod Rahimov", "lc-up").querySelector('[aria-label="Not linked"]')).not.toBeNull();
     expect(cell("Aziz Tursunov", "Groups").textContent).toBe("SAT Math 1");
     expect(cell("Aziz Tursunov", "Status").textContent).toBe("Active");
     expect(cell("Malika Karimova", "Status").textContent).toBe("Frozen — unpaid");
+    // A verdict is a badge: frozen is the frozen tone, with its snowflake.
+    expect(cell("Malika Karimova", "Status").querySelector("span")?.className).toContain("bg-ms-frozen-soft");
     expect(cell("Aziz Tursunov", "Last seen").textContent).toBe("Never");
   });
 

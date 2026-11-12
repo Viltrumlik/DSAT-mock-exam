@@ -40,18 +40,17 @@ function FullMockModuleEditor({ mockId, moduleId }: { mockId: number; moduleId: 
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">
-      <ModuleQuestionsPanel
-        testId={mockId}
-        moduleId={moduleId}
-        api={mocksModuleQuestionsApi}
-        packTitle={mock?.title ?? undefined}
-        sectionSubject={sectionSubject}
-        moduleOrder={moduleOrder != null ? `Module ${moduleOrder}` : undefined}
-        backHref={`/builder/full-mocks/${mockId}`}
-        backLabel="Full mock"
-      />
-    </div>
+    // The panel is the whole window: its own top bar, outline and question (PR 14a).
+    <ModuleQuestionsPanel
+      testId={mockId}
+      moduleId={moduleId}
+      api={mocksModuleQuestionsApi}
+      packTitle={mock?.title ?? undefined}
+      sectionSubject={sectionSubject}
+      moduleOrder={moduleOrder != null ? `Module ${moduleOrder}` : undefined}
+      backHref={`/builder/full-mocks/${mockId}`}
+      backLabel="Full mock"
+    />
   );
 }
 
@@ -64,9 +63,9 @@ export default function BuilderFullMockModulePage() {
     return (
       <div className="flex min-h-[40vh] items-center justify-center p-8">
         <div className="text-center">
-          <p className="font-semibold text-foreground">Invalid route parameters.</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Expected <code className="rounded bg-muted px-1">/builder/full-mocks/[mockId]/[moduleId]</code>
+          <p className="font-semibold text-ms-fg">Invalid route parameters.</p>
+          <p className="mt-1 text-[14px] text-ms-fg-2">
+            Expected <code className="rounded-[6px] bg-ms-surface-2 px-1 font-ms-mono text-[13px]">/builder/full-mocks/[mockId]/[moduleId]</code>
           </p>
         </div>
       </div>

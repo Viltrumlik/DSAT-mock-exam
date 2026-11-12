@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, time, timedelta
 
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from .models import Classroom
@@ -133,6 +134,53 @@ def lesson_weekdays(classroom: Classroom) -> frozenset[int]:
     return LESSON_WEEKDAYS.get(classroom.lesson_days, frozenset())
 
 
+def began_on(classroom: Classroom):
+    """The first day ``classroom`` holds lessons, or ``None`` when nothing floors it (no ``start_date``,
+    which every caller already reads as "running").
+
+    Usually ``start_date``. But a class paired with lc-up takes ``start_date`` from lc-up's
+    ``course_start_date`` (``lcup.follow``): the start of the group's CURRENT course. Moving a group up
+    a level moves it to the new course's first day, which can come after lessons the group still holds.
+    On 2026-11-11 one class's start moved to the next day, and that day's register never opened. A
+    register is proof the class met, so the earliest one dated before ``start_date`` wins.
+
+    ``start_date`` keeps lc-up's meaning everywhere else: the roadmap counts course weeks from it.
+    One query; a caller asking about one day uses :func:`has_begun`, which asks nothing of a class
+    whose start has passed.
+    """
+    start = classroom.start_date
+    if start is None:
+        return None
+    from .models_attendance import AttendanceSession
+
+    earlier = (
+        AttendanceSession.objects.filter(classroom=classroom, date__lt=start)
+        .order_by("date")
+        .values_list("date", flat=True)
+        .first()
+    )
+    return earlier or start
+
+
+def has_begun(classroom: Classroom, day) -> bool:
+    """Whether ``classroom`` has begun by ``day`` (see :func:`began_on`). Queries only when
+    ``start_date`` is still ahead of ``day``."""
+    start = classroom.start_date
+    if start is None or start <= day:
+        return True
+    return began_on(classroom) <= day
+
+
+def begun_by(day) -> Q:
+    """:func:`has_begun` as a filter on classrooms, for a list that must stay one query."""
+    from .models_attendance import AttendanceSession
+
+    held_before_start = AttendanceSession.objects.filter(
+        classroom=OuterRef("pk"), date__lt=OuterRef("start_date"), date__lte=day
+    )
+    return Q(start_date__isnull=True) | Q(start_date__lte=day) | Q(Exists(held_before_start))
+
+
 def next_lesson_start_after(classroom: Classroom, after=None) -> datetime | None:
     """Aware datetime of the classroom's next lesson start strictly after ``after``.
 
@@ -150,12 +198,13 @@ def next_lesson_start_after(classroom: Classroom, after=None) -> datetime | None
     after = after or timezone.now()
     tz = timezone.get_current_timezone()
 
-    # Scan from the later of "now" and the classroom's start_date, so a class that
+    # Scan from the later of "now" and the day the class began, so a class that
     # hasn't begun yet resolves to its FIRST lesson rather than falling outside the
-    # window. start_date is nullable — a null floor just means "already running".
+    # window. start_date is nullable — a null floor just means "already running" — and a
+    # class moved up a level has begun before it (``began_on``).
     scan_from = timezone.localtime(after).date()
     if classroom.start_date and classroom.start_date > scan_from:
-        scan_from = classroom.start_date
+        scan_from = max(scan_from, began_on(classroom))
 
     # Every valid group meets >= 3x/week, so a lesson day always falls within 7 days of
     # the scan start. The loop is bounded so a dirty lesson_days value can't spin forever.

@@ -12,7 +12,7 @@
 import { useId, useState } from "react";
 
 import { useToast } from "@/components/ToastProvider";
-import { Alert, Button, Field, Modal, Textarea } from "@/components/ui";
+import { Alert, Button, Field, Modal, Textarea } from "./consoleKit";
 import { isAscii, plural, smsParts } from "./format";
 import { errorText } from "./panelKit";
 import { useSubmitTemplate } from "./smsHooks";
@@ -81,7 +81,7 @@ export function SubmitTemplateModal({ onClose }: { onClose: () => void }) {
             placeholder="MASTER SAT'dan yozyabmiz. (STUDENT), …"
           />
         </Field>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-[13px] text-ms-fg-3">
           Write (STUDENT) where the student&apos;s name goes, as lc-up&apos;s texts do — the panel then fills it in for
           each student. Plain Latin letters, with &apos; for oʻ and gʻ, keep an SMS at 160 characters a part.
         </p>

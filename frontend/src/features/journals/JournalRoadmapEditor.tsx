@@ -2,20 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import {
-  ArrowDown,
-  ArrowUp,
-  Image as ImageIcon,
-  Loader2,
-  Plus,
-  Save,
-  Trash2,
-  Type as TypeIcon,
-  Video as VideoIcon,
-  X,
-} from "lucide-react";
+
+import { Icon } from "@/components/ui/Icon";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { Button, Checkbox, Segmented, buttonClass, type SegmentOption } from "@/features/console/ui";
+import { CONTROL, FIELD_LABEL, SERIF_AREA } from "@/features/questionsAdmin/questionLook";
 import { cn } from "@/lib/cn";
 import { journalsApi } from "./api";
+import { LoadingLine, Notice, PANEL } from "./journalParts";
 import type { Roadmap, RoadmapSection, RoadmapSectionKind } from "./types";
 
 /**
@@ -28,12 +22,14 @@ import type { Roadmap, RoadmapSection, RoadmapSectionKind } from "./types";
  * A picture or a video is the exception — a file needs a section row to attach to, so the
  * upload button appears only once the section has been saved and has an id. That is stated
  * on the button rather than left for the author to discover.
+ *
+ * In the console's look (design handoff v0.3). The words, the rules and the calls are the editor's own.
  */
 
-const KINDS: { value: RoadmapSectionKind; label: string; icon: typeof TypeIcon; hint: string }[] = [
-  { value: "TEXT", label: "Text", icon: TypeIcon, hint: "A passage. Leave a blank line between paragraphs." },
-  { value: "IMAGE", label: "Picture", icon: ImageIcon, hint: "A diagram or a photo, with a caption under it." },
-  { value: "VIDEO", label: "Video", icon: VideoIcon, hint: "A YouTube link, or upload the file." },
+const KINDS: (SegmentOption<RoadmapSectionKind> & { hint: string })[] = [
+  { value: "TEXT", label: "Text", icon: "type", hint: "A passage. Leave a blank line between paragraphs." },
+  { value: "IMAGE", label: "Picture", icon: "image", hint: "A diagram or a photo, with a caption under it." },
+  { value: "VIDEO", label: "Video", icon: "monitor", hint: "A YouTube link, or upload the file." },
 ];
 
 const BLANK: RoadmapSection = {
@@ -43,6 +39,9 @@ const BLANK: RoadmapSection = {
   caption: "",
   video_url: "",
 };
+
+/** A long text field in the console's shell (sans: the student's reading page is sans too). */
+const AREA = SERIF_AREA;
 
 export default function JournalRoadmapEditor({
   journalId,
@@ -154,32 +153,28 @@ export default function JournalRoadmapEditor({
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center gap-2 px-1 py-10 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading roadmap…
-      </div>
-    );
+    return <LoadingLine>Loading roadmap…</LoadingLine>;
   }
   if (!roadmap) {
     return (
-      <div className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+      <LibraryError>
         {error ?? "Roadmap not found."}
         <button
           type="button"
           onClick={() => void load()}
-          className="ml-3 underline underline-offset-2"
+          className="ml-3 font-semibold underline underline-offset-2"
         >
           Try again
         </button>
-      </div>
+      </LibraryError>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-2xl border border-border bg-panel p-5">
-        <h2 className="text-lg font-extrabold text-foreground">Roadmap</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+    <div className="flex flex-col gap-5">
+      <div className={cn(PANEL, "animate-ms-card-in p-5")}>
+        <h2 className="text-[18px] font-bold leading-6 text-ms-fg">Roadmap</h2>
+        <p className="mt-1 text-[14px] leading-[21px] text-ms-fg-2">
           What a student reads before opening this session’s homework — the explanation of
           the topic, in text, pictures and video. It is optional: a session with nothing
           here simply has no reading, and still publishes.
@@ -187,17 +182,17 @@ export default function JournalRoadmapEditor({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1.5 block text-sm font-bold text-foreground">Title</span>
+            <span className={FIELD_LABEL}>Title</span>
             <input
               value={roadmap.title}
               maxLength={200}
               onChange={(e) => patchRoadmap({ title: e.target.value })}
               placeholder="Falls back to the session's own title"
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground"
+              className={CONTROL}
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-bold text-foreground">
+            <span className={FIELD_LABEL}>
               Reading time (minutes)
             </span>
             <input
@@ -206,32 +201,33 @@ export default function JournalRoadmapEditor({
               max={240}
               value={roadmap.estimated_minutes}
               onChange={(e) => patchRoadmap({ estimated_minutes: Number(e.target.value) })}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground"
+              className={cn(CONTROL, "tabular-nums")}
             />
           </label>
         </div>
         <label className="mt-3 block">
-          <span className="mb-1.5 block text-sm font-bold text-foreground">One-line summary</span>
+          <span className={FIELD_LABEL}>One-line summary</span>
           <input
             value={roadmap.summary}
             maxLength={300}
             onChange={(e) => patchRoadmap({ summary: e.target.value })}
             placeholder="Read this before you start the homework."
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground"
+            className={CONTROL}
           />
         </label>
-        <label className="mt-3 flex items-start gap-2.5">
-          <input
-            type="checkbox"
-            checked={roadmap.require_read_confirmation}
-            onChange={(e) => patchRoadmap({ require_read_confirmation: e.target.checked })}
-            className="mt-0.5 h-[18px] w-[18px] accent-primary"
-          />
+        <label className="mt-4 flex cursor-pointer items-start gap-3">
+          <span className="mt-0.5 inline-flex">
+            <Checkbox
+              checked={roadmap.require_read_confirmation}
+              onChange={() => patchRoadmap({ require_read_confirmation: !roadmap.require_read_confirmation })}
+              label="Hold the homework until they confirm they’ve read it"
+            />
+          </span>
           <span>
-            <span className="block text-sm font-bold text-foreground">
+            <span className="block text-[15px] font-medium leading-5 text-ms-fg">
               Hold the homework until they confirm they’ve read it
             </span>
-            <span className="block text-[13px] text-muted-foreground">
+            <span className="mt-0.5 block text-[13px] leading-[18px] text-ms-fg-3">
               The homework button appears at the bottom of the reading once they press
               “I’ve finished reading”. Turn this off and the button is always there.
             </span>
@@ -239,74 +235,55 @@ export default function JournalRoadmapEditor({
         </label>
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
-          {error}
-        </div>
-      )}
-      {notice && !error && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
-          {notice}
-        </div>
-      )}
-      {roadmap.validation_reasons.length > 0 && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-          {roadmap.validation_reasons[0]}
-        </div>
-      )}
+      {error && <LibraryError>{error}</LibraryError>}
+      {notice && !error && <Notice tone="positive">{notice}</Notice>}
+      {roadmap.validation_reasons.length > 0 && <Notice tone="attention">{roadmap.validation_reasons[0]}</Notice>}
 
       {sections.map((section, index) => {
         const kind = KINDS.find((k) => k.value === section.kind) ?? KINDS[0];
         const media = section.kind === "IMAGE" ? section.image_url : section.video_file_url;
         return (
-          <div key={section.id ?? `new-${index}`} className="rounded-2xl border border-border bg-panel p-5">
+          <div key={section.id ?? `new-${index}`} data-roadmap-section={index} className={cn(PANEL, "animate-ms-card-in p-5")}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {KINDS.map((k) => (
-                  <button
-                    key={k.value}
-                    type="button"
-                    onClick={() => patchSection(index, { kind: k.value })}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] font-bold transition-colors",
-                      section.kind === k.value
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <k.icon className="h-3.5 w-3.5" aria-hidden /> {k.label}
-                  </button>
-                ))}
-              </div>
+              <Segmented<RoadmapSectionKind>
+                label="Section kind"
+                size="sm"
+                value={section.kind}
+                onChange={(v) => patchSection(index, { kind: v })}
+                options={KINDS.map(({ value, label, icon }) => ({ value, label, icon }))}
+              />
               <div className="flex items-center gap-1">
-                <IconBtn onClick={() => move(index, -1)} disabled={index === 0} label="Move up">
-                  <ArrowUp className="h-4 w-4" aria-hidden />
-                </IconBtn>
-                <IconBtn
+                <Button variant="ghost" size="sm" icon="up" aria-label="Move up" onClick={() => move(index, -1)} disabled={index === 0} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="down"
+                  aria-label="Move down"
                   onClick={() => move(index, 1)}
                   disabled={index === sections.length - 1}
-                  label="Move down"
-                >
-                  <ArrowDown className="h-4 w-4" aria-hidden />
-                </IconBtn>
-                <IconBtn
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="trash"
+                  aria-label="Remove section"
                   onClick={() => setSections((prev) => prev.filter((_, i) => i !== index))}
-                  label="Remove section"
-                >
-                  <Trash2 className="h-4 w-4 text-rose-500" aria-hidden />
-                </IconBtn>
+                />
               </div>
             </div>
 
-            <p className="mb-3 text-[13px] text-muted-foreground">{kind.hint}</p>
+            <p className="mb-3 text-[13px] text-ms-fg-3">{kind.hint}</p>
 
-            <input
-              value={section.heading}
-              maxLength={200}
-              onChange={(e) => patchSection(index, { heading: e.target.value })}
-              placeholder="Heading (optional)"
-              className="mb-3 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground"
-            />
+            <div className="mb-3">
+              <input
+                value={section.heading}
+                maxLength={200}
+                onChange={(e) => patchSection(index, { heading: e.target.value })}
+                placeholder="Heading (optional)"
+                aria-label="Heading (optional)"
+                className={cn(CONTROL, "font-semibold")}
+              />
+            </div>
 
             {section.kind === "TEXT" && (
               <textarea
@@ -314,33 +291,37 @@ export default function JournalRoadmapEditor({
                 rows={8}
                 onChange={(e) => patchSection(index, { body: e.target.value })}
                 placeholder={"Write the explanation here.\n\nLeave a blank line between paragraphs."}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed text-foreground"
+                className={AREA}
               />
             )}
 
             {section.kind === "VIDEO" && (
-              <input
-                value={section.video_url}
-                onChange={(e) => patchSection(index, { video_url: e.target.value })}
-                placeholder="https://youtu.be/… — or upload a file below"
-                className="mb-3 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground"
-              />
+              <div className="mb-3">
+                <input
+                  value={section.video_url}
+                  onChange={(e) => patchSection(index, { video_url: e.target.value })}
+                  placeholder="https://youtu.be/… — or upload a file below"
+                  className={CONTROL}
+                />
+              </div>
             )}
 
             {section.kind === "IMAGE" && (
-              <input
-                value={section.caption}
-                maxLength={300}
-                onChange={(e) => patchSection(index, { caption: e.target.value })}
-                placeholder="Caption under the picture (optional)"
-                className="mb-3 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground"
-              />
+              <div className="mb-3">
+                <input
+                  value={section.caption}
+                  maxLength={300}
+                  onChange={(e) => patchSection(index, { caption: e.target.value })}
+                  placeholder="Caption under the picture (optional)"
+                  className={CONTROL}
+                />
+              </div>
             )}
 
             {section.kind !== "TEXT" && (
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 flex flex-col gap-2">
                 {section.kind === "IMAGE" && section.image_url && (
-                  <div className="max-w-sm overflow-hidden rounded-xl border border-border">
+                  <div className="max-w-sm overflow-hidden rounded-ms-ctl border border-ms-border">
                     {/* `unoptimized`: the bucket is private, so this is a signed URL that
                         expires in an hour and Next's optimizer would cache a 403. */}
                     <Image
@@ -354,21 +335,22 @@ export default function JournalRoadmapEditor({
                   </div>
                 )}
                 {section.kind === "VIDEO" && section.video_file_url && (
-                  <p className="text-[13px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <p className="flex items-center gap-1.5 text-[13px] font-medium text-ms-positive-fg">
+                    <Icon name="ok" size="sm" className="size-3.5" />
                     A video file is attached.
                   </p>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
                   <label
                     className={cn(
-                      "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[13px] font-bold text-foreground hover:bg-surface-2",
-                      !section.id && "cursor-not-allowed opacity-60",
+                      buttonClass({ variant: "secondary", size: "sm" }),
+                      !section.id ? "cursor-not-allowed opacity-60" : "cursor-pointer",
                     )}
                   >
                     {uploading === section.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      <Icon name="loader" size="sm" className="animate-ms-spin" />
                     ) : (
-                      <Plus className="h-3.5 w-3.5" aria-hidden />
+                      <Icon name="plus" size="sm" />
                     )}
                     {media ? "Replace file" : "Upload a file"}
                     <input
@@ -383,18 +365,14 @@ export default function JournalRoadmapEditor({
                     />
                   </label>
                   {media && (
-                    <button
-                      type="button"
-                      onClick={() => void clearMedia(index)}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-bold text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="h-3.5 w-3.5" aria-hidden /> Remove file
-                    </button>
+                    <Button variant="ghost" size="sm" icon="x" onClick={() => void clearMedia(index)}>
+                      Remove file
+                    </Button>
                   )}
                   {!section.id && (
                     // Said plainly rather than left as a mysteriously dead button: a file
                     // has to attach to a row, and this row does not exist yet.
-                    <span className="text-[12px] font-medium text-muted-foreground">
+                    <span className="text-[13px] text-ms-fg-3">
                       Save first — a file attaches to a section that exists.
                     </span>
                   )}
@@ -406,52 +384,13 @@ export default function JournalRoadmapEditor({
       })}
 
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setSections((prev) => [...prev, { ...BLANK }])}
-          className="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-border px-4 py-2.5 text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary"
-        >
-          <Plus className="h-4 w-4" aria-hidden /> Add a section
-        </button>
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={saving}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-        >
-          {saving ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : (
-            <Save className="h-4 w-4" aria-hidden />
-          )}
+        <Button icon="plus" onClick={() => setSections((prev) => [...prev, { ...BLANK }])}>
+          Add a section
+        </Button>
+        <Button variant="primary" icon="check" state={saving ? "busy" : "idle"} onClick={() => void save()}>
           Save roadmap
-        </button>
+        </Button>
       </div>
     </div>
-  );
-}
-
-function IconBtn({
-  onClick,
-  disabled,
-  label,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground disabled:opacity-40"
-    >
-      {children}
-    </button>
   );
 }
