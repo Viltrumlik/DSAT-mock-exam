@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { AlertTriangle, CalendarClock, Info } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
+import { Badge, Button, EmptyState } from "@/features/console/ui";
 import { cn } from "@/lib/cn";
 import { NO_VALUE, SCHEDULED, formatRate, monthLabel, plural, titleList } from "./format";
 import type { MonthKey, RetakeBrief } from "./types";
@@ -13,9 +14,21 @@ import type { MonthKey, RetakeBrief } from "./types";
  * problem was inconsistency: the same idea drawn five ways is what made the old midterms
  * page unreadable. A rate looks like a rate everywhere here, a missing number looks like a
  * missing number everywhere here, and neither is spelled out twice.
+ *
+ * Drawn in the console's look (design handoff v0.3): cards on the page, hairline tables,
+ * notices in the verdict colours with their icon.
  */
 
-/** The ops dialect's card. The ops shell already supplies the page width; never re-centre. */
+/** A table head cell, and a body cell; a column's alignment is added beside, never set twice. */
+const TH = "h-10 border-b border-ms-border px-3 text-[13px] font-medium text-ms-fg-3 first:pl-5 last:pr-5";
+const TD = "px-3 py-2.5 first:pl-5 last:pr-5";
+
+/**
+ * The console's card. The ops shell already supplies the page width; never re-centre.
+ *
+ * `relative overflow-hidden`: a row's hover stays inside the rounded corners, and a cell's sr-only
+ * words are positioned inside the card rather than against the page.
+ */
 export function SectionCard({
   title,
   description,
@@ -34,20 +47,16 @@ export function SectionCard({
 }) {
   return (
     <section
-      className={cn("cr-card rounded-2xl border border-border bg-card", className)}
+      className={cn("animate-ms-card-in relative overflow-hidden rounded-ms-card bg-ms-card shadow-ms-1", className)}
       style={{ animationDelay: `${(index ?? 0) * 80}ms` }}
     >
       {(title || actions) && (
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div className="min-w-0">
-            {title ? (
-              <h2 className="text-base font-bold tracking-tight text-foreground">{title}</h2>
-            ) : null}
-            {description ? (
-              <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>
-            ) : null}
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-ms-line px-5 py-4">
+          <div className="min-w-0 flex-1 basis-[18rem]">
+            {title ? <h2 className="text-ms-h text-ms-fg">{title}</h2> : null}
+            {description ? <p className="mt-0.5 text-[14px] leading-5 text-ms-fg-2">{description}</p> : null}
           </div>
-          {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+          {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
         </header>
       )}
       {children}
@@ -73,7 +82,7 @@ export function RateFigure({
 }) {
   if (rate == null) {
     return (
-      <span className={cn("text-muted-foreground", className)} title={reason}>
+      <span className={cn("text-ms-fg-3", className)} title={reason}>
         {NO_VALUE}
         <span className="sr-only"> {reason}</span>
       </span>
@@ -101,13 +110,10 @@ export function RateBar({ rate, className }: { rate: number | null; className?: 
   const width = Math.max(0, Math.min(100, rate));
   return (
     <span
-      className={cn(
-        "inline-block h-2 w-28 shrink-0 overflow-hidden rounded-full bg-surface-2 align-middle",
-        className,
-      )}
+      className={cn("inline-block h-2 w-28 shrink-0 overflow-hidden rounded-full bg-ms-surface-2 align-middle", className)}
       aria-hidden
     >
-      <span className="block h-full rounded-full bg-primary" style={{ width: `${width}%` }} />
+      <span className="block h-full rounded-full bg-ms-primary" style={{ width: `${width}%` }} />
     </span>
   );
 }
@@ -146,8 +152,8 @@ export function RateCell({
     <div className="flex items-center justify-end gap-3" title={title}>
       {bar ? <RateBar rate={rate} /> : null}
       <span className="text-right">
-        <RateFigure rate={rate} reason={reason} className="font-bold text-foreground" />
-        <span className="block text-[11px] tabular-nums text-muted-foreground">{detail}</span>
+        <RateFigure rate={rate} reason={reason} className="font-semibold text-ms-fg" />
+        <span className="block text-[12px] tabular-nums text-ms-fg-3">{detail}</span>
       </span>
     </div>
   );
@@ -155,13 +161,7 @@ export function RateCell({
 
 /** A plain number in a table cell. Zero is muted so the eye lands on what is not zero. */
 export function Num({ value, className }: { value: number; className?: string }) {
-  return (
-    <span
-      className={cn("tabular-nums", value === 0 ? "text-muted-foreground" : "text-foreground", className)}
-    >
-      {value}
-    </span>
-  );
+  return <span className={cn("tabular-nums", value === 0 ? "text-ms-fg-3" : "text-ms-fg", className)}>{value}</span>;
 }
 
 export type RankedColumn<T> = {
@@ -195,42 +195,27 @@ export function RankedTable<T>({
   if (rows.length === 0) return <>{empty}</>;
   return (
     <div className="overflow-x-auto">
-      <table className={cn("w-full border-collapse text-sm", minWidthClass)}>
+      <table className={cn("w-full border-collapse text-[14px] text-ms-fg", minWidthClass)}>
         <thead>
-          <tr className="border-b border-border text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+          <tr>
             {columns.map((c) => (
-              <th
-                key={c.key}
-                scope="col"
-                className={cn(
-                  "px-3 py-2.5 first:pl-5 last:pr-5",
-                  c.align === "right" ? "text-right" : "text-left",
-                  c.className,
-                )}
-              >
+              <th key={c.key} scope="col" className={cn(TH, c.align === "right" ? "text-right" : "text-left", c.className)}>
                 {c.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border">
+        <tbody className="divide-y divide-ms-line">
           {rows.map((row, i) => (
             <tr
               key={rowKey(row, i)}
-              className="cr-rowin align-middle transition-colors hover:bg-surface-2"
+              className="animate-ms-fade-in ms-transition align-middle hover:bg-ms-surface"
               // Capped: a long table must not make its last row wait a second and a half
               // for its turn, and past a dozen rows nobody reads the stagger anyway.
               style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
             >
               {columns.map((c) => (
-                <td
-                  key={c.key}
-                  className={cn(
-                    "px-3 py-2.5 first:pl-5 last:pr-5",
-                    c.align === "right" ? "text-right" : "text-left",
-                    c.className,
-                  )}
-                >
+                <td key={c.key} className={cn(TD, c.align === "right" ? "text-right" : "text-left", c.className)}>
                   {c.cell(row, i)}
                 </td>
               ))}
@@ -244,7 +229,7 @@ export function RankedTable<T>({
 
 /** The rank number, muted — it orders the table without competing with the names. */
 export function Rank({ index }: { index: number }) {
-  return <span className="tabular-nums text-muted-foreground">{index + 1}</span>;
+  return <span className="tabular-nums text-ms-fg-3">{index + 1}</span>;
 }
 
 /**
@@ -255,13 +240,11 @@ export function Rank({ index }: { index: number }) {
  */
 export function GapMarker({ note }: { note: string }) {
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning-foreground"
-      title={note}
-    >
-      <Info className="h-3 w-3 shrink-0" aria-hidden />
-      Data gap
-      <span className="sr-only"> — {note}</span>
+    <span title={note} className="inline-flex shrink-0">
+      <Badge tone="attention" icon="info">
+        Data gap
+        <span className="sr-only"> — {note}</span>
+      </Badge>
     </span>
   );
 }
@@ -269,13 +252,8 @@ export function GapMarker({ note }: { note: string }) {
 /** A quiet aside: a caveat about the numbers above it, not a failure. */
 export function Note({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <p
-      className={cn(
-        "flex items-start gap-2 text-[13px] leading-relaxed text-muted-foreground",
-        className,
-      )}
-    >
-      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+    <p className={cn("flex items-start gap-2 text-[13px] leading-[19px] text-ms-fg-2", className)}>
+      <Icon name="info" size="sm" className="mt-0.5 size-3.5 text-ms-fg-3" />
       <span>{children}</span>
     </p>
   );
@@ -314,30 +292,26 @@ export function ScheduledBanner({
   return (
     <div
       role="note"
-      className="flex flex-wrap items-start gap-3 rounded-2xl border border-warning/25 bg-warning-soft p-4 text-sm text-warning-foreground"
+      className="animate-ms-fade-in flex flex-wrap items-start gap-3 rounded-ms-card border border-ms-attention-line bg-ms-attention-soft px-4 py-3.5 text-[14px] leading-5 text-ms-attention-fg"
     >
-      <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="font-bold">
+      <Icon name="cal" size="sm" className="mt-0.5" />
+      <div className="min-w-0 flex-1 basis-[18rem]">
+        <p className="font-semibold">
           {monthLabel(month)} is scheduled — nobody has sat these papers yet
         </p>
-        <p className="mt-0.5 font-semibold">
+        <p className="mt-0.5">
           There are no results for a month the learning center has not reached
           {thisMonth ? `; it is ${monthLabel(thisMonth)} now` : ""}. Every student on these
           class lists is still counted as not having come, which counts as not passed — so a rate
           here would come out at zero for work nobody has done. Nothing on this page is a
           score for {monthLabel(month)}.
         </p>
-        {detail ? <p className="mt-1 text-[13px] font-normal opacity-90">{detail}</p> : null}
+        {detail ? <p className="mt-1 text-[13px] leading-[18px] text-ms-fg-2">{detail}</p> : null}
       </div>
       {onOpenLatest && latestMonth ? (
-        <button
-          type="button"
-          onClick={onOpenLatest}
-          className="ds-ring shrink-0 rounded-lg border border-warning/30 px-3 py-1.5 text-[13px] font-bold hover:bg-warning/10"
-        >
+        <Button variant="secondary" size="sm" onClick={onOpenLatest}>
           Show {monthLabel(latestMonth)} instead
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -351,7 +325,7 @@ export function ScheduledBanner({
  */
 export function ScheduledFigure({ className }: { className?: string }) {
   return (
-    <span className={cn("text-muted-foreground", className)}>
+    <span className={cn("text-ms-fg-3", className)}>
       {SCHEDULED}
       <span className="sr-only"> — nobody has sat this yet, so there is no rate</span>
     </span>
@@ -378,16 +352,16 @@ export function OrphanRetakeNote({
   return (
     <div
       role="note"
-      className="rounded-2xl border border-warning/25 bg-warning-soft px-4 py-3 text-[13px] text-warning-foreground"
+      className="animate-ms-fade-in rounded-ms-card border border-ms-attention-line bg-ms-attention-soft px-4 py-3 text-[14px] leading-5 text-ms-attention-fg"
     >
-      <p className="flex items-start gap-2 font-bold">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      <p className="flex items-start gap-2 font-semibold">
+        <Icon name="warn" size="sm" className="mt-0.5" />
         <span>
           {plural(papers.length, "retake paper")} left out of every figure
           {month ? ` for ${monthLabel(month)}` : ""}
         </span>
       </p>
-      <p className="mt-1 pl-[22px] font-normal">
+      <p className="mt-1 pl-6">
         {titleList(papers.map((p) => p.title))} {one ? "has" : "have"} no main exam to belong
         to, so {one ? "it counts" : "they count"} nowhere. Give {one ? "it" : "each"} a main
         exam in the builder and {one ? "it joins" : "they join"} that exam&rsquo;s numbers.
@@ -414,48 +388,39 @@ export function ErrorPanel({
     <div
       role="alert"
       className={cn(
-        "flex flex-wrap items-start gap-3 rounded-2xl border border-danger/25 bg-danger-soft p-4 text-sm text-danger-foreground",
+        "animate-ms-fade-in flex flex-wrap items-start gap-3 rounded-ms-card border border-ms-critical-line bg-ms-critical-soft px-4 py-3.5 text-[14px] leading-5 text-ms-critical-fg",
         className,
       )}
     >
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="font-bold">Could not load these figures</p>
-        <p className="mt-0.5 font-semibold">{message}</p>
-        <p className="mt-1 text-[13px] font-normal opacity-90">
+      <Icon name="alert" size="sm" className="mt-0.5" />
+      <div className="min-w-0 flex-1 basis-[16rem]">
+        <p className="font-semibold">Could not load these figures</p>
+        <p className="mt-0.5">{message}</p>
+        <p className="mt-1 text-[13px] leading-[18px] text-ms-fg-2">
           Nothing here is empty — it is unknown. Retry before reading anything into a blank
           table.
         </p>
       </div>
       {onRetry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="ds-ring shrink-0 rounded-lg border border-danger/30 px-3 py-1.5 text-[13px] font-bold hover:bg-danger/10"
-        >
+        <Button variant="secondary" size="sm" icon="refresh" onClick={onRetry}>
           Try again
-        </button>
+        </Button>
       ) : null}
     </div>
   );
 }
 
 /** The empty branch: a month that genuinely holds no midterms. */
-export function EmptyPanel({ title, body }: { title: string; body: ReactNode }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center">
-      <p className="text-sm font-bold text-foreground">{title}</p>
-      <p className="mx-auto mt-1 max-w-md text-[13px] text-muted-foreground">{body}</p>
-    </div>
-  );
+export function EmptyPanel({ title, body }: { title: string; body: string }) {
+  return <EmptyState icon="ms-midterm" title={title} detail={body} />;
 }
 
 /** The loading branch. Shaped like the thing it is standing in for. */
 export function TableSkeleton({ rows = 4 }: { rows?: number }) {
   return (
-    <div className="space-y-2 p-5">
+    <div className="flex flex-col gap-2 p-5" aria-busy>
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="h-9 animate-pulse rounded-lg bg-surface-2" />
+        <div key={i} className="animate-ms-shimmer h-9 rounded-ms-ctl" />
       ))}
     </div>
   );

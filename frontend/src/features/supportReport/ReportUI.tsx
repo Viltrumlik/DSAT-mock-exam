@@ -1,7 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { AlertTriangle, Info } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { Badge, Button, EmptyState, type BadgeTone } from "@/features/console/ui";
 import { cn } from "@/lib/cn";
 import { NO_VALUE, STATUS_NOTE, formatRate, ratePercent, type StatusTone } from "./format";
 
@@ -12,9 +13,21 @@ import { NO_VALUE, STATUS_NOTE, formatRate, ratePercent, type StatusTone } from 
  * page has one: a rate looks like a rate everywhere here, a missing number looks like a
  * missing number everywhere here, and a failed request never wears the clothes of an empty
  * desk.
+ *
+ * Drawn in the console's look (design handoff v0.3): cards on the page, hairline tables, verdicts
+ * as words with a dot or an icon.
  */
 
-/** The ops dialect's card. The ops shell already supplies the page width; never re-centre. */
+/** A table head cell, and a body cell; a column's alignment is added beside, never set twice. */
+const TH = "h-10 border-b border-ms-border px-3 text-[13px] font-medium text-ms-fg-3 first:pl-5 last:pr-5";
+const TD = "px-3 py-2.5 first:pl-5 last:pr-5";
+
+/**
+ * The console's card. The ops shell already supplies the page width; never re-centre.
+ *
+ * `relative overflow-hidden`: a row's hover stays inside the rounded corners, and a cell's sr-only
+ * words are positioned inside the card rather than against the page.
+ */
 export function SectionCard({
   title,
   description,
@@ -29,18 +42,14 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-2xl border border-border bg-card", className)}>
+    <section className={cn("animate-ms-card-in relative overflow-hidden rounded-ms-card bg-ms-card shadow-ms-1", className)}>
       {(title || actions) && (
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div className="min-w-0">
-            {title ? (
-              <h2 className="text-base font-bold tracking-tight text-foreground">{title}</h2>
-            ) : null}
-            {description ? (
-              <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>
-            ) : null}
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-ms-line px-5 py-4">
+          <div className="min-w-0 flex-1 basis-[18rem]">
+            {title ? <h2 className="text-ms-h text-ms-fg">{title}</h2> : null}
+            {description ? <p className="mt-0.5 text-[14px] leading-5 text-ms-fg-2">{description}</p> : null}
           </div>
-          {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+          {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
         </header>
       )}
       {children}
@@ -67,7 +76,7 @@ export function RateFigure({
 }) {
   if (rate == null) {
     return (
-      <span className={cn("text-muted-foreground", className)} title={reason}>
+      <span className={cn("text-ms-fg-3", className)} title={reason}>
         {NO_VALUE}
         <span className="sr-only"> {reason}</span>
       </span>
@@ -91,13 +100,10 @@ export function RateBar({ rate, className }: { rate: number | null; className?: 
   const width = Math.max(0, Math.min(100, pct));
   return (
     <span
-      className={cn(
-        "inline-block h-2 w-24 shrink-0 overflow-hidden rounded-full bg-surface-2 align-middle",
-        className,
-      )}
+      className={cn("inline-block h-2 w-24 shrink-0 overflow-hidden rounded-full bg-ms-surface-2 align-middle", className)}
       aria-hidden
     >
-      <span className="block h-full rounded-full bg-primary" style={{ width: `${width}%` }} />
+      <span className="block h-full rounded-full bg-ms-primary" style={{ width: `${width}%` }} />
     </span>
   );
 }
@@ -117,8 +123,8 @@ export function RateCell({
     <div className="flex items-center justify-end gap-3">
       <RateBar rate={rate} />
       <span className="text-right">
-        <RateFigure rate={rate} reason={reason} className="font-bold text-foreground" />
-        <span className="block text-[11px] tabular-nums text-muted-foreground">{detail}</span>
+        <RateFigure rate={rate} reason={reason} className="font-semibold text-ms-fg" />
+        <span className="block text-[12px] tabular-nums text-ms-fg-3">{detail}</span>
       </span>
     </div>
   );
@@ -147,11 +153,7 @@ export function Num({
       title={title}
       className={cn(
         "tabular-nums",
-        warn
-          ? "font-bold text-warning-foreground"
-          : value === 0
-            ? "text-muted-foreground"
-            : "text-foreground",
+        warn ? "font-semibold text-ms-attention-fg" : value === 0 ? "text-ms-fg-3" : "text-ms-fg",
         className,
       )}
     >
@@ -160,13 +162,14 @@ export function Num({
   );
 }
 
-const TONE_CLASS: Record<StatusTone, string> = {
-  held: "border-success/25 bg-success-soft text-success-foreground",
-  late: "border-warning/25 bg-warning-soft text-warning-foreground",
-  missed: "border-danger/25 bg-danger-soft text-danger-foreground",
-  cancelled: "border-border bg-surface-2 text-muted-foreground",
-  unsettled: "border-warning/30 bg-warning-soft text-warning-foreground",
-  upcoming: "border-info/25 bg-info-soft text-info-foreground",
+/** Each outcome as the console's verdict pill: green held, amber late or unsettled, red missed. */
+const TONE_BADGE: Record<StatusTone, BadgeTone> = {
+  held: "positive",
+  late: "attention",
+  missed: "critical",
+  cancelled: "neutral",
+  unsettled: "attention",
+  upcoming: "info",
 };
 
 /**
@@ -177,15 +180,11 @@ const TONE_CLASS: Record<StatusTone, string> = {
  */
 export function StatusPill({ label, tone }: { label: string; tone: StatusTone }) {
   return (
-    <span
-      title={STATUS_NOTE[tone]}
-      className={cn(
-        "inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-bold",
-        TONE_CLASS[tone],
-      )}
-    >
-      {label}
-      <span className="sr-only"> — {STATUS_NOTE[tone]}</span>
+    <span title={STATUS_NOTE[tone]} className="inline-flex">
+      <Badge tone={TONE_BADGE[tone]} dot>
+        {label}
+        <span className="sr-only"> — {STATUS_NOTE[tone]}</span>
+      </Badge>
     </span>
   );
 }
@@ -221,43 +220,28 @@ export function DataTable<T>({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className={cn("w-full border-collapse text-sm", minWidthClass)}>
+      <table className={cn("w-full border-collapse text-[14px] text-ms-fg", minWidthClass)}>
         <thead>
-          <tr className="border-b border-border text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+          <tr>
             {columns.map((c) => (
-              <th
-                key={c.key}
-                scope="col"
-                className={cn(
-                  "px-3 py-2.5 first:pl-5 last:pr-5",
-                  c.align === "right" ? "text-right" : "text-left",
-                  c.className,
-                )}
-              >
+              <th key={c.key} scope="col" className={cn(TH, c.align === "right" ? "text-right" : "text-left", c.className)}>
                 {c.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border">
+        <tbody className="divide-y divide-ms-line">
           {rows.map((row, i) => (
-            <tr key={rowKey(row, i)} className="align-middle hover:bg-surface-2">
+            <tr key={rowKey(row, i)} className="ms-transition align-middle hover:bg-ms-surface">
               {columns.map((c) => (
-                <td
-                  key={c.key}
-                  className={cn(
-                    "px-3 py-2.5 first:pl-5 last:pr-5",
-                    c.align === "right" ? "text-right" : "text-left",
-                    c.className,
-                  )}
-                >
+                <td key={c.key} className={cn(TD, c.align === "right" ? "text-right" : "text-left", c.className)}>
                   {c.cell(row, i)}
                 </td>
               ))}
             </tr>
           ))}
         </tbody>
-        {footer ? <tfoot className="border-t-2 border-border">{footer}</tfoot> : null}
+        {footer ? <tfoot className="border-t border-ms-border">{footer}</tfoot> : null}
       </table>
     </div>
   );
@@ -266,13 +250,8 @@ export function DataTable<T>({
 /** A quiet aside: a caveat about the numbers above it, not a failure. */
 export function Note({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <p
-      className={cn(
-        "flex items-start gap-2 text-[13px] leading-relaxed text-muted-foreground",
-        className,
-      )}
-    >
-      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+    <p className={cn("flex items-start gap-2 text-[13px] leading-[19px] text-ms-fg-2", className)}>
+      <Icon name="info" size="sm" className="mt-0.5 size-3.5 text-ms-fg-3" />
       <span>{children}</span>
     </p>
   );
@@ -298,98 +277,74 @@ export function ErrorPanel({
     <div
       role="alert"
       className={cn(
-        "flex flex-wrap items-start gap-3 rounded-2xl border border-danger/25 bg-danger-soft p-4 text-sm text-danger-foreground",
+        "animate-ms-fade-in flex flex-wrap items-start gap-3 rounded-ms-card border border-ms-critical-line bg-ms-critical-soft px-4 py-3.5 text-[14px] leading-5 text-ms-critical-fg",
         className,
       )}
     >
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="font-bold">Could not load the support report</p>
-        <p className="mt-0.5 font-semibold">{message}</p>
-        <p className="mt-1 text-[13px] font-normal opacity-90">
+      <Icon name="alert" size="sm" className="mt-0.5" />
+      <div className="min-w-0 flex-1 basis-[16rem]">
+        <p className="font-semibold">Could not load the support report</p>
+        <p className="mt-0.5">{message}</p>
+        <p className="mt-1 text-[13px] leading-[18px] text-ms-fg-2">
           Nothing here is empty — it is unknown. Retry before reading anything into a blank
           table.
         </p>
       </div>
       {onRetry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="ds-ring shrink-0 rounded-lg border border-danger/30 px-3 py-1.5 text-[13px] font-bold hover:bg-danger/10"
-        >
+        <Button variant="secondary" size="sm" icon="refresh" onClick={onRetry}>
           Try again
-        </button>
+        </Button>
       ) : null}
     </div>
   );
 }
 
 /** The empty branch: a month, or a filter, that genuinely holds no sessions. */
-export function EmptyPanel({ title, body }: { title: string; body: ReactNode }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center">
-      <p className="text-sm font-bold text-foreground">{title}</p>
-      <p className="mx-auto mt-1 max-w-md text-[13px] text-muted-foreground">{body}</p>
-    </div>
-  );
+export function EmptyPanel({ title, body, icon = "ms-support" }: { title: string; body: string; icon?: IconName }) {
+  return <EmptyState icon={icon} title={title} detail={body} />;
 }
 
 /** The loading branch. Shaped like the thing it is standing in for. */
 export function TableSkeleton({ rows = 4 }: { rows?: number }) {
   return (
-    <div className="space-y-2 p-5" aria-busy>
+    <div className="flex flex-col gap-2 p-5" aria-busy>
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="h-9 animate-pulse rounded-lg bg-surface-2" />
+        <div key={i} className="animate-ms-shimmer h-9 rounded-ms-ctl" />
       ))}
     </div>
   );
 }
 
-/** One headline figure. The row of them is the month in five numbers. */
+/** One headline figure. The row of them is the month in six numbers. */
 export function StatTile({
   label,
   value,
   detail,
   tone,
+  delay = 0,
 }: {
   label: string;
   value: ReactNode;
   detail?: ReactNode;
   tone?: "default" | "warning";
+  /** When it arrives, in ms, so the row comes in left to right. */
+  delay?: number;
 }) {
+  const warn = tone === "warning";
   return (
     <div
       className={cn(
-        "rounded-2xl border p-4",
-        tone === "warning" ? "border-warning/30 bg-warning-soft" : "border-border bg-card",
+        "animate-ms-card-in flex min-w-0 flex-col gap-1 rounded-ms-card p-4",
+        warn ? "border border-ms-attention-line bg-ms-attention-soft" : "bg-ms-card shadow-ms-1",
       )}
+      style={{ animationDelay: `${delay}ms` } as CSSProperties}
     >
-      <p
-        className={cn(
-          "text-[10px] font-bold uppercase tracking-widest",
-          tone === "warning" ? "text-warning-foreground" : "text-muted-foreground",
-        )}
-      >
+      <p className={cn("flex items-center gap-1.5 text-[13.5px] leading-5", warn ? "font-medium text-ms-attention-fg" : "text-ms-fg-2")}>
+        {warn ? <Icon name="warn" size="sm" className="size-3.5" /> : null}
         {label}
       </p>
-      <p
-        className={cn(
-          "mt-1.5 text-2xl font-extrabold tabular-nums",
-          tone === "warning" ? "text-warning-foreground" : "text-foreground",
-        )}
-      >
-        {value}
-      </p>
-      {detail ? (
-        <p
-          className={cn(
-            "mt-0.5 text-[12px]",
-            tone === "warning" ? "text-warning-foreground opacity-90" : "text-muted-foreground",
-          )}
-        >
-          {detail}
-        </p>
-      ) : null}
+      <p className={cn("text-[28px] font-bold leading-8 tabular-nums", warn ? "text-ms-attention-fg" : "text-ms-fg")}>{value}</p>
+      {detail ? <p className={cn("text-[13px] leading-[18px]", warn ? "text-ms-attention-fg" : "text-ms-fg-3")}>{detail}</p> : null}
     </div>
   );
 }
