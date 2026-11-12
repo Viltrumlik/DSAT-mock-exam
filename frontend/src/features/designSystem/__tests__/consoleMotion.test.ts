@@ -38,6 +38,8 @@ const isLoop = (value: string) => /\binfinite\b/.test(value);
 const ENTRANCES = [
   "fade-in", "check-pop", "check-draw", "rise-in", "sheet-in-bottom", "sheet-in-right",
   "dialog-in", "scrim-in", "roll-in", "snow-in", "tick-in", "card-in", "wipe-in",
+  // The drag lift (PR 14a): the picked-up row grows into its own scale and shadow.
+  "lift",
 ];
 const EXITS = ["fade-out", "sink-out", "sheet-out-bottom", "sheet-out-right", "dialog-out", "scrim-out", "roll-out"];
 const LOOPS = ["shimmer", "spin", "pulse", "ring-turn"];

@@ -69,12 +69,16 @@ export const BUILDER_CONSOLE: ConsoleConfig = {
 /**
  * Editor pages get the whole window — no sidebar competing for space: the assessment set editor,
  * the past paper / practice test / midterm module editors and the full-mock module editor.
+ *
+ * A past paper or practice test module is `/<library>/<test>/<module>` — two numbers. This asked for
+ * three until PR 14a, so those two editors opened inside the sidebar frame; the midterm one has three
+ * (`/midterms/<exam>/<test>/<module>`).
  */
 export function isBuilderEditorRoute(pathname: string): boolean {
   return (
     /^\/builder\/sets\/\d+/.test(pathname) ||
-    /^\/builder\/pastpapers\/\d+\/\d+\/\d+/.test(pathname) ||
-    /^\/builder\/practice-tests\/\d+\/\d+\/\d+/.test(pathname) ||
+    /^\/builder\/pastpapers\/\d+\/\d+/.test(pathname) ||
+    /^\/builder\/practice-tests\/\d+\/\d+/.test(pathname) ||
     /^\/builder\/midterms\/\d+\/\d+\/\d+/.test(pathname) ||
     /^\/builder\/full-mocks\/\d+\/\d+/.test(pathname)
   );

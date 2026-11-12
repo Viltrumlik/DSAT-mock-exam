@@ -69,17 +69,16 @@ function PastpaperModuleEditor({
   }, [testId, moduleId, collectionTitle, section?.subject, moduleEntry?.module_order]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">
-      <ModuleQuestionsPanel
-        testId={testId}
-        moduleId={moduleId}
-        packTitle={collectionTitle}
-        sectionSubject={section?.subject ?? undefined}
-        moduleOrder={moduleEntry?.module_order != null ? `Module ${moduleEntry.module_order}` : undefined}
-        backHref={inPracticeLibrary ? "/builder/practice-tests" : undefined}
-        backLabel={inPracticeLibrary ? "Practice tests" : undefined}
-      />
-    </div>
+    // The panel is the whole window: its own top bar, outline and question (PR 14a).
+    <ModuleQuestionsPanel
+      testId={testId}
+      moduleId={moduleId}
+      packTitle={collectionTitle}
+      sectionSubject={section?.subject ?? undefined}
+      moduleOrder={moduleEntry?.module_order != null ? `Module ${moduleEntry.module_order}` : undefined}
+      backHref={inPracticeLibrary ? "/builder/practice-tests" : undefined}
+      backLabel={inPracticeLibrary ? "Practice tests" : undefined}
+    />
   );
 }
 

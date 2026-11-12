@@ -40,18 +40,17 @@ function FullMockModuleEditor({ mockId, moduleId }: { mockId: number; moduleId: 
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">
-      <ModuleQuestionsPanel
-        testId={mockId}
-        moduleId={moduleId}
-        api={mocksModuleQuestionsApi}
-        packTitle={mock?.title ?? undefined}
-        sectionSubject={sectionSubject}
-        moduleOrder={moduleOrder != null ? `Module ${moduleOrder}` : undefined}
-        backHref={`/builder/full-mocks/${mockId}`}
-        backLabel="Full mock"
-      />
-    </div>
+    // The panel is the whole window: its own top bar, outline and question (PR 14a).
+    <ModuleQuestionsPanel
+      testId={mockId}
+      moduleId={moduleId}
+      api={mocksModuleQuestionsApi}
+      packTitle={mock?.title ?? undefined}
+      sectionSubject={sectionSubject}
+      moduleOrder={moduleOrder != null ? `Module ${moduleOrder}` : undefined}
+      backHref={`/builder/full-mocks/${mockId}`}
+      backLabel="Full mock"
+    />
   );
 }
 

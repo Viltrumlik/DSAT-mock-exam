@@ -56,21 +56,20 @@ function MidtermModuleEditor({
     moduleData?.module_order != null ? `Module ${moduleData.module_order}` : `Module #${moduleId}`;
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">
-      <ModuleQuestionsPanel
-        testId={testId}
-        moduleId={moduleId}
-        packTitle={exam?.title ?? undefined}
-        sectionSubject={section?.subject ?? undefined}
-        moduleOrder={moduleLabel}
-        backHref="/builder/midterms"
-        backLabel="Midterms"
-        examKind={exam?.kind ?? "MIDTERM"}
-        scoringScale={exam?.midterm_scoring_scale ?? undefined}
-        midtermModuleQuestionLimit={exam?.midterm_module_question_limit ?? undefined}
-        midtermLevel={exam?.midterm_level ?? undefined}
-      />
-    </div>
+    // The panel is the whole window: its own top bar, outline and question (PR 14a).
+    <ModuleQuestionsPanel
+      testId={testId}
+      moduleId={moduleId}
+      packTitle={exam?.title ?? undefined}
+      sectionSubject={section?.subject ?? undefined}
+      moduleOrder={moduleLabel}
+      backHref="/builder/midterms"
+      backLabel="Midterms"
+      examKind={exam?.kind ?? "MIDTERM"}
+      scoringScale={exam?.midterm_scoring_scale ?? undefined}
+      midtermModuleQuestionLimit={exam?.midterm_module_question_limit ?? undefined}
+      midtermLevel={exam?.midterm_level ?? undefined}
+    />
   );
 }
 

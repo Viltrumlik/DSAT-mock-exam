@@ -7,18 +7,18 @@ import {
   DragOverlay,
   PointerSensor,
   closestCenter,
+  defaultDropAnimationSideEffects,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type DropAnimation,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
-  useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import {
   examsModuleQuestionsApi,
   useCreateModuleQuestion,
@@ -31,6 +31,7 @@ import {
 } from "@/features/questionsAdmin/hooks";
 import type { AdminModuleQuestion } from "@/features/questionsAdmin/types";
 import { DownloadQuestionsCsvButton } from "@/features/questionsAdmin/DownloadQuestionsCsvButton";
+import { OutlineGhost, OutlineLegend, OutlineRow, detectMidtermFormat, type MidtermFormat } from "@/features/questionsAdmin/ModuleOutline";
 import {
   bankSubjectForQuestionType,
   useSkillTaxonomyQuery,
@@ -39,20 +40,17 @@ import { normalizeApiError } from "@/lib/apiError";
 import {
   AlertCircle,
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
-  GripVertical,
   ImagePlus,
   Loader2,
-  Plus,
-  RefreshCcw,
   Save,
   Trash2,
-  Upload,
   X,
 } from "lucide-react";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { Button, EmptyState, buttonClass, prefersReducedMotion } from "@/features/console/ui";
+import { cn } from "@/lib/cn";
 import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
-import { StudioSpinner } from "@/components/studio/StudioSpinner";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
 import { MathText } from "@/components/MathText";
 import {
@@ -69,9 +67,6 @@ import {
 import { getMidtermModuleProgress } from "@/lib/midtermRules";
 
 // ─── Draft type ──────────────────────────────────────────────────────────────
-
-/** Answer format shown in the midterm question editor instead of SAT types. */
-type MidtermFormat = "mc" | "numeric" | "short_text" | "true_false";
 
 type QuestionDraft = {
   question_type: "MATH" | "READING" | "WRITING";
@@ -90,17 +85,6 @@ type QuestionDraft = {
   /** Only meaningful when examKind === "MIDTERM". */
   midtermFormat: MidtermFormat;
 };
-
-/** Infer midterm answer format from existing question fields. */
-function detectMidtermFormat(q: AdminModuleQuestion): MidtermFormat {
-  if (q.is_math_input) return "numeric";
-  const a = (q.option_a ?? "").trim().toLowerCase();
-  const b = (q.option_b ?? "").trim().toLowerCase();
-  if (a === "true" && b === "false" && !(q.option_c ?? "").trim() && !(q.option_d ?? "").trim()) {
-    return "true_false";
-  }
-  return "mc";
-}
 
 function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string, examKind?: string): QuestionDraft {
   // Use existing type, but if it's wrong for the subject, fall back to the first allowed type.
@@ -875,158 +859,70 @@ function QuestionEditor({
   );
 }
 
-// ─── Sortable question row ────────────────────────────────────────────────────
+// ─── The frame's pieces ──────────────────────────────────────────────────────
 
-function SortableQRow({
-  q,
-  index,
-  selected,
-  reordering,
-  hasTypeMismatch,
-  examKind,
-  onSelect,
+type NoticeTone = "positive" | "attention" | "critical";
+
+const NOTICE: Record<NoticeTone, { box: string; icon: IconName }> = {
+  positive: { box: "border-ms-positive-line bg-ms-positive-soft text-ms-positive-fg", icon: "ok" },
+  attention: { box: "border-ms-attention-line bg-ms-attention-soft text-ms-attention-fg", icon: "warn" },
+  critical: { box: "border-ms-critical-line bg-ms-critical-soft text-ms-critical-fg", icon: "alert" },
+};
+
+/** A line under the top bar in its verdict's soft tone; the words are the panel's own. */
+function Notice({
+  tone,
+  title,
+  children,
+  onDismiss,
 }: {
-  q: AdminModuleQuestion;
-  index: number;
-  selected: boolean;
-  reordering: boolean;
-  /** True when this question's type is wrong for the section subject */
-  hasTypeMismatch?: boolean;
-  examKind?: string;
-  onSelect: () => void;
+  tone: NoticeTone;
+  title?: string;
+  children: React.ReactNode;
+  onDismiss?: () => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: q.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 10 : undefined,
-  };
-
-  const typeColor: Record<string, string> = {
-    MATH: "bg-purple-100 text-purple-700",
-    READING: "bg-blue-100 text-blue-700",
-    WRITING: "bg-teal-100 text-teal-700",
-  };
-  const color = typeColor[q.question_type] ?? "bg-surface-2 text-muted-foreground";
-  const isMidtermRow = examKind === "MIDTERM";
-
-  // For midterm rows, show the answer format instead of SAT type.
-  const midtermFormatLabel = (() => {
-    if (!isMidtermRow) return null;
-    const fmt = detectMidtermFormat(q);
-    if (fmt === "true_false") return { label: "T/F", color: "bg-violet-100 text-violet-700" };
-    if (fmt === "numeric") return { label: "Num", color: "bg-amber-100 text-amber-700" };
-    if (fmt === "short_text") return { label: "Text", color: "bg-teal-100 text-teal-700" };
-    return { label: "MC", color: "bg-blue-100 text-blue-700" };
-  })();
-
+  const look = NOTICE[tone];
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      className={`group flex w-full items-start gap-1.5 rounded-xl border transition-colors ${
-        selected
-          ? "border-primary/40 bg-primary/8 ring-1 ring-primary/20"
-          : "border-border bg-card hover:border-primary/20 hover:bg-surface-2/60"
-      } ${reordering ? "pointer-events-none" : ""}`}
+      role={tone === "positive" ? "status" : "alert"}
+      className={cn("animate-ms-fade-in flex items-start gap-2.5 rounded-ms-ctl border px-3.5 py-2.5 text-[14px] leading-5", look.box)}
     >
-      {/* Drag handle */}
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        className="flex shrink-0 cursor-grab items-center self-stretch rounded-l-xl px-1.5 text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing transition-colors focus:outline-none"
-        aria-label="Drag to reorder"
-        tabIndex={-1}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </button>
-
-      {/* Row body — clicking selects the question */}
-      <button
-        type="button"
-        onClick={onSelect}
-        className="min-w-0 flex-1 py-3 pr-3 text-left"
-      >
-        <div className="mb-1 flex items-center gap-1.5">
-          <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-muted-foreground">
-            Q{index + 1}
-          </span>
-          {midtermFormatLabel ? (
-            <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${midtermFormatLabel.color}`}>
-              {midtermFormatLabel.label}
-            </span>
-          ) : (
-            <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${color}`}>
-              {q.question_type}
-            </span>
-          )}
-          {!isMidtermRow && q.is_math_input && (
-            <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700">
-              INPUT
-            </span>
-          )}
-          {!isMidtermRow && (
-            <span className="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-emerald-700">
-              {q.score ?? 10}b
-            </span>
-          )}
-          {hasTypeMismatch && (
-            <span title="Wrong question type for this section">
-              <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
-            </span>
-          )}
-        </div>
-        <p className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">
-          {q.question_text?.trim() || <em className="text-muted-foreground/50">No text yet</em>}
-        </p>
-      </button>
+      <Icon name={look.icon} size="sm" className="mt-0.5" />
+      <div className="min-w-0 flex-1">
+        {title ? <p className="font-semibold">{title}</p> : null}
+        <div className={title ? "mt-0.5" : undefined}>{children}</div>
+      </div>
+      {onDismiss ? (
+        <button type="button" onClick={onDismiss} aria-label="Dismiss" className="ms-transition -m-1 rounded-[8px] p-1 opacity-70 hover:opacity-100">
+          <Icon name="x" size="sm" />
+        </button>
+      ) : null}
     </div>
   );
 }
 
-/** Ghost card shown under the pointer during a drag */
-function DragGhostRow({ q, index }: { q: AdminModuleQuestion; index: number }) {
-  const typeColor: Record<string, string> = {
-    MATH: "bg-purple-100 text-purple-700",
-    READING: "bg-blue-100 text-blue-700",
-    WRITING: "bg-teal-100 text-teal-700",
-  };
-  const color = typeColor[q.question_type] ?? "bg-surface-2 text-muted-foreground";
+/** The section's subject in its colour, as the Builder shows it everywhere. */
+const SUBJECT_CHIP: Record<string, { icon: IconName; look: string; label: string }> = {
+  MATH: { icon: "sigma", look: "bg-ms-math-soft text-ms-math-fg", label: "Mathematics" },
+  READING_WRITING: { icon: "book", look: "bg-ms-rw-soft text-ms-rw-fg", label: "Reading & Writing" },
+};
 
-  return (
-    <div className="flex w-72 items-start gap-1.5 rounded-xl border border-primary/40 bg-card shadow-xl ring-1 ring-primary/20">
-      <div className="flex shrink-0 cursor-grabbing items-center self-stretch rounded-l-xl px-1.5 text-muted-foreground">
-        <GripVertical className="h-3.5 w-3.5" />
-      </div>
-      <div className="min-w-0 flex-1 py-3 pr-3">
-        <div className="mb-1 flex items-center gap-1.5">
-          <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-muted-foreground">
-            Q{index + 1}
-          </span>
-          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${color}`}>
-            {q.question_type}
-          </span>
-        </div>
-        <p className="line-clamp-1 text-xs font-semibold leading-snug text-foreground">
-          {q.question_text?.trim() || <em className="text-muted-foreground/50">No text yet</em>}
-        </p>
-      </div>
-    </div>
-  );
-}
+const EYEBROW = "text-ms-over uppercase text-ms-fg-3";
+
+/** "Others slide 200 ms", and the drop settles on the same curve; nothing moves for reduced motion. */
+const DROP: DropAnimation = {
+  duration: 200,
+  easing: "cubic-bezier(.2,.8,.2,1)",
+  sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: "0" } } }),
+};
 
 // ─── Main panel ──────────────────────────────────────────────────────────────
 
+/**
+ * The module editor (design handoff v0.3, PR 14a): the whole window, no sidebar — a top bar with the way
+ * back, the module and its actions; the outline on the left (the module's health, then every question,
+ * dragged or ⌥↑ / ⌥↓ to reorder); the question open in the middle. The Builder's corners and colours.
+ */
 export default function ModuleQuestionsPanel(props: {
   testId: number;
   moduleId: number;
@@ -1050,7 +946,7 @@ export default function ModuleQuestionsPanel(props: {
   /** Backend adapter. Default = exams practice-test API; full mocks pass a mocks adapter. */
   api?: ModuleQuestionsApi;
 }) {
-  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale, midtermModuleQuestionLimit, midtermLevel } = props;
+  const { testId, moduleId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale, midtermModuleQuestionLimit, midtermLevel } = props;
   const api = props.api ?? examsModuleQuestionsApi;
 
   const {
@@ -1126,6 +1022,8 @@ export default function ModuleQuestionsPanel(props: {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
+  // Read once: the lift, the slide and the drop all stand still for someone who asked for less motion.
+  const [reduceMotion] = React.useState(prefersReducedMotion);
 
   const [activeId, setActiveId] = React.useState<number | null>(null);
   const activeQ = activeId != null
@@ -1152,8 +1050,38 @@ export default function ModuleQuestionsPanel(props: {
       const newOrder = arrayMove(localOrder, fromIdx, toIdx);
       setLocalOrder(newOrder);
 
-      // Single atomic bulk-reorder: one round-trip, one invalidation.
-      await reorderBulk.mutateAsync(newOrder);
+      // Single atomic bulk-reorder: one round-trip, one invalidation. A failure shows as the reorder
+      // notice and the list goes back to the server's order.
+      await reorderBulk.mutateAsync(newOrder).catch(() => undefined);
+    },
+    [localOrder, reorderBulk],
+  );
+
+  // ── ⌥↑ / ⌥↓: the drag without a mouse ───────────────────────────────────
+  // The same optimistic move and the same single save; the moved row keeps the keyboard focus (the
+  // browser drops it when React moves the node) and a polite line says where it went.
+  const rowRefs = React.useRef(new Map<number, HTMLButtonElement>());
+  const focusAfterMove = React.useRef<number | null>(null);
+  const [moveNote, setMoveNote] = React.useState("");
+
+  React.useEffect(() => {
+    const id = focusAfterMove.current;
+    if (id == null) return;
+    focusAfterMove.current = null;
+    rowRefs.current.get(id)?.focus();
+  }, [orderedQuestions]);
+
+  const handleMove = React.useCallback(
+    (id: number, delta: -1 | 1) => {
+      if (reorderBulk.isPending) return;
+      const fromIdx = localOrder.indexOf(id);
+      const toIdx = fromIdx + delta;
+      if (fromIdx === -1 || toIdx < 0 || toIdx >= localOrder.length) return;
+      const newOrder = arrayMove(localOrder, fromIdx, toIdx);
+      focusAfterMove.current = id;
+      setLocalOrder(newOrder);
+      setMoveNote(`Q${fromIdx + 1} moved to position ${toIdx + 1} of ${newOrder.length}.`);
+      void reorderBulk.mutateAsync(newOrder).catch(() => undefined);
     },
     [localOrder, reorderBulk],
   );
@@ -1208,56 +1136,155 @@ export default function ModuleQuestionsPanel(props: {
     }
   };
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <Link
-            href={backHref ?? `/builder/pastpapers`}
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors shrink-0"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            {backLabel ?? "Past papers"}
-          </Link>
-          {packId && packTitle ? (
-            <>
-              <span className="text-muted-foreground/30">/</span>
-              <span className="text-sm font-semibold text-muted-foreground truncate max-w-[160px]" title={packTitle}>
-                {packTitle}
+  const subject = sectionSubject ? SUBJECT_CHIP[sectionSubject] : undefined;
+  const subjectWord = sectionSubject === "MATH" ? "Mathematics" : "Reading & Writing";
+  const countTone = hasQuestionLimit
+    ? progress.complete
+      ? "font-semibold text-ms-positive-fg"
+      : progress.over
+        ? "font-semibold text-ms-critical-fg"
+        : "text-ms-fg-2"
+    : "text-ms-fg-2";
+
+  // ── The module card at the top of the outline ───────────────────────────
+  const showPoints = !isLoading && questions.length > 0;
+  const showHealth = isSat && !isLoading;
+  const points = (() => {
+    if (!showPoints) return null;
+    if (isMidtermPanel) {
+      const is800 = scoringScale === "SCALE_800";
+      return (
+        // The scale's name takes the card's whole width; the count, the rule and the maximum sit under it.
+        <div className="flex flex-col gap-2">
+          <p className={EYEBROW}>Midterm scoring · {is800 ? "800-point (SAT scaled)" : "100-point (percentage)"}</p>
+          <div className="flex items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-ms-ctl bg-ms-primary-soft text-[15px] font-bold text-ms-primary-text">
+              {is800 ? "Σ" : "%"}
+            </span>
+            <p className="min-w-0 flex-1 text-[14px] font-semibold leading-5 text-ms-fg">
+              {questions.length} question{questions.length !== 1 ? "s" : ""} ·{" "}
+              <span className="font-normal text-ms-fg-2">
+                {is800 ? `${totalScore} pts → SAT 200–800 curve` : `score = correct ÷ ${questions.length} × 100`}
               </span>
-              <span className="text-muted-foreground/30">/</span>
-              <div className="min-w-0">
-                <p className="text-sm font-extrabold text-foreground leading-tight">
-                  {sectionSubject === "MATH" ? "Mathematics" : sectionSubject === "READING_WRITING" ? "Reading & Writing" : `Test #${testId}`}
-                  {moduleOrder ? ` · ${moduleOrder}` : ` · Module #${moduleId}`}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {isLoading ? "Loading…" : (
-                    hasQuestionLimit
-                      ? <span className={progress.complete ? "text-emerald-600 font-bold" : progress.over ? "text-red-600 font-bold" : ""}>
-                          {progress.label} questions
-                        </span>
-                      : `${questions.length} question${questions.length !== 1 ? "s" : ""}`
-                  )}
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <span className="text-muted-foreground/30">/</span>
-              <div>
-                <p className="text-sm font-extrabold text-foreground">
-                  Test #{testId} · Module #{moduleId}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {isLoading ? "Loading…" : `${questions.length} question${questions.length !== 1 ? "s" : ""}`}
-                </p>
-              </div>
-            </>
-          )}
+            </p>
+            <div className="shrink-0 text-right">
+              <p className={EYEBROW}>Max</p>
+              <p className="font-ms-display text-[20px] font-bold leading-7 tabular-nums text-ms-primary-text">{is800 ? 800 : 100}</p>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+      );
+    }
+    const moduleCap = isSat && sectionSubject
+      ? SAT_MODULE_SCORE_CAP[sectionSubject as SatSubject]?.[moduleOrderNum as 1 | 2] ?? null
+      : null;
+    const remainingPts = moduleCap !== null ? Math.max(0, moduleCap - totalScore) : null;
+    return (
+      <div className="flex items-center gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-ms-ctl bg-ms-primary-soft text-ms-primary-text">
+          <Icon name="sigma" size="sm" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={EYEBROW}>Module points</p>
+          <p className="font-ms-display text-[20px] font-bold leading-7 tabular-nums text-ms-fg">
+            {totalScore}
+            {moduleCap !== null && <span className="text-[14px] font-semibold text-ms-fg-3"> / {moduleCap}</span>}
+          </p>
+        </div>
+        {remainingPts !== null && remainingPts > 0 && (
+          <div className="shrink-0 text-right">
+            <p className="text-ms-over uppercase text-ms-attention-fg">Remaining</p>
+            <p className="text-[18px] font-bold leading-7 tabular-nums text-ms-attention-fg">
+              +{remainingPts}
+              <span className="ml-1 text-[11px] font-semibold">pts</span>
+            </p>
+          </div>
+        )}
+        {remainingPts !== null && remainingPts <= 0 && <p className="shrink-0 text-ms-over uppercase text-ms-positive-fg">✓ Complete</p>}
+      </div>
+    );
+  })();
+
+  const health = showHealth ? (
+    <div className={cn("flex flex-col gap-2", points && "border-t border-ms-line pt-3")}>
+      <p className={EYEBROW}>
+        {sectionSubject ? SAT_SUBJECT_LABEL[sectionSubject as keyof typeof SAT_SUBJECT_LABEL] ?? sectionSubject : "Section"} · {moduleOrder ?? `Module ${moduleOrderNum}`}
+      </p>
+      {/* The bar and the count it measures, side by side. */}
+      <div className="flex items-center gap-3">
+        {progress.required !== null && (
+          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-ms-surface-3">
+            <div
+              className={cn("ms-transition h-full rounded-full", progress.complete ? "bg-ms-positive" : progress.over ? "bg-ms-critical" : "bg-ms-primary")}
+              style={{ width: `${Math.min((progress.fraction ?? 0) * 100, 100)}%` }}
+            />
+          </div>
+        )}
+        <span className={cn("ml-auto shrink-0 text-[13px] font-semibold tabular-nums", progress.complete ? "text-ms-positive-fg" : progress.over ? "text-ms-critical-fg" : "text-ms-fg")}>
+          {progress.label}
+          {progress.required !== null && " questions"}
+        </span>
+      </div>
+      {progress.required !== null && !progress.complete && (
+        <p className="text-[13px] leading-[18px] text-ms-fg-2">
+          {progress.over
+            ? `${progress.current - (progress.required ?? 0)} question(s) over the required ${progress.required}. Remove extras before publishing.`
+            : `${(progress.required ?? 0) - progress.current} more question(s) needed to reach the required ${progress.required}.`}
+        </p>
+      )}
+      {typeMismatchIds.size > 0 && (
+        <div className="flex items-start gap-2 rounded-[10px] border border-ms-attention-line bg-ms-attention-soft px-2.5 py-2 text-ms-attention-fg">
+          <Icon name="warn" size="sm" className="mt-px size-3.5" />
+          <p className="text-[13px] font-medium leading-[18px]">
+            {typeMismatchIds.size} question{typeMismatchIds.size !== 1 ? "s have" : " has"} the wrong type for this{" "}
+            {subjectWord} module.
+            Allowed types: {allowedTypesForSubject.join(", ")}.
+          </p>
+        </div>
+      )}
+      {progress.complete && typeMismatchIds.size === 0 && (
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-ms-positive-fg">
+          <Icon name="ok" size="sm" className="size-3.5" />
+          Module is structurally valid — ready to publish.
+        </p>
+      )}
+    </div>
+  ) : null;
+
+  return (
+    <div className="ms flex min-h-dvh flex-col lg:h-dvh" data-ms-temp="builder">
+      {/* Top bar: the way back, the module, its actions (Shell board, "Builder editor · full-screen"). */}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-ms-border bg-ms-card px-3 py-2.5 sm:px-4 lg:min-h-16 lg:px-5">
+        <Link href={backHref ?? `/builder/pastpapers`} className={buttonClass({ variant: "ghost", size: "sm", className: "-ml-1" })}>
+          <Icon name="left" size="sm" />
+          {backLabel ?? "Past papers"}
+        </Link>
+        <span aria-hidden className="h-6 w-px shrink-0 bg-ms-border-strong max-sm:hidden" />
+        {/* On a phone the module takes its own line under the way back, and the actions the next. */}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 max-sm:basis-full">
+          {packTitle ? (
+            <span className="max-w-[280px] truncate text-[14px] font-medium text-ms-fg-2" title={packTitle}>
+              {packTitle}
+            </span>
+          ) : null}
+          {subject ? (
+            <span className={cn("inline-flex h-6 shrink-0 items-center gap-1 rounded-ms-chip px-2 text-[12px] font-semibold", subject.look)}>
+              <Icon name={subject.icon} size="sm" className="size-3.5" />
+              {subject.label}
+            </span>
+          ) : (
+            <span className="text-[14px] font-medium text-ms-fg-2">Test #{testId}</span>
+          )}
+          <h1 className="font-ms-display text-[17px] font-bold leading-6 tracking-[-0.01em] text-ms-fg">{moduleOrder ?? `Module #${moduleId}`}</h1>
+          <span className={cn("text-[13px] tabular-nums", countTone)}>
+            {isLoading
+              ? "Loading…"
+              : hasQuestionLimit
+                ? `${progress.label} questions`
+                : `${questions.length} question${questions.length !== 1 ? "s" : ""}`}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <input
             ref={csvInputRef}
             type="file"
@@ -1265,263 +1292,104 @@ export default function ModuleQuestionsPanel(props: {
             className="hidden"
             onChange={(e) => void handleCsvFile(e.target.files?.[0] ?? null)}
           />
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="upload"
+            state={importCsv.isPending ? "busy" : "idle"}
             onClick={() => csvInputRef.current?.click()}
-            disabled={importCsv.isPending || atCapacity}
+            disabled={atCapacity}
             title={atCapacity ? "This module is already full." : "Append questions from a CSV file"}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
           >
-            {importCsv.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Upload className="h-3.5 w-3.5" />
-            )}
             Import CSV
-          </button>
+          </Button>
           {/* The WHOLE test, not this module — a reviewer wants one file with every
               question and its key. Renders only for super_admin; the endpoint 403s for
               anyone else. */}
           <DownloadQuestionsCsvButton
+            look="console"
             fetchCsv={() => api.exportCsv(testId)}
             fallbackName={`${api.source}-${testId}-questions`}
             title="Download every question on this test, with its answer key"
           />
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            disabled={isFetching}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCcw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+          <Button variant="secondary" size="sm" onClick={() => void refetch()} disabled={isFetching}>
+            <Icon name="refresh" size="sm" className={isFetching ? "animate-ms-spin" : undefined} />
             Refresh
-          </button>
+          </Button>
           {atCapacity ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-muted-foreground">
+            <>
+              <span className="text-[13px] font-medium text-ms-fg-3">
                 Module full ({progress.required}/{progress.required})
               </span>
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
+                icon="plus"
                 disabled
-                title={`This module already has the maximum ${progress.required} questions for a ${sectionSubject === "MATH" ? "Mathematics" : "Reading & Writing"} module.`}
-                className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-xl bg-surface-2 px-3 py-1.5 text-xs font-bold text-muted-foreground opacity-60"
+                title={`This module already has the maximum ${progress.required} questions for a ${subjectWord} module.`}
               >
-                <Plus className="h-3.5 w-3.5" />
                 Add question
-              </button>
-            </div>
+              </Button>
+            </>
           ) : (
-            <button
-              type="button"
-              disabled={mutationBusy}
+            <Button
+              variant="primary"
+              size="sm"
+              icon="plus"
+              state={create.isPending ? "busy" : "idle"}
+              disabled={reorderBulk.isPending}
               onClick={() => void handleAdd()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
-              {create.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="h-3.5 w-3.5" />
-              )}
               Add question
-            </button>
+            </Button>
           )}
         </div>
-      </div>
+      </header>
 
-      {csvMsg && (
-        <div
-          className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
-            csvMsg.ok
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-              : "border-red-300 bg-red-50 text-red-700"
-          }`}
+      {csvMsg || listErrMsg || reorderErrMsg || createErrMsg ? (
+        <div className="flex shrink-0 flex-col gap-2 px-3 pt-3 sm:px-4 lg:px-5">
+          {csvMsg ? (
+            <Notice tone={csvMsg.ok ? "positive" : "critical"} onDismiss={() => setCsvMsg(null)}>
+              {csvMsg.text}
+            </Notice>
+          ) : null}
+          {listErrMsg ? (
+            <Notice tone="critical" title="Could not load questions">
+              {listErrMsg}
+            </Notice>
+          ) : null}
+          {reorderErrMsg || createErrMsg ? <Notice tone="attention">{reorderErrMsg ?? createErrMsg}</Notice> : null}
+        </div>
+      ) : null}
+
+      <div className="flex flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
+        {/* Left: the outline — the module's health, then its questions in order. */}
+        <aside
+          aria-label="Questions in this module"
+          className="flex shrink-0 flex-col border-ms-border bg-ms-card max-lg:max-h-[60vh] max-lg:overflow-y-auto max-lg:border-b lg:w-[300px] lg:border-r"
         >
-          {csvMsg.ok ? (
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          ) : (
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          )}
-          <span className="min-w-0 flex-1">{csvMsg.text}</span>
-          <button type="button" onClick={() => setCsvMsg(null)} className="shrink-0 opacity-60 hover:opacity-100">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+          {points || health ? (
+            <section aria-label="Module" className="animate-ms-fade-in mx-3 mt-3 flex shrink-0 flex-col gap-3 rounded-ms-ctl bg-ms-surface p-3.5">
+              {points}
+              {health}
+            </section>
+          ) : null}
 
-      {/* Error banners */}
-      {listErrMsg && (
-        <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold">Could not load questions</p>
-            <p className="mt-0.5">{listErrMsg}</p>
-          </div>
-        </div>
-      )}
-      {(reorderErrMsg || createErrMsg) && (
-        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800">
-          {reorderErrMsg ?? createErrMsg}
-        </div>
-      )}
-
-      {/* Score calculator — for midterms show proportional scoring info; SAT shows weighted points */}
-      {!isLoading && questions.length > 0 && (() => {
-        if (examKind === "MIDTERM") {
-          const is800 = scoringScale === "SCALE_800";
-          return (
-            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-                <span className="text-sm font-black text-primary">{is800 ? "Σ" : "%"}</span>
+          <div className="flex flex-col gap-1 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            {isLoading ? (
+              <div aria-busy="true" aria-label="Loading questions" className="flex flex-col gap-1.5 p-1">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="h-[62px] animate-ms-shimmer rounded-[12px] bg-ms-surface-2" />
+                ))}
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold uppercase tracking-widest text-primary/70">
-                  Midterm scoring · {is800 ? "800-point (SAT scaled)" : "100-point (percentage)"}
-                </p>
-                <p className="text-sm font-bold text-foreground leading-tight">
-                  {questions.length} question{questions.length !== 1 ? "s" : ""} ·{" "}
-                  <span className="text-muted-foreground font-normal">
-                    {is800
-                      ? `${totalScore} pts → SAT 200–800 curve`
-                      : `score = correct ÷ ${questions.length} × 100`}
-                  </span>
-                </p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Max</p>
-                <p className="text-lg font-black tabular-nums text-primary leading-tight">{is800 ? 800 : 100}</p>
-              </div>
-            </div>
-          );
-        }
-        const moduleCap = isSat && sectionSubject
-          ? SAT_MODULE_SCORE_CAP[sectionSubject as SatSubject]?.[moduleOrderNum as 1 | 2] ?? null
-          : null;
-        const remainingPts = moduleCap !== null ? Math.max(0, moduleCap - totalScore) : null;
-        return (
-          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-              <span className="text-sm font-black text-primary">Σ</span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold uppercase tracking-widest text-primary/70">Module points</p>
-              <p className="text-lg font-black tabular-nums text-primary leading-tight">
-                {totalScore}
-                {moduleCap !== null && (
-                  <span className="text-sm font-bold text-muted-foreground"> / {moduleCap}</span>
-                )}
-              </p>
-            </div>
-            {remainingPts !== null && remainingPts > 0 && (
-              <div className="shrink-0 text-right">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Remaining</p>
-                <p className="text-lg font-black tabular-nums text-amber-600 leading-tight">
-                  +{remainingPts}
-                  <span className="ml-1 text-[10px] font-semibold">pts</span>
-                </p>
-              </div>
-            )}
-            {remainingPts !== null && remainingPts <= 0 && (
-              <div className="shrink-0 text-right">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">✓ Complete</p>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* SAT module health panel */}
-      {isSat && !isLoading && (
-        <div className="mb-4 rounded-2xl border border-border bg-card px-4 py-3 space-y-2">
-          {/* Progress row */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest shrink-0">
-                {sectionSubject ? SAT_SUBJECT_LABEL[sectionSubject as keyof typeof SAT_SUBJECT_LABEL] ?? sectionSubject : "Section"} · {moduleOrder ?? `Module ${moduleOrderNum}`}
-              </p>
-            </div>
-            <span
-              className={`text-xs font-extrabold tabular-nums shrink-0 ${
-                progress.complete
-                  ? "text-emerald-600"
-                  : progress.over
-                  ? "text-red-600"
-                  : "text-foreground"
-              }`}
-            >
-              {progress.label}
-              {progress.required !== null && " questions"}
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          {progress.required !== null && (
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-              <div
-                className={`h-full rounded-full transition-all ${
-                  progress.complete
-                    ? "bg-emerald-500"
-                    : progress.over
-                    ? "bg-red-500"
-                    : "bg-primary"
-                }`}
-                style={{ width: `${Math.min((progress.fraction ?? 0) * 100, 100)}%` }}
-              />
-            </div>
-          )}
-
-          {/* Count violation */}
-          {progress.required !== null && !progress.complete && (
-            <p className="text-[11px] font-semibold text-muted-foreground">
-              {progress.over
-                ? `${progress.current - (progress.required ?? 0)} question(s) over the required ${progress.required}. Remove extras before publishing.`
-                : `${(progress.required ?? 0) - progress.current} more question(s) needed to reach the required ${progress.required}.`}
-            </p>
-          )}
-
-          {/* Type mismatch warning */}
-          {typeMismatchIds.size > 0 && (
-            <div className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-              <p className="text-[11px] font-semibold leading-snug text-amber-800">
-                {typeMismatchIds.size} question{typeMismatchIds.size !== 1 ? "s have" : " has"} the wrong type for this{" "}
-                {sectionSubject === "MATH" ? "Mathematics" : "Reading & Writing"} module.
-                Allowed types: {allowedTypesForSubject.join(", ")}.
-              </p>
-            </div>
-          )}
-
-          {/* All-good state */}
-          {progress.complete && typeMismatchIds.size === 0 && (
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-              <p className="text-[11px] font-semibold text-emerald-700">
-                Module is structurally valid — ready to publish.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Split panel */}
-      {isLoading ? (
-        <StudioSpinner size="lg" center />
-      ) : (
-        <div className="flex min-h-0 flex-1 gap-5">
-          {/* Left: draggable question list */}
-          <div className="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto rounded-2xl border border-border bg-card p-3">
-            {orderedQuestions.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12 text-center">
-                <p className="text-sm font-semibold text-foreground">No questions yet</p>
-                <p className="text-xs text-muted-foreground">
-                  Click &ldquo;Add question&rdquo; to create the first one.
-                </p>
-              </div>
+            ) : orderedQuestions.length === 0 ? (
+              <EmptyState icon="ms-question" title="No questions yet" detail="Click “Add question” to create the first one." />
             ) : (
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
+                onDragCancel={() => setActiveId(null)}
                 onDragEnd={(e) => { void handleDragEnd(e); }}
               >
                 <SortableContext
@@ -1529,23 +1397,29 @@ export default function ModuleQuestionsPanel(props: {
                   strategy={verticalListSortingStrategy}
                 >
                   {orderedQuestions.map((q, i) => (
-                    <SortableQRow
+                    <OutlineRow
                       key={q.id}
                       q={q}
                       index={i}
                       selected={q.id === selectedId}
                       reordering={reorderBulk.isPending}
-                      hasTypeMismatch={typeMismatchIds.has(q.id)}
+                      wrongType={typeMismatchIds.has(q.id)}
                       examKind={examKind}
+                      reduceMotion={reduceMotion}
                       onSelect={() => setSelectedId(q.id)}
+                      onMove={(delta) => handleMove(q.id, delta)}
+                      rowRef={(el) => {
+                        if (el) rowRefs.current.set(q.id, el);
+                        else rowRefs.current.delete(q.id);
+                      }}
                     />
                   ))}
                 </SortableContext>
 
-                {/* Drag overlay — floats under cursor */}
-                <DragOverlay dropAnimation={null}>
+                {/* The lifted question, under the pointer. */}
+                <DragOverlay dropAnimation={reduceMotion ? null : DROP}>
                   {activeQ ? (
-                    <DragGhostRow q={activeQ} index={activeIndex} />
+                    <OutlineGhost q={activeQ} index={activeIndex} examKind={examKind} wrongType={typeMismatchIds.has(activeQ.id)} />
                   ) : null}
                 </DragOverlay>
               </DndContext>
@@ -1553,60 +1427,72 @@ export default function ModuleQuestionsPanel(props: {
 
             {/* Reorder in-progress indicator */}
             {reorderBulk.isPending && (
-              <div className="flex items-center gap-1.5 rounded-xl bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
+              <div className="animate-ms-fade-in mt-1 flex items-center gap-1.5 rounded-[10px] bg-ms-surface-2 px-3 py-2 text-[13px] font-medium text-ms-fg-2">
+                <Icon name="loader" size="sm" className="size-3.5 animate-ms-spin" />
                 Saving order…
               </div>
             )}
+            <p aria-live="polite" className="sr-only">
+              {moveNote}
+            </p>
           </div>
 
-          {/* Right: editor */}
-          <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card">
-            {selectedQ ? (
-              <QuestionEditor
-                key={selectedQ.id}
-                question={selectedQ}
-                testId={testId}
-                moduleId={moduleId}
-                api={api}
-                sectionSubject={sectionSubject}
-                examKind={examKind}
-                scoringScale={scoringScale}
-                midtermLevel={midtermLevel}
-                onSaved={(updated) => {
-                  setSelectedId(updated.id);
-                }}
-                onDeleted={() => {
-                  const remainingIds = orderedQuestions
-                    .filter((q) => q.id !== selectedQ.id)
-                    .map((q) => q.id);
-                  setSelectedId(remainingIds[0] ?? null);
-                }}
-              />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-3 p-12 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2">
-                  <Plus className="h-6 w-6 text-muted-foreground/40" />
-                </div>
-                <p className="font-semibold text-foreground">No question selected</p>
-                <p className="text-sm text-muted-foreground">
-                  Select a question from the list, or add a new one.
-                </p>
-                <button
-                  type="button"
-                  disabled={mutationBusy || atCapacity}
-                  onClick={() => void handleAdd()}
-                  title={atCapacity ? `Module is at capacity (${progress.required} questions max)` : undefined}
-                  className="mt-1 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add first question
-                </button>
+          {!isLoading && orderedQuestions.length > 0 ? <OutlineLegend /> : null}
+        </aside>
+
+        {/* Centre: the open question. Its insides keep their own look until PR 14b. */}
+        <main className="min-w-0 p-3 sm:p-4 lg:min-h-0 lg:flex-1 lg:p-5">
+          <div className="overflow-hidden rounded-ms-card bg-ms-card shadow-ms-1 lg:h-full">
+            {isLoading ? (
+              <div aria-hidden className="flex flex-col gap-4 p-6">
+                <div className="h-6 w-48 animate-ms-shimmer rounded-[8px] bg-ms-surface-2" />
+                <div className="h-36 animate-ms-shimmer rounded-ms-ctl bg-ms-surface-2" />
+                <div className="h-24 animate-ms-shimmer rounded-ms-ctl bg-ms-surface-2" />
               </div>
+            ) : selectedQ ? (
+              <div className="font-serif text-[16px] leading-[1.6] text-foreground lg:h-full">
+                <QuestionEditor
+                  key={selectedQ.id}
+                  question={selectedQ}
+                  testId={testId}
+                  moduleId={moduleId}
+                  api={api}
+                  sectionSubject={sectionSubject}
+                  examKind={examKind}
+                  scoringScale={scoringScale}
+                  midtermLevel={midtermLevel}
+                  onSaved={(updated) => {
+                    setSelectedId(updated.id);
+                  }}
+                  onDeleted={() => {
+                    const remainingIds = orderedQuestions
+                      .filter((q) => q.id !== selectedQ.id)
+                      .map((q) => q.id);
+                    setSelectedId(remainingIds[0] ?? null);
+                  }}
+                />
+              </div>
+            ) : (
+              <EmptyState
+                icon="plus"
+                title="No question selected"
+                detail="Select a question from the list, or add a new one."
+                action={
+                  <Button
+                    variant="primary"
+                    icon="plus"
+                    disabled={mutationBusy || atCapacity}
+                    onClick={() => void handleAdd()}
+                    title={atCapacity ? `Module is at capacity (${progress.required} questions max)` : undefined}
+                  >
+                    Add first question
+                  </Button>
+                }
+              />
             )}
           </div>
-        </div>
-      )}
+        </main>
+      </div>
     </div>
   );
 }
