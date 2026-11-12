@@ -1,12 +1,11 @@
 "use client";
 
+import { useId } from "react";
+
 import type { AssessmentQuestionType } from "@/features/assessments/types";
 import { defaultMcChoices } from "@/features/assessments/components/ChoiceEditor";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { CONTROL, FIELD_LABEL } from "@/features/questionsAdmin/questionLook";
 import type { AssessmentQuestionEditorDraft } from "@/features/assessments/components/assessmentQuestionEditorShared";
-
-const INPUT = STUDIO_INPUT;
-const LABEL = STUDIO_FIELD_LABEL;
 
 // ─── Question type + points ───────────────────────────────────────────────────
 
@@ -19,12 +18,16 @@ export function QuestionTypeSelect({
   onPatch: (p: Partial<AssessmentQuestionEditorDraft>) => void;
   disabled?: boolean;
 }) {
+  const id = useId();
   return (
     <div className="grid grid-cols-2 gap-4">
       <div>
-        <label className={LABEL}>Question type</label>
+        <label htmlFor={`${id}-type`} className={FIELD_LABEL}>
+          Question type
+        </label>
         <select
-          className={INPUT}
+          id={`${id}-type`}
+          className={CONTROL}
           disabled={disabled}
           value={draft.question_type}
           onChange={(e) => {
@@ -57,9 +60,12 @@ export function QuestionTypeSelect({
         </select>
       </div>
       <div>
-        <label className={LABEL}>Points</label>
+        <label htmlFor={`${id}-points`} className={FIELD_LABEL}>
+          Points
+        </label>
         <input
-          className={INPUT}
+          id={`${id}-points`}
+          className={CONTROL}
           disabled={disabled}
           type="number"
           min={1}

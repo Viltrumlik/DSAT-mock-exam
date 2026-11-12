@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { AssessmentQuestion } from "@/features/assessments/types";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { Icon } from "@/components/ui/Icon";
+import { cn } from "@/lib/cn";
+import { FIELD_LABEL, SERIF_AREA } from "@/features/questionsAdmin/questionLook";
 import { QuestionTypeSelect } from "@/features/assessments/components/QuestionTypeSelect";
 import { QuestionPromptFields } from "@/features/assessments/components/QuestionPromptFields";
 import { MultipleChoiceEditor } from "@/features/assessments/components/MultipleChoiceEditor";
@@ -22,8 +24,8 @@ export type {
   AssessmentQuestionEditorDraft,
 } from "@/features/assessments/components/assessmentQuestionEditorShared";
 
-const INPUT = STUDIO_INPUT;
-const LABEL = STUDIO_FIELD_LABEL;
+/** The advanced JSON fields: the console's area shell; the mono face sits on a wrapper (controls inherit). */
+const JSON_AREA = cn(SERIF_AREA, "min-h-[90px] text-[13px] leading-5");
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +93,8 @@ export function AssessmentQuestionEditorFields({
     if (insertHandlerRef) insertHandlerRef.current = handleFormulaInsert;
   });
 
+  const id = useId();
+
   const trackFocus = useCallback(
     (setVal: (v: string) => void) =>
       (e: React.FocusEvent<HTMLTextAreaElement | HTMLInputElement>) => {
@@ -100,17 +104,17 @@ export function AssessmentQuestionEditorFields({
   );
 
   return (
-    <div className="space-y-5">
+    // The set editor's question, in the console's look (design handoff v0.3, PR 17c): the module editor's fields,
+    // the content in the student's Georgia.
+    <div className="flex flex-col gap-6">
 
       {/* Inline formula toolbar — only when parent doesn't render it externally */}
       {!insertHandlerRef && (
-        <div className="rounded-xl border border-border overflow-hidden">
-          <div className="bg-surface-2/60 px-3 pt-2 pb-0">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
-              Formula insert — click a symbol, then type in a field below
-            </p>
-          </div>
-          <FormulaToolbar onInsert={handleFormulaInsert} />
+        <div className="overflow-hidden rounded-ms-ctl border border-ms-border bg-ms-card">
+          <p className="px-3 pt-2 text-ms-over uppercase text-ms-fg-3">
+            Formula insert — click a symbol, then type in a field below
+          </p>
+          <FormulaToolbar look="console" onInsert={handleFormulaInsert} />
         </div>
       )}
 
@@ -158,54 +162,70 @@ export function AssessmentQuestionEditorFields({
 
       {/* ── Explanation ── */}
       <div>
-        <label className={LABEL}>Explanation / solution rationale</label>
-        <textarea
-          className={`${INPUT} min-h-[100px] leading-relaxed`}
-          disabled={disabled}
-          placeholder="Explain why the correct answer is right. Shown to students after grading."
-          value={draft.explanation}
-          onChange={(e) => onPatch({ explanation: e.target.value })}
-          onFocus={trackFocus((v) => onPatch({ explanation: v }))}
-        />
+        <label htmlFor={`${id}-explanation`} className={FIELD_LABEL}>
+          Explanation / solution rationale
+        </label>
+        <div className="font-ms-serif">
+          <textarea
+            id={`${id}-explanation`}
+            className={cn(SERIF_AREA, "min-h-[100px] text-[16px] leading-[26px]")}
+            disabled={disabled}
+            placeholder="Explain why the correct answer is right. Shown to students after grading."
+            value={draft.explanation}
+            onChange={(e) => onPatch({ explanation: e.target.value })}
+            onFocus={trackFocus((v) => onPatch({ explanation: v }))}
+          />
+        </div>
       </div>
 
       {/* ── Advanced JSON ── */}
-      <div className="border-t border-border pt-3">
+      <div className="border-t border-ms-line pt-3">
         <button
           type="button"
-          className="text-xs font-bold text-primary/70 hover:text-primary hover:underline"
+          aria-expanded={showAdvanced}
+          className="ms-transition inline-flex items-center gap-1 rounded-[8px] px-1 py-0.5 text-[13px] font-semibold text-ms-primary-text hover:underline"
           onClick={() => setShowAdvanced((v) => !v)}
         >
-          {showAdvanced ? "▾ Hide" : "▸ Show"} advanced JSON
+          <Icon name="right" size="sm" className={cn("size-3.5 transition-transform duration-200", showAdvanced && "rotate-90")} />
+          {showAdvanced ? "Hide" : "Show"} advanced JSON
         </button>
         {showAdvanced && (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="animate-ms-fade-in mt-3 grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label className={LABEL}>Choices JSON</label>
-              <textarea
-                className={`${INPUT} min-h-[90px] font-mono text-xs`}
-                disabled={disabled}
-                value={draft.choicesText}
-                onChange={(e) => onPatch({ choicesText: e.target.value })}
-              />
+              <label htmlFor={`${id}-choices-json`} className={FIELD_LABEL}>Choices JSON</label>
+              <div className="font-ms-mono">
+                <textarea
+                  id={`${id}-choices-json`}
+                  className={JSON_AREA}
+                  disabled={disabled}
+                  value={draft.choicesText}
+                  onChange={(e) => onPatch({ choicesText: e.target.value })}
+                />
+              </div>
             </div>
             <div>
-              <label className={LABEL}>Correct answer JSON</label>
-              <textarea
-                className={`${INPUT} min-h-[90px] font-mono text-xs`}
-                disabled={disabled}
-                value={draft.correctAnswerText}
-                onChange={(e) => onPatch({ correctAnswerText: e.target.value })}
-              />
+              <label htmlFor={`${id}-answer-json`} className={FIELD_LABEL}>Correct answer JSON</label>
+              <div className="font-ms-mono">
+                <textarea
+                  id={`${id}-answer-json`}
+                  className={JSON_AREA}
+                  disabled={disabled}
+                  value={draft.correctAnswerText}
+                  onChange={(e) => onPatch({ correctAnswerText: e.target.value })}
+                />
+              </div>
             </div>
             <div>
-              <label className={LABEL}>Grading config JSON</label>
-              <textarea
-                className={`${INPUT} min-h-[90px] font-mono text-xs`}
-                disabled={disabled}
-                value={draft.gradingConfigText}
-                onChange={(e) => onPatch({ gradingConfigText: e.target.value })}
-              />
+              <label htmlFor={`${id}-grading-json`} className={FIELD_LABEL}>Grading config JSON</label>
+              <div className="font-ms-mono">
+                <textarea
+                  id={`${id}-grading-json`}
+                  className={JSON_AREA}
+                  disabled={disabled}
+                  value={draft.gradingConfigText}
+                  onChange={(e) => onPatch({ gradingConfigText: e.target.value })}
+                />
+              </div>
             </div>
           </div>
         )}
