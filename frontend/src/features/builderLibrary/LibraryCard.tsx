@@ -56,14 +56,31 @@ function Block({ block }: { block: CoverBlock }) {
   );
 }
 
-/** The cover: the test's shape at the bottom, its length in the corner. The whole cover opens the test. */
-export function TestCover({ blocks, minutes, href, label }: { blocks: CoverBlock[]; minutes: number; href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      aria-label={label}
-      className="ms-transition group relative block aspect-[16/7] overflow-hidden rounded-[16px] bg-ms-surface-2 hover:bg-ms-surface-3"
-    >
+/**
+ * The cover: the test's shape at the bottom, its length in the corner. The whole cover opens the test (a test
+ * with nothing to open — no modules yet — gets the cover without the link). `short` is for a grid of two wide
+ * cards (a past paper's form, R&W beside Math), where the full height would dwarf the words under it.
+ */
+export function TestCover({
+  blocks,
+  minutes,
+  href,
+  label,
+  short = false,
+}: {
+  blocks: CoverBlock[];
+  minutes: number;
+  href?: string;
+  label: string;
+  short?: boolean;
+}) {
+  const cls = cn(
+    "ms-transition group relative block overflow-hidden rounded-[16px] bg-ms-surface-2",
+    short ? "aspect-[16/5]" : "aspect-[16/7]",
+    href && "hover:bg-ms-surface-3",
+  );
+  const inside = (
+    <>
       <span
         aria-hidden
         className="absolute inset-x-[14px] bottom-[14px] grid h-11 gap-1"
@@ -76,18 +93,33 @@ export function TestCover({ blocks, minutes, href, label }: { blocks: CoverBlock
       <span className="absolute right-2.5 top-2.5 rounded-[6px] bg-black/80 px-[7px] py-[3px] text-[12px] font-semibold leading-4 tabular-nums text-white">
         {formatDuration(minutes)}
       </span>
+    </>
+  );
+  return href ? (
+    <Link href={href} aria-label={label} className={cls}>
+      {inside}
     </Link>
+  ) : (
+    <div role="img" aria-label={label} className={cls}>
+      {inside}
+    </div>
   );
 }
 
-/** One test in the grid: cover, then its icon, title, a quiet line, its state; then what can be done to it. */
+/**
+ * One test in the grid: cover, then its icon, title (a heading, linked when there is something to open), an
+ * optional subtitle, a quiet line, its state; then anything the test lists (`body`), a note to read before
+ * acting, and what can be done to it.
+ */
 export function LibraryCard({
   cover,
   icon,
   title,
   href,
+  subtitle,
   meta,
   status,
+  body,
   note,
   actions,
   delay = 0,
@@ -95,9 +127,13 @@ export function LibraryCard({
   cover: ReactNode;
   icon: IconName;
   title: string;
-  href: string;
+  href?: string;
+  /** A line under the title in the card's own words (a practice test's subtitle); kept findable as `data-subtitle`. */
+  subtitle?: string;
   meta: ReactNode;
   status: ReactNode;
+  /** What the test is made of, e.g. its module links. */
+  body?: ReactNode;
   /** A line that needs reading before acting — e.g. why it cannot publish yet. */
   note?: ReactNode;
   actions: ReactNode;
@@ -112,13 +148,25 @@ export function LibraryCard({
           <Icon name={icon} size="md" />
         </span>
         <div className="flex min-w-0 flex-col gap-1">
-          <Link href={href} className="ms-transition line-clamp-2 text-[16px] font-bold leading-[22px] text-ms-fg hover:text-ms-primary-text">
-            {title}
-          </Link>
+          <h3 className="line-clamp-2 text-[16px] font-bold leading-[22px] text-ms-fg">
+            {href ? (
+              <Link href={href} className="ms-transition hover:text-ms-primary-text">
+                {title}
+              </Link>
+            ) : (
+              title
+            )}
+          </h3>
+          {subtitle ? (
+            <p data-subtitle className="line-clamp-2 text-[14px] leading-5 text-ms-fg-2">
+              {subtitle}
+            </p>
+          ) : null}
           <span className="text-[13px] leading-[18px] text-ms-fg-3">{meta}</span>
           <span className="flex flex-wrap items-center gap-1.5">{status}</span>
         </div>
       </div>
+      {body}
       {note}
       <div className="mt-auto flex flex-wrap items-center gap-1.5">{actions}</div>
     </article>
