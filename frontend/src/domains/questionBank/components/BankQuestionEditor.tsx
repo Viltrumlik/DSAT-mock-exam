@@ -282,7 +282,7 @@ export function BankQuestionEditor({
       )}
 
       <div className="border-b border-ms-border bg-ms-surface">
-        <FormulaToolbar look="console" onInsert={handleFormulaInsert} />
+        <FormulaToolbar onInsert={handleFormulaInsert} />
       </div>
 
       <div className="flex flex-col lg:flex-row">

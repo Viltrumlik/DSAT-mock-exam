@@ -1026,7 +1026,6 @@ export default function BuilderSetEditorContainer() {
             {/* Renders only for super_admin; the endpoint 403s for anyone else. Same
                 columns as the importer above, so a downloaded file goes back in. */}
             <DownloadQuestionsCsvButton
-              look="console"
               fetchCsv={() => assessmentAuthoringApi.exportQuestionsCsv(setId)}
               fallbackName={`assessment-${setId}-questions`}
               title="Download every question in this set, with its answer key"
@@ -1256,7 +1255,7 @@ export default function BuilderSetEditorContainer() {
           {/* ── Formula toolbar — sticky, never scrolls away ─────────────── */}
           <div className="shrink-0 border-b border-ms-border bg-ms-card">
             <p className={cn(EYEBROW, "px-3 pt-2")}>Formula insert — click a symbol, then type in a field below</p>
-            <FormulaToolbar look="console" onInsert={(snippet, cursorOffset) => formulaInsertRef.current?.(snippet, cursorOffset)} />
+            <FormulaToolbar onInsert={(snippet, cursorOffset) => formulaInsertRef.current?.(snippet, cursorOffset)} />
           </div>
 
           {/* ── Scrollable form body ─────────────────────────────────────── */}

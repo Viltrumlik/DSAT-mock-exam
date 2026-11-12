@@ -545,7 +545,7 @@ function QuestionEditor({
       {/* Formula toolbar — always visible, never scrolls away */}
       <div className="shrink-0 border-b border-ms-border bg-ms-surface">
         <p className="px-4 pt-2.5 text-ms-over uppercase text-ms-fg-3">Formula insert — click a symbol, then type in a field below</p>
-        <FormulaToolbar look="console" onInsert={handleFormulaInsert} />
+        <FormulaToolbar onInsert={handleFormulaInsert} />
       </div>
 
       {/* Error banners */}
@@ -1289,7 +1289,6 @@ export default function ModuleQuestionsPanel(props: {
               question and its key. Renders only for super_admin; the endpoint 403s for
               anyone else. */}
           <DownloadQuestionsCsvButton
-            look="console"
             fetchCsv={() => api.exportCsv(testId)}
             fallbackName={`${api.source}-${testId}-questions`}
             title="Download every question on this test, with its answer key"
