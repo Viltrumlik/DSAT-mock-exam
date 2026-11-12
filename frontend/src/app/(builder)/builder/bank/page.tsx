@@ -1,13 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+/**
+ * /builder/bank — the Old sets bank: every question across the assessment sets, read-only. A question is edited
+ * inside its set.
+ *
+ * In the console's look (design handoff v0.3, PR 20). The words, the filters and the call are the page's own.
+ */
+
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { listAllQuestions, applyClientFilters, computeQuestionBankStats } from "@/domains/questions/api";
-import type { QuestionWithContext, QuestionBankFilters } from "@/domains/questions/types";
-import { Search, Plus, Filter, BookOpen, PenLine } from "lucide-react";
-import { cn } from "@/lib/cn";
-import { StateTag, QuestionLineage } from "@/components/governance";
-import { useDebounce } from "@/hooks/useDebounce";
+import { useSearchParams } from "next/navigation";
+
+import { Icon } from "@/components/ui/Icon";
+import { applyClientFilters, computeQuestionBankStats, listAllQuestions } from "@/domains/questions/api";
+import type { QuestionBankFilters, QuestionWithContext } from "@/domains/questions/types";
+import { LibraryError, LibraryHeader } from "@/features/builderLibrary/sectionParts";
+import { Badge, Button, EmptyState, SearchField, StatTile, buttonClass, type BadgeTone } from "@/features/console/ui";
+import { CONTROL, FIELD_LABEL } from "@/features/questionsAdmin/questionLook";
 
 /** Maximum questions rendered to DOM at one time. Performance safety valve.
  *  When exceeded, a "Showing N of M — narrow your search" indicator is shown.
@@ -23,35 +32,56 @@ const QUESTION_TYPE_LABELS: Record<string, string> = {
   boolean: "T/F",
 };
 
-const QUESTION_TYPE_COLORS: Record<string, string> = {
-  multiple_choice: "bg-blue-100 text-blue-800",
-  numeric: "bg-purple-100 text-purple-800",
-  short_text: "bg-teal-100 text-teal-800",
-  boolean: "bg-orange-100 text-orange-800",
+const QUESTION_TYPE_TONES: Record<string, BadgeTone> = {
+  multiple_choice: "info",
+  numeric: "frozen",
+  short_text: "neutral",
+  boolean: "attention",
 };
 
+const EMPTY_FILTERS: QuestionBankFilters = {
+  subject: "all",
+  questionType: "all",
+  activeStatus: "all",
+  setId: "all",
+  category: "all",
+  search: "",
+};
+
+/** The starting filters from the links that point here: Categories (`?category=`) and Archived (`?setId=`). */
+function filtersFromQuery(params: URLSearchParams): QuestionBankFilters {
+  const category = params.get("category")?.trim();
+  const setId = Number(params.get("setId"));
+  return {
+    ...EMPTY_FILTERS,
+    category: category || "all",
+    setId: Number.isInteger(setId) && setId > 0 ? setId : "all",
+  };
+}
+
 export default function QuestionBankPage() {
+  // useSearchParams needs a Suspense boundary above it, or the production build's prerender fails.
+  return (
+    <Suspense fallback={null}>
+      <BankFromQuery />
+    </Suspense>
+  );
+}
+
+function BankFromQuery() {
+  const query = useSearchParams().toString();
+  // A new link to the bank starts from its own query.
+  return <BankList key={query} initial={filtersFromQuery(new URLSearchParams(query))} />;
+}
+
+function BankList({ initial }: { initial: QuestionBankFilters }) {
   const [allQuestions, setAllQuestions] = useState<QuestionWithContext[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [filters, setFilters] = useState<QuestionBankFilters>({
-    subject: "all",
-    questionType: "all",
-    activeStatus: "all",
-    setId: "all",
-    search: "",
-  });
-
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Debounce the search string — avoids filtering on every keystroke.
-  const debouncedSearch = useDebounce(filters.search ?? "", 200);
-  const filtersForSearch = useMemo(
-    () => ({ ...filters, search: debouncedSearch }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [debouncedSearch, filters.subject, filters.questionType, filters.activeStatus, filters.setId],
-  );
+  const [filters, setFilters] = useState<QuestionBankFilters>(initial);
+  // A link to one set opens the Filters card so the chosen set shows.
+  const [showFilters, setShowFilters] = useState(initial.setId !== "all");
 
   // Load questions; re-fetch when subject filter changes (server-side filter)
   useEffect(() => {
@@ -60,8 +90,7 @@ export default function QuestionBankPage() {
       setLoading(true);
       setError(null);
       try {
-        const subjectParam =
-          filters.subject && filters.subject !== "all" ? filters.subject : undefined;
+        const subjectParam = filters.subject && filters.subject !== "all" ? filters.subject : undefined;
         const data = await listAllQuestions(subjectParam ? { subject: subjectParam } : undefined);
         if (!cancelled) {
           setAllQuestions(data);
@@ -69,7 +98,7 @@ export default function QuestionBankPage() {
           if (data.length > PAGINATION_WARN_THRESHOLD) {
             console.warn(
               `[QuestionBank] Loaded ${data.length} questions client-side. ` +
-              `Consider migrating to server-side pagination when this exceeds ${PAGINATION_WARN_THRESHOLD}.`,
+                `Consider migrating to server-side pagination when this exceeds ${PAGINATION_WARN_THRESHOLD}.`,
             );
           }
         }
@@ -80,14 +109,13 @@ export default function QuestionBankPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [filters.subject]);
 
-  // Client-side filtering for everything else (using debounced search).
-  const filtered = useMemo(
-    () => applyClientFilters(allQuestions, filtersForSearch),
-    [allQuestions, filtersForSearch],
-  );
+  // Client-side filtering for everything else. The search field debounces what it sends.
+  const filtered = useMemo(() => applyClientFilters(allQuestions, filters), [allQuestions, filters]);
 
   // Render cap: limit DOM nodes for performance. Show indicator when cap is hit.
   const visible = useMemo(() => filtered.slice(0, RENDER_CAP), [filtered]);
@@ -102,93 +130,100 @@ export default function QuestionBankPage() {
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [allQuestions]);
 
-  const patchFilter = (patch: Partial<QuestionBankFilters>) =>
-    setFilters((prev) => ({ ...prev, ...patch }));
+  const patchFilter = (patch: Partial<QuestionBankFilters>) => setFilters((prev) => ({ ...prev, ...patch }));
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Question Bank</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Read-only view across all assessment sets. To edit a question, open it inside its
-            set — questions are authored and managed from the set editor.
-          </p>
-        </div>
-        <Link
-          href="/builder/sets"
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Add questions via set
-        </Link>
-      </div>
+    <div className="flex flex-col gap-5">
+      <LibraryHeader
+        eyebrow="Archive"
+        title="Old sets bank"
+        description="Read-only view across all assessment sets. To edit a question, open it inside its set — questions are authored and managed from the set editor."
+        actions={
+          <Link href="/builder/sets" className={buttonClass({ variant: "primary" })}>
+            <Icon name="plus" size="sm" />
+            Add questions via set
+          </Link>
+        }
+      />
 
       {/* Stats strip */}
       {!loading && !error && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <MiniStat label="Total" value={stats.total} />
-          <MiniStat label="Active" value={stats.active} accent />
-          <MiniStat label="Sets" value={stats.setCount} />
-          <MiniStat label="Inactive" value={stats.inactive} dim />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatTile label="Total" value={stats.total.toLocaleString()} icon="ms-question" />
+          <StatTile label="Active" value={stats.active.toLocaleString()} icon="ok" delay={40} />
+          <StatTile label="Sets" value={stats.setCount.toLocaleString()} icon="layers" delay={80} />
+          <StatTile label="Inactive" value={stats.inactive.toLocaleString()} icon="archive" delay={120} />
         </div>
       )}
 
       {/* Search + filter toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <input
-            type="search"
-            placeholder="Search by prompt, set name, or category…"
+        <div className="min-w-[200px] flex-1">
+          <SearchField
             value={filters.search ?? ""}
-            onChange={(e) => patchFilter({ search: e.target.value })}
-            className="w-full rounded-xl border border-border bg-card pl-9 pr-4 py-2 text-sm font-medium placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            placeholder="Search by prompt, set name, or category…"
+            onSearch={(q) => patchFilter({ search: q })}
           />
         </div>
-
-        {/* Subject */}
-        <select
-          value={filters.subject ?? "all"}
-          onChange={(e) => patchFilter({ subject: e.target.value as QuestionBankFilters["subject"] })}
-          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
-        >
-          <option value="all">All subjects</option>
-          <option value="math">Math</option>
-          <option value="english">English</option>
-        </select>
-
-        {/* Filter toggle */}
-        <button
-          type="button"
+        <div className="w-[170px]">
+          <select
+            aria-label="Subject"
+            value={filters.subject ?? "all"}
+            onChange={(e) => patchFilter({ subject: e.target.value as QuestionBankFilters["subject"] })}
+            className={CONTROL}
+          >
+            <option value="all">All subjects</option>
+            <option value="math">Math</option>
+            <option value="english">English</option>
+          </select>
+        </div>
+        <Button
+          variant={showFilters ? "subtle" : "secondary"}
+          icon="filter"
+          aria-expanded={showFilters}
+          aria-controls="bank-filters"
           onClick={() => setShowFilters((v) => !v)}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-bold transition-colors",
-            showFilters
-              ? "border-primary/30 bg-primary/10 text-primary"
-              : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-surface-2",
-          )}
         >
-          <Filter className="h-4 w-4" />
           Filters
-        </button>
+        </Button>
       </div>
+
+      {/* The category a link from Categories brought — removable here or by Reset filters. */}
+      {filters.category && filters.category !== "all" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            data-filter-chip="category"
+            className="animate-ms-fade-in inline-flex h-8 items-center gap-1.5 rounded-full bg-ms-primary-soft pl-3 pr-1 text-[14px] font-medium text-ms-primary-text"
+          >
+            <Icon name="tag" size="sm" className="size-3.5" />
+            Category: {filters.category}
+            <button
+              type="button"
+              aria-label="Clear category filter"
+              onClick={() => patchFilter({ category: "all" })}
+              className="ms-transition grid size-6 place-items-center rounded-full hover:bg-ms-surface-2"
+            >
+              <Icon name="x" size="sm" className="size-3.5" />
+            </button>
+          </span>
+        </div>
+      ) : null}
 
       {/* Expanded filters */}
       {showFilters && (
-        <div className="flex flex-wrap gap-3 rounded-2xl border border-border bg-card p-4">
-          <div className="flex flex-col gap-1 min-w-[140px]">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+        <div
+          id="bank-filters"
+          className="animate-ms-fade-in grid gap-3 rounded-ms-card bg-ms-card p-4 shadow-ms-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end"
+        >
+          <div>
+            <label htmlFor="bank-type" className={FIELD_LABEL}>
               Question type
-            </span>
+            </label>
             <select
+              id="bank-type"
               value={filters.questionType ?? "all"}
-              onChange={(e) =>
-                patchFilter({ questionType: e.target.value as QuestionBankFilters["questionType"] })
-              }
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold"
+              onChange={(e) => patchFilter({ questionType: e.target.value as QuestionBankFilters["questionType"] })}
+              className={CONTROL}
             >
               <option value="all">All types</option>
               <option value="multiple_choice">Multiple choice</option>
@@ -197,39 +232,39 @@ export default function QuestionBankPage() {
               <option value="boolean">True / False</option>
             </select>
           </div>
-
-          <div className="flex flex-col gap-1 min-w-[140px]">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+          <div>
+            <label htmlFor="bank-status" className={FIELD_LABEL}>
               Status
-            </span>
+            </label>
             <select
+              id="bank-status"
               value={filters.activeStatus ?? "all"}
-              onChange={(e) =>
-                patchFilter({
-                  activeStatus: e.target.value as QuestionBankFilters["activeStatus"],
-                })
-              }
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold"
+              onChange={(e) => patchFilter({ activeStatus: e.target.value as QuestionBankFilters["activeStatus"] })}
+              className={CONTROL}
             >
               <option value="all">All statuses</option>
               <option value="active">Active only</option>
               <option value="inactive">Inactive only</option>
             </select>
           </div>
-
-          <div className="flex flex-col gap-1 min-w-[200px] flex-1">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+          <div>
+            <label htmlFor="bank-set" className={FIELD_LABEL}>
               Assessment set
-            </span>
+            </label>
             <select
-              value={filters.setId ?? "all"}
+              id="bank-set"
+              value={String(filters.setId ?? "all")}
               onChange={(e) => {
                 const v = e.target.value;
                 patchFilter({ setId: v === "all" ? "all" : Number(v) });
               }}
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold"
+              className={CONTROL}
             >
               <option value="all">All sets</option>
+              {/* A set a link named that has no questions here still shows as the choice. */}
+              {typeof filters.setId === "number" && !setOptions.some(([id]) => id === filters.setId) ? (
+                <option value={filters.setId}>Set #{filters.setId}</option>
+              ) : null}
               {setOptions.map(([id, title]) => (
                 <option key={id} value={id}>
                   {title}
@@ -237,172 +272,133 @@ export default function QuestionBankPage() {
               ))}
             </select>
           </div>
-
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={() =>
-                setFilters({
-                  subject: "all",
-                  questionType: "all",
-                  activeStatus: "all",
-                  setId: "all",
-                  search: "",
-                })
-              }
-              className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
-            >
-              Reset filters
-            </button>
-          </div>
+          <Button variant="secondary" icon="undo" onClick={() => setFilters(EMPTY_FILTERS)}>
+            Reset filters
+          </Button>
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-          {error}
-        </div>
-      )}
+      {error ? <LibraryError>{error}</LibraryError> : null}
 
       {/* Question list */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
-          <p className="font-bold text-foreground">
+      <section aria-label="Questions" className="animate-ms-card-in overflow-hidden rounded-ms-card bg-ms-card shadow-ms-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ms-line px-5 py-3.5">
+          <p className="text-[15px] font-semibold text-ms-fg">
             {loading
               ? "Loading…"
               : isCapped
-              ? `${filtered.length} questions (showing first ${RENDER_CAP})`
-              : `${filtered.length} question${filtered.length === 1 ? "" : "s"}`}
+                ? `${filtered.length} questions (showing first ${RENDER_CAP})`
+                : `${filtered.length} question${filtered.length === 1 ? "" : "s"}`}
           </p>
-          {!loading && filtered.length !== allQuestions.length && (
-            <p className="text-xs text-muted-foreground">{allQuestions.length} total</p>
-          )}
+          {!loading && filtered.length !== allQuestions.length ? (
+            <p className="text-[13px] text-ms-fg-3">{allQuestions.length} total</p>
+          ) : null}
         </div>
 
         {loading ? (
-          <div className="flex justify-center p-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <div aria-busy="true" aria-label="Loading" className="flex flex-col gap-2 p-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-16 animate-ms-shimmer rounded-ms-ctl bg-ms-surface-2" />
+            ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
-            <BookOpen className="mx-auto mb-3 h-8 w-8 opacity-30" />
-            <p className="font-semibold">No questions match your filters.</p>
-            <p className="mt-1 text-sm">
-              Try broadening the filters, or{" "}
-              <Link href="/builder/sets" className="font-bold text-primary hover:underline">
-                create questions inside an assessment set
-              </Link>
-              .
-            </p>
+          <div className="p-4">
+            <EmptyState
+              icon="search"
+              title="No questions match your filters."
+              detail="Try broadening the filters, or create questions inside an assessment set."
+              action={
+                <Link href="/builder/sets" className={buttonClass({ variant: "secondary" })}>
+                  Assessments
+                  <Icon name="right" size="sm" />
+                </Link>
+              }
+            />
           </div>
         ) : (
           <>
-            <div className="divide-y divide-border">
+            <ul className="divide-y divide-ms-line">
               {visible.map((q) => (
-                <QuestionCard key={`${q.setId}-${q.id}`} question={q} />
+                <QuestionRow key={`${q.setId}-${q.id}`} question={q} />
               ))}
-            </div>
-            {isCapped && (
-              <div className="border-t border-border bg-surface-2/40 px-5 py-3 text-center text-xs text-muted-foreground">
+            </ul>
+            {isCapped ? (
+              <div className="border-t border-ms-line bg-ms-surface px-5 py-3 text-center text-[13px] text-ms-fg-3">
                 Showing {RENDER_CAP} of {filtered.length} results — narrow your search to see more.
               </div>
-            )}
+            ) : null}
           </>
         )}
-      </div>
+      </section>
 
       {/* Governance note */}
-      <p className="text-xs text-muted-foreground text-center pb-2">
-        A question is the live source of truth: editing it here updates it everywhere it&apos;s
-        used, including in assessments.
+      <p className="pb-2 text-center text-[13px] text-ms-fg-3">
+        A question is the live source of truth: editing it here updates it everywhere it&apos;s used, including in
+        assessments.
       </p>
     </div>
   );
 }
 
-function QuestionCard({ question: q }: { question: QuestionWithContext }) {
+function QuestionRow({ question: q }: { question: QuestionWithContext }) {
   const typeLabel = QUESTION_TYPE_LABELS[q.question_type] ?? q.question_type;
-  const typeColor =
-    QUESTION_TYPE_COLORS[q.question_type] ?? "bg-slate-100 text-slate-700";
+  const typeTone = QUESTION_TYPE_TONES[q.question_type] ?? "line";
 
   return (
-    <div className="group flex items-start gap-4 px-5 py-4 hover:bg-surface-2/40 transition-colors">
-      {/* Left: prompt + meta */}
-      <div className="min-w-0 flex-1">
-        <p
-          className="line-clamp-2 text-sm font-semibold leading-snug text-foreground"
-          title={q.prompt}
-        >
-          {q.prompt.trim() || <em className="text-muted-foreground/50">No prompt</em>}
+    <li
+      data-question={`${q.setId}-${q.id}`}
+      className="ms-transition flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 py-4 hover:bg-ms-surface"
+    >
+      <div className="min-w-0 flex-1 basis-[18rem]">
+        <p className="line-clamp-2 text-[15px] font-medium leading-[22px] text-ms-fg" title={q.prompt}>
+          {q.prompt.trim() || <em className="text-ms-fg-3">No prompt</em>}
         </p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span
-            className={cn(
-              "inline-flex items-center rounded-lg px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide",
-              typeColor,
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]">
+          <Badge tone={typeTone}>{typeLabel}</Badge>
+          {/* The set it lives in: a published set means an edit makes a new revision. */}
+          <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+            <Link
+              href={`/builder/sets/${q.setId}`}
+              title={`Open set: ${q.setTitle}`}
+              className="block max-w-[220px] truncate font-semibold text-ms-fg hover:text-ms-primary-text"
+            >
+              {q.setTitle}
+            </Link>
+            {q.setIsPublished ? (
+              <>
+                <Badge tone="info">In use</Badge>
+                <span className="text-[12px] text-ms-fg-3">edits create new revision</span>
+              </>
+            ) : (
+              <Badge tone="line">Free</Badge>
             )}
-          >
-            {typeLabel}
           </span>
-          <QuestionLineage
-            setId={q.setId}
-            setTitle={q.setTitle}
-            setIsPublished={q.setIsPublished}
-          />
-          {q.category && (
-            <span className="text-[10px] text-muted-foreground">{q.category}</span>
-          )}
-          <span className="text-[10px] text-muted-foreground tabular-nums">
-            {q.points}pt
-          </span>
+          {q.category ? <span className="text-ms-fg-3">{q.category}</span> : null}
+          <span className="tabular-nums text-ms-fg-3">{q.points}pt</span>
         </div>
       </div>
 
-      {/* Right: status + edit */}
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex items-center gap-2">
         {q.is_active && q.setIsPublished ? (
-          <StateTag state="IN_USE" size="xs" />
+          <Badge tone="info" dot>
+            In use
+          </Badge>
+        ) : q.is_active ? (
+          <Badge tone="positive" dot>
+            Active
+          </Badge>
         ) : (
-          <StateTag state={q.is_active ? "ACTIVE" : "ARCHIVED"} size="xs" />
+          <Badge tone="neutral">Archived</Badge>
         )}
         <Link
           href={`/builder/sets/${q.setId}?questionId=${q.id}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
           title={`Open in set "${q.setTitle}"`}
+          className={buttonClass({ variant: "secondary", size: "sm" })}
         >
-          <PenLine className="h-3 w-3" />
+          <Icon name="pencil" size="sm" />
           Open in set →
         </Link>
       </div>
-    </div>
-  );
-}
-
-function MiniStat({
-  label,
-  value,
-  accent,
-  dim,
-}: {
-  label: string;
-  value: number;
-  accent?: boolean;
-  dim?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card px-4 py-3">
-      <p
-        className={cn(
-          "text-xl font-extrabold tabular-nums",
-          accent ? "text-primary" : dim ? "text-muted-foreground" : "text-foreground",
-        )}
-      >
-        {value.toLocaleString()}
-      </p>
-      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
-        {label}
-      </p>
-    </div>
+    </li>
   );
 }

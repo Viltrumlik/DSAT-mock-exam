@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { normalizeApiError } from "@/lib/apiError";
+import { retryTransientOnce } from "@/lib/queryClient";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
@@ -148,6 +149,10 @@ export function useAssignAssessmentHomework() {
     mutationFn: async (vars: { payload: HomeworkAssignmentCreateRequest; idempotencyKey?: string }) => {
       return await assessmentsAdminApi.assign(vars.payload, vars.idempotencyKey);
     },
+    // Safe to send again: the server keeps one homework per (classroom, set) and answers a
+    // repeat with the one the class already has, and the Idempotency-Key in `vars` stays the
+    // same on the retry. So one more try after no answer or a 5xx, never after a 4xx.
+    retry: retryTransientOnce,
     onError: (e) => {
       throw normalizeApiError(e);
     },

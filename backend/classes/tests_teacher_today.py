@@ -289,6 +289,13 @@ class NextLessonDateTests(TeacherTodayFixture):
         payload = build_teacher_today(self.teacher, now=at(MONDAY, 9))
         self.assertEqual(payload["next_lesson_date"], "2026-09-22")
 
+    def test_a_class_moved_up_a_level_is_not_skipped(self):
+        classroom = self.make_classroom(name="Moved up", days=Classroom.DAYS_ODD, start_date=FRIDAY)
+        self.join(classroom, self.teacher)
+        AttendanceSession.objects.create(classroom=classroom, date=MONDAY - timedelta(days=3))
+        payload = build_teacher_today(self.teacher, now=at(MONDAY, 9))
+        self.assertEqual(payload["next_lesson_date"], "2026-09-23")
+
     def test_no_classes_means_null(self):
         self.assertIsNone(build_teacher_today(self.teacher, now=at(SUNDAY, 9))["next_lesson_date"])
 
@@ -452,6 +459,15 @@ class LessonStateTests(TeacherTodayFixture):
         row = self.row(at(MONDAY, 19))  # its weekday, but the class has not started
         self.assertEqual(row["state"], "upcoming")
         self.assertEqual(row["next_lesson_at"], iso(WEDNESDAY, 18))
+
+    def test_a_class_moved_up_a_level_still_meets_today(self):
+        # lc-up moved the group to a new course that starts Wednesday; it met last Friday and meets today.
+        self.classroom.start_date = WEDNESDAY
+        self.classroom.save(update_fields=["start_date"])
+        AttendanceSession.objects.create(classroom=self.classroom, date=MONDAY - timedelta(days=3))
+        row = self.row(at(MONDAY, 17, 59))
+        self.assertEqual(row["state"], "upcoming")
+        self.assertEqual(row["next_lesson_at"], iso(MONDAY, 18))
 
 
 # ── §4: the owner's reading order ────────────────────────────────────────────

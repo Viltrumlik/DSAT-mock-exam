@@ -4,24 +4,19 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
-import { OverlayFaceProvider } from "@/components/ui/OverlayFace";
 import { useMe } from "@/hooks/useMe";
 import { isAdminOpsPath, isScopedOpsAdmin } from "@/features/ops/adminScope";
 import { OpsShell } from "@/features/ops/shell/OpsShell";
 
 /**
- * The operational console (admin.mastersat.uz), framed like Django admin — see
- * features/ops/shell for the sidebar, the top bar and who sees which section.
+ * The operational console (admin.mastersat.uz) — see features/ops/shell for the sidebar, the top
+ * bar and who sees which section.
  *
- * The console is set in the body's Georgia — it never took the app shell's `ds-app` — so its
- * dialogs and toasts are too, rather than being the one sans thing in it. See OverlayFace.
+ * Since the redesign's shell the console is set in the UI sans (`.ms`), so its dialogs and toasts
+ * take OverlayFace's default UI face too — it no longer wraps its pages in the body face.
  */
 export default function OpsLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <OverlayFaceProvider face="body">
-      <OpsConsole>{children}</OpsConsole>
-    </OverlayFaceProvider>
-  );
+  return <OpsConsole>{children}</OpsConsole>;
 }
 
 function OpsConsole({ children }: { children: React.ReactNode }) {

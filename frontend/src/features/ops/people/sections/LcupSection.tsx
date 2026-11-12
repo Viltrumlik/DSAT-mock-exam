@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { CalendarClock, Receipt, ShieldAlert, Wallet } from "lucide-react";
-import { Badge, type BadgeVariant } from "@/components/ui";
+import type { BadgeTone } from "@/features/console/ui";
 import { formatUzs } from "@/features/finance/financeApi";
-import { Fieldset, Row, StatTile, SubHeading, Table, Td, WIDE_ONLY, type Tone } from "../Fieldset";
+import { Fieldset, Pill, Row, StatTile, SubHeading, Table, Td, WIDE_ONLY, type Tone } from "../Fieldset";
 import { formatDateTime, formatDay } from "../format";
 import type { PersonLcup } from "../personApi";
 
@@ -25,10 +25,10 @@ const PROMPT_LABELS: Record<string, string> = {
   superseded: "Superseded",
 };
 
-const KIND: Record<string, { label: string; variant: BadgeVariant }> = {
-  payment: { label: "Payment", variant: "success" },
-  refund: { label: "Refund", variant: "warning" },
-  extra: { label: "Extra", variant: "info" },
+const KIND: Record<string, { label: string; tone: BadgeTone }> = {
+  payment: { label: "Payment", tone: "positive" },
+  refund: { label: "Refund", tone: "attention" },
+  extra: { label: "Extra", tone: "info" },
 };
 
 /**
@@ -76,7 +76,7 @@ export function LcupSection({ lcup }: { lcup: PersonLcup }) {
 
       <div className="mt-5">
         <Row label="Link">
-          <Badge variant={lcup.status === "created" ? "info" : "neutral"}>{linkLabel(lcup.status)}</Badge>
+          <Pill tone={lcup.status === "created" ? "info" : "neutral"}>{linkLabel(lcup.status)}</Pill>
         </Row>
         <Row label="lc-up ID">
           <span className="tabular-nums">{lcup.lcup_student_id}</span>
@@ -92,25 +92,25 @@ export function LcupSection({ lcup }: { lcup: PersonLcup }) {
           </span>
         </SubHeading>
         {lcup.payments.length === 0 ? (
-          <p className="rounded-lg bg-surface-2 px-4 py-3 text-muted-foreground">No payments yet.</p>
+          <p className="rounded-ms-ctl bg-ms-surface px-4 py-3 text-ms-fg-2">No payments yet.</p>
         ) : (
           <>
             {/* A phone keeps Date and Amount (a refund's "−" says its kind); the badge needs the room. */}
             <Table head={["Date", { label: "Kind", className: WIDE_ONLY }, { label: "Amount", className: "text-right" }, { label: "Month", className: WIDE_ONLY }, { label: "Group", className: WIDE_ONLY }]}>
               {payments.map((p) => {
-                const kind = KIND[p.kind] ?? { label: p.kind, variant: "neutral" as BadgeVariant };
+                const kind = KIND[p.kind] ?? { label: p.kind, tone: "neutral" as BadgeTone };
                 return (
                   <tr key={p.id}>
-                    <Td className="tabular-nums text-muted-foreground">{formatDay(p.date)}</Td>
+                    <Td className="tabular-nums text-ms-fg-3">{formatDay(p.date)}</Td>
                     <Td className={WIDE_ONLY}>
-                      <Badge variant={kind.variant}>{kind.label}</Badge>
+                      <Pill tone={kind.tone}>{kind.label}</Pill>
                     </Td>
-                    <Td className={`text-right font-semibold tabular-nums ${p.kind === "refund" ? "text-warning-foreground" : "text-foreground"}`}>
+                    <Td className={`text-right font-semibold tabular-nums ${p.kind === "refund" ? "text-ms-attention-fg" : "text-ms-fg"}`}>
                       {p.kind === "refund" ? "−" : ""}
                       {formatUzs(p.amount)}
                     </Td>
-                    <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{p.month || "—"}</Td>
-                    <Td className={`${WIDE_ONLY} max-w-[12rem] truncate text-muted-foreground`}>{p.group || "—"}</Td>
+                    <Td className={`${WIDE_ONLY} tabular-nums text-ms-fg-3`}>{p.month || "—"}</Td>
+                    <Td className={`${WIDE_ONLY} max-w-[12rem] truncate text-ms-fg-3`}>{p.group || "—"}</Td>
                   </tr>
                 );
               })}
@@ -119,7 +119,7 @@ export function LcupSection({ lcup }: { lcup: PersonLcup }) {
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
-                className="mt-3 text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover"
+                className="mt-3 text-sm font-medium text-ms-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ms-ring"
               >
                 {showAll ? "Show fewer" : `Show all ${lcup.payments.length}`}
               </button>

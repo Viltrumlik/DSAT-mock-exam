@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The options the SMS hooks hand React Query. Worth pinning, because each is about money:
- * QueryProvider retries every mutation once, and a POST that reached the server before it failed
- * has already sent its SMS — so no SMS mutation is retried. A paid POST that failed without an
+ * a POST that reached the server before it failed has already sent its SMS — so no SMS mutation
+ * is retried, whatever the app-wide default says. A paid POST that failed without an
  * answer may still have gone out, so the panel is refreshed to show it. And the pages that wait
  * on the server (a campaign going out, "Send now") poll — but only while there is something to see.
  */

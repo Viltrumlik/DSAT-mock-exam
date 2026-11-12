@@ -87,6 +87,27 @@ const baloo = localFont({
   ],
 });
 
+/**
+ * The consoles' monospace face — question IDs, ticket codes, phone numbers in tables (the
+ * redesign's `--ms-font-mono`). Not preloaded: no student page sets anything in it, so they
+ * should not pay for the file; a console page fetches it the first time a code is on screen.
+ */
+const geistMono = localFont({
+  src: "./fonts/geist-mono-latin.woff2",
+  weight: "100 900",
+  variable: "--font-geist-mono",
+  preload: false,
+  adjustFontFallback: false,
+  fallback: ["'Geist Mono Subsets'", "'Geist Mono Fallback'"],
+  declarations: [
+    {
+      prop: "unicode-range",
+      value:
+        "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+    },
+  ],
+});
+
 export const metadata: Metadata = {
   title: "MasterSAT",
   description: "MasterSAT - Advanced SAT Preparation Platform",
@@ -114,7 +135,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${plusJakarta.variable} ${baloo.variable}`}
+      className={`${geistSans.variable} ${plusJakarta.variable} ${baloo.variable} ${geistMono.variable}`}
     >
       <head>
         {/* Runs before any chunk: when a page from an older release asks for a /_next/static

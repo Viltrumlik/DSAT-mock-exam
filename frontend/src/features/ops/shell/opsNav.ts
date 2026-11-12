@@ -1,29 +1,4 @@
-import {
-  BadgeCheck,
-  Building2,
-  CalendarClock,
-  CalendarDays,
-  CirclePlay,
-  ClipboardList,
-  Globe,
-  GraduationCap,
-  Images,
-  KeyRound,
-  LayoutDashboard,
-  LifeBuoy,
-  Megaphone,
-  MessageSquareText,
-  NotebookText,
-  RefreshCw,
-  School,
-  Send,
-  ShoppingBag,
-  Smartphone,
-  Timer,
-  UserCheck,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
+import type { IconName } from "@/components/ui/Icon";
 import { ADMIN_OPS_SECTIONS, isScopedOpsAdmin } from "@/features/ops/adminScope";
 
 /** The sections that can carry a waiting-work count beside their sidebar label. */
@@ -45,7 +20,8 @@ export type OpsNavCountKey = "trials";
 export type OpsNavItem = {
   href: string;
   label: string;
-  icon: LucideIcon;
+  /** A design icon (`<Icon name>`), from the redesign's set. */
+  icon: IconName;
   /** Match the path exactly rather than as a prefix — only the dashboard, since every ops page sits under `/ops`. */
   exact?: boolean;
   superAdminOnly?: boolean;
@@ -64,7 +40,7 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
   {
     id: "home",
     caption: null,
-    items: [{ href: "/ops", label: "Dashboard", icon: LayoutDashboard, exact: true }],
+    items: [{ href: "/ops", label: "Today", icon: "ms-today", exact: true }],
   },
   {
     // The old single "Users" list, split three ways (2026-10-14). `/ops/users` redirects to
@@ -72,46 +48,48 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
     id: "people",
     caption: "People",
     items: [
-      { href: "/ops/students", label: "Students", icon: GraduationCap },
-      { href: "/ops/public", label: "Public users", icon: Globe },
-      { href: "/ops/staff", label: "Staff", icon: BadgeCheck },
-      { href: "/ops/access", label: "Access", icon: KeyRound },
+      { href: "/ops/students", label: "Students", icon: "users" },
+      { href: "/ops/public", label: "Public users", icon: "user" },
+      { href: "/ops/staff", label: "Staff", icon: "shield" },
+      { href: "/ops/access", label: "Access", icon: "key" },
     ],
   },
   {
     id: "teaching",
     caption: "Teaching",
     items: [
-      { href: "/ops/classrooms", label: "Classrooms", icon: School },
+      { href: "/ops/classrooms", label: "Classrooms", icon: "cap" },
       // Regions, branches, and which branch each classroom meets at. Without it the branch
       // leaderboard has nothing to group by.
-      { href: "/ops/branches", label: "Branches", icon: Building2 },
-      { href: "/ops/journals", label: "Journals", icon: NotebookText },
+      { href: "/ops/branches", label: "Branches", icon: "ms-branch" },
+      { href: "/ops/journals", label: "Journals", icon: "ms-journal" },
       // Reports only — midterm authoring still lives in the Builder console.
-      { href: "/ops/midterms", label: "Midterms", icon: Timer },
+      { href: "/ops/midterms", label: "Midterm results", icon: "ms-midterm" },
       // Invigilated full-mock sittings: mint the sitting + its code here, then a teacher runs
       // the room on the day.
-      { href: "/ops/mock-sessions", label: "Mock sittings", icon: CirclePlay },
-      { href: "/ops/exam-dates", label: "Exam dates", icon: CalendarClock },
+      { href: "/ops/mock-sessions", label: "Mock sittings", icon: "ms-room" },
+      { href: "/ops/exam-dates", label: "Exam dates", icon: "ms-examdate" },
     ],
   },
   {
     id: "centre",
     caption: "Centre",
+    // Ordered by desk use (design handoff v0.3, Main · C): what waits on the desk first.
     items: [
-      // The centre's CRM: pair lc-up groups with our classes, settle unmatched students.
-      { href: "/ops/lcup", label: "lc-up", icon: RefreshCw },
       // Trial students and lc-up members missing from a class list (owner, 2026-10-20); the count is what
       // waits on the desk.
-      { href: "/ops/trials", label: "Trials", icon: UserCheck, countKey: "trials" },
+      { href: "/ops/trials", label: "Trials", icon: "ms-trial", countKey: "trials" },
       // Money as lc-up keeps it. Its own page, not a tab of lc-up — the owner wanted them apart.
-      { href: "/ops/finance", label: "Finance", icon: Wallet },
+      { href: "/ops/finance", label: "Finance", icon: "wallet" },
       // The eskiz SMS account: balance, the journal of every SMS, campaigns, the debt warning, templates.
-      { href: "/ops/sms", label: "SMS", icon: MessageSquareText },
+      { href: "/ops/sms", label: "SMS", icon: "msg" },
+      // The centre's CRM: pair lc-up groups with our classes, settle unmatched students. The name the
+      // staff know, plus what it is.
+      { href: "/ops/lcup", label: "lc-up (CRM link)", icon: "ms-sync" },
       // Who teaches support, and which hours they are available.
-      { href: "/ops/support", label: "Support", icon: LifeBuoy },
+      { href: "/ops/support", label: "Support hours", icon: "ms-support" },
       // Stock, prices and the collection queue — a desk job, not super_admin-only.
-      { href: "/ops/shop", label: "Shop", icon: ShoppingBag },
+      { href: "/ops/shop", label: "Reward shop", icon: "ms-coins" },
     ],
   },
   {
@@ -119,12 +97,12 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
     caption: "Content",
     items: [
       // Workshops, talks and open days: the desk publishes them and marks who came.
-      { href: "/ops/events", label: "Events", icon: CalendarDays },
+      { href: "/ops/events", label: "Events", icon: "cal" },
       // What the class bot posts into the class Telegram groups: event posts and written ones.
-      { href: "/ops/telegram-posts", label: "Telegram posts", icon: Send },
+      { href: "/ops/telegram-posts", label: "Telegram posts", icon: "ms-classpost" },
       // The ring of circles across the top of every student's dashboard.
-      { href: "/ops/stories", label: "Stories", icon: Images },
-      { href: "/ops/surveys", label: "Surveys", icon: ClipboardList, superAdminOnly: true },
+      { href: "/ops/stories", label: "Stories", icon: "ms-story" },
+      { href: "/ops/surveys", label: "Surveys", icon: "clipboard", superAdminOnly: true },
     ],
   },
   {
@@ -132,9 +110,9 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
     caption: "System",
     items: [
       // Raising the minimum iOS version stops every older app at an update screen.
-      { href: "/ops/mobile", label: "Mobile app", icon: Smartphone, superAdminOnly: true },
+      { href: "/ops/mobile", label: "Mobile app", icon: "ms-appversion", superAdminOnly: true },
       // A broadcast cannot be recalled — super admins only, like the endpoint.
-      { href: "/ops/broadcast", label: "Broadcast", icon: Megaphone, superAdminOnly: true },
+      { href: "/ops/broadcast", label: "Broadcast", icon: "ms-broadcast", superAdminOnly: true },
     ],
   },
 ];
@@ -180,8 +158,8 @@ export function isOpsNavActive(pathname: string, item: Pick<OpsNavItem, "href" |
 }
 
 /**
- * The nav item a path sits under — the LONGEST matching href, so `/builder/question-bank/triage`
- * is Triage Queue and not also Question Bank, and `/ops/classrooms/12/roster` is Classrooms.
+ * The nav item a path sits under — the LONGEST matching href, so a nested item lights only itself and
+ * not its parent too, and `/ops/classrooms/12/roster` is Classrooms.
  * The sidebar marks only this item; `null` when no item matches.
  */
 export function activeNavItem(pathname: string, groups: readonly OpsNavGroup[]): OpsNavItem | null {
@@ -241,11 +219,11 @@ export type ConsoleConfig = {
   /** The groups and items this viewer may see, in nav order. */
   visible: (groups: readonly OpsNavGroup[], me: MeLike) => OpsNavGroup[];
   /**
-   * A softer, roomier frame: taller rounded nav rows, a washed background, and the page in a
-   * centred column with generous padding. The builder wears it (owner 2026-10-15: "django paneldek
-   * zerikarli oddiy bo'lib qolmasligi kerak"); /ops keeps the dense Django-admin frame.
+   * The design's two temperatures: Admin is calm and squarer; the Builder is rounder and roomier
+   * (`data-ms-temp="builder"` on the shell, owner 2026-10-15: "django paneldek zerikarli oddiy bo'lib
+   * qolmasligi kerak").
    */
-  soft?: boolean;
+  temp: "admin" | "builder";
 };
 
 export const OPS_CONSOLE: ConsoleConfig = {
@@ -255,4 +233,5 @@ export const OPS_CONSOLE: ConsoleConfig = {
   collapseKey: "mastersat.ops.sidebar.collapsed",
   groups: OPS_NAV_GROUPS,
   visible: visibleNav,
+  temp: "admin",
 };

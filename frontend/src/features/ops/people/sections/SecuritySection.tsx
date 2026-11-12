@@ -1,9 +1,9 @@
 "use client";
 
 import { KeyRound, Monitor, ShieldCheck, Smartphone } from "lucide-react";
-import { Badge } from "@/components/ui";
 import { formatDate, formatLastSeen } from "@/features/ops/users/peopleColumns";
-import { Fieldset, PartBody, Row, SubHeading, Table, Td, WIDE_ONLY } from "../Fieldset";
+import { buttonClass } from "@/features/console/ui";
+import { Fieldset, PartBody, Pill, Row, SubHeading, Table, Td, WIDE_ONLY } from "../Fieldset";
 import { describeDevice } from "../device";
 import { formatDateTime, formatPhone } from "../format";
 import { ONE_TIME_PASSWORD_ROLES } from "../PersonHeader";
@@ -23,21 +23,21 @@ function OneTimePasswordCard({ person, onOneTimePassword }: { person: PersonCore
     <div
       className={
         otp
-          ? "flex flex-col gap-3 rounded-xl border border-warning/40 bg-warning-soft/40 p-4 sm:flex-row sm:items-center sm:justify-between"
-          : "flex flex-col gap-3 rounded-xl border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
+          ? "flex flex-col gap-3 rounded-[16px] border border-ms-attention-line bg-ms-attention-soft p-4 sm:flex-row sm:items-center sm:justify-between"
+          : "flex flex-col gap-3 rounded-[16px] border border-ms-border p-4 sm:flex-row sm:items-center sm:justify-between"
       }
     >
       <div className="min-w-0 space-y-1">
-        <p className="flex flex-wrap items-center gap-2 font-semibold text-foreground">
-          <KeyRound aria-hidden className="h-4 w-4 text-primary" />
+        <p className="flex flex-wrap items-center gap-2 font-semibold text-ms-fg">
+          <KeyRound aria-hidden className="h-4 w-4 text-ms-primary-text" />
           One-time password
           {otp ? (
-            <Badge variant={otp.locked ? "danger" : otp.used ? "info" : "warning"}>
+            <Pill tone={otp.locked ? "critical" : otp.used ? "info" : "attention"}>
               {otp.locked ? "Locked after wrong tries" : otp.used ? "Used — choosing a password" : "Waiting to be used"}
-            </Badge>
+            </Pill>
           ) : null}
         </p>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-ms-fg-3">
           {otp
             ? `They sign in with ${formatPhone(person.phone)} and ${lastFour}, then choose a new password. Until ${formatDate(otp.expires_at)}.`
             : "Forgot their password? Remove it: they sign in once with their phone and its last four digits, then choose a new one."}
@@ -48,7 +48,7 @@ function OneTimePasswordCard({ person, onOneTimePassword }: { person: PersonCore
         onClick={onOneTimePassword}
         disabled={!person.phone}
         title={person.phone ? undefined : "Add a phone number first"}
-        className="h-9 shrink-0 rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
+        className={buttonClass({ size: "sm" })}
       >
         {otp ? "Give a new one" : "Give one-time password"}
       </button>
@@ -75,10 +75,10 @@ export function SecuritySection({
           <div className="space-y-6">
             <div>
               <Row label="Telegram">
-                {d.telegram_linked ? <Badge variant="success">Linked</Badge> : <Badge variant="outline">Not linked</Badge>}
+                {d.telegram_linked ? <Pill tone="positive">Linked</Pill> : <Pill tone="line">Not linked</Pill>}
               </Row>
               <Row label="Email verified">
-                {d.email_verified ? <Badge variant="success">Yes</Badge> : <Badge variant="warning">No</Badge>}
+                {d.email_verified ? <Pill tone="positive">Yes</Pill> : <Pill tone="attention">No</Pill>}
               </Row>
               <Row label="Password changed">{d.last_password_change ? formatDate(d.last_password_change) : "Never"}</Row>
             </div>
@@ -90,7 +90,7 @@ export function SecuritySection({
             <div>
               <SubHeading>Signed-in devices</SubHeading>
               {d.sessions.length === 0 ? (
-                <p className="rounded-lg bg-surface-2 px-4 py-3 text-muted-foreground">No signed-in devices</p>
+                <p className="rounded-ms-ctl bg-ms-surface px-4 py-3 text-ms-fg-2">No signed-in devices</p>
               ) : (
                 <Table head={["Device", { label: "IP", className: WIDE_ONLY }, { label: "Signed in", className: WIDE_ONLY }, "Last active"]}>
                   {d.sessions.map((s) => {
@@ -100,13 +100,13 @@ export function SecuritySection({
                       <tr key={s.id}>
                         <Td className="max-w-[12rem] truncate font-medium sm:max-w-[20rem]">
                           <span className="inline-flex items-center gap-2">
-                            <Icon aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <Icon aria-hidden className="h-4 w-4 shrink-0 text-ms-fg-3" />
                             <span title={s.device || undefined}>{name}</span>
                           </span>
                         </Td>
-                        <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{s.ip || "—"}</Td>
-                        <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{formatDateTime(s.created_at)}</Td>
-                        <Td className="tabular-nums text-muted-foreground">
+                        <Td className={`${WIDE_ONLY} tabular-nums text-ms-fg-3`}>{s.ip || "—"}</Td>
+                        <Td className={`${WIDE_ONLY} tabular-nums text-ms-fg-3`}>{formatDateTime(s.created_at)}</Td>
+                        <Td className="tabular-nums text-ms-fg-3">
                           {s.last_seen_at ? formatLastSeen(s.last_seen_at) : "—"}
                         </Td>
                       </tr>

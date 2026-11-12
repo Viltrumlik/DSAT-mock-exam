@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 
 from . import serializers as qb
 from .models import BankQuestion, Difficulty, QuestionStatus, SourceType, Subject
+from .studio import NO_KEY
 from .views import QB_PERMISSIONS, _int_or_none
 
 PAGE_SIZES = (25, 50, 100)
@@ -36,6 +37,8 @@ _DIFFICULTY = {
     "none": Q(difficulty=""),
 }
 _CLASSIFIED = {"yes": Q(domain__isnull=False), "no": Q(domain__isnull=True)}
+# Studio home's "N questions have no answer key" opens ``?answer=no`` — the same rule, so the numbers agree.
+_ANSWER = {"yes": ~NO_KEY, "no": NO_KEY}
 
 
 def _fixed(qs, values: dict, labels):
@@ -74,6 +77,11 @@ FILTERS = {
         "Domain",
         lambda qs: _fixed(qs, _CLASSIFIED, (("yes", "Classified"), ("no", "Unclassified"))),
         _CLASSIFIED.get,
+    ),
+    "answer": (
+        "Answer key",
+        lambda qs: _fixed(qs, _ANSWER, (("yes", "Has one"), ("no", "Missing"))),
+        _ANSWER.get,
     ),
     "source": (
         "Source",

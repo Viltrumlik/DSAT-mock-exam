@@ -1,24 +1,32 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { Icon } from "@/components/ui/Icon";
 import { examsAdminApi } from "@/features/examsAdmin/api";
-import type { AdminPastpaperSection, SectionPublishViolation } from "@/lib/api";
+import { LibraryCard, LibrarySkeleton, TestCover } from "@/features/builderLibrary/LibraryCard";
 import {
-  AlertTriangle,
-  BookOpen,
-  Calculator,
-  Calendar,
-  ChevronRight,
-  FileText,
-  Loader2,
-  Pencil,
-  Plus,
-  RefreshCcw,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
+  FIELD,
+  FIELD_HINT,
+  FIELD_LABEL,
+  InlineDelete,
+  LibraryError,
+  LibraryFilter,
+  LibraryHeader,
+  LibraryModal,
+  ModalActions,
+  ModuleLinks,
+  PublishViolations,
+  SubjectBadge,
+  sectionShape,
+  sortedModules,
+} from "@/features/builderLibrary/sectionParts";
+import { Badge, Button, EmptyState, inputShell } from "@/features/console/ui";
+import type { AdminPastpaperSection, SectionPublishViolation } from "@/lib/api";
+
+/**
+ * The past-paper library: real SAT papers, one section (subject) per card, grouped by the form's collection.
+ * On the Builder library's card since PR 15b (design handoff v0.3, Modern board "Tests as a media library").
+ */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,11 +65,6 @@ function subjectLabel(subject: string): string {
   return subject;
 }
 
-function SubjectIcon({ subject }: { subject: string }) {
-  if (subject === "MATH") return <Calculator className="h-3.5 w-3.5" />;
-  return <BookOpen className="h-3.5 w-3.5" />;
-}
-
 function collectionOf(s: AdminPastpaperSection): string {
   return (s.collection_name && s.collection_name.trim()) || "Ungrouped";
 }
@@ -75,42 +78,6 @@ function yearOf(s: string | null | undefined): string {
 
 type RegionFilter = "ALL" | "US" | "INTL";
 type StatusFilter = "ALL" | "live" | "draft";
-
-/** Student-style segmented filter: an uppercase label + a pill row. */
-function FilterGroup({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { v: string; l: string }[];
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
-      <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-surface-2 p-1">
-        {options.map((o) => {
-          const on = value === o.v;
-          return (
-            <button
-              key={o.v}
-              type="button"
-              onClick={() => onChange(o.v)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
-                on ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {o.l}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 function parseError(e: unknown): string {
   const data = (e as { response?: { data?: unknown } })?.response?.data;
@@ -169,146 +136,86 @@ function SectionModal({
     if (open) setForm(initial);
   }, [open, initial]);
 
-  if (!open) return null;
-
   const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-foreground">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-surface-2">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
+    <LibraryModal open={open} title={title} error={error} onClose={onClose}>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit(form);
+        }}
+      >
+        <div>
+          <label htmlFor="pp-subject" className={FIELD_LABEL}>
+            Subject
+          </label>
+          <select id="pp-subject" value={form.subject} onChange={set("subject")} disabled={isEdit} className={FIELD}>
+            <option value="READING_WRITING">Reading &amp; Writing</option>
+            <option value="MATH">Mathematics</option>
+          </select>
+          {isEdit ? <p className={FIELD_HINT}>Subject can&apos;t be changed after creation.</p> : null}
         </div>
 
-        {error && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-            {error}
-          </div>
-        )}
+        <div>
+          <label htmlFor="pp-collection" className={FIELD_LABEL}>
+            Collection
+          </label>
+          <input
+            id="pp-collection"
+            value={form.collection_name}
+            onChange={set("collection_name")}
+            placeholder="e.g. SAT October 2024"
+            className={FIELD}
+          />
+          <p className={FIELD_HINT}>Sections sharing a collection name are grouped together for students.</p>
+        </div>
 
-        <form
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSubmit(form);
-          }}
-        >
+        <div>
+          <label htmlFor="pp-title" className={FIELD_LABEL}>
+            Title
+          </label>
+          <input id="pp-title" value={form.title} onChange={set("title")} placeholder="Optional — defaults to subject + date" className={FIELD} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              Subject
+            <label htmlFor="pp-date" className={FIELD_LABEL}>
+              Practice date
             </label>
-            <select
-              value={form.subject}
-              onChange={set("subject")}
-              disabled={isEdit}
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
-            >
-              <option value="READING_WRITING">Reading &amp; Writing</option>
-              <option value="MATH">Mathematics</option>
-            </select>
-            {isEdit ? (
-              <p className="mt-1 text-[11px] text-muted-foreground">Subject can&apos;t be changed after creation.</p>
-            ) : null}
+            <input id="pp-date" type="date" value={form.practice_date} onChange={set("practice_date")} className={FIELD} />
           </div>
-
           <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              Collection
+            <label htmlFor="pp-label" className={FIELD_LABEL}>
+              Form label
             </label>
-            <input
-              value={form.collection_name}
-              onChange={set("collection_name")}
-              placeholder="e.g. SAT October 2024"
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Sections sharing a collection name are grouped together for students.
-            </p>
+            <input id="pp-label" value={form.label} onChange={set("label")} placeholder="A, B, …" className={FIELD} />
           </div>
+        </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              Title
-            </label>
-            <input
-              value={form.title}
-              onChange={set("title")}
-              placeholder="Optional — defaults to subject + date"
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+        <div>
+          <label htmlFor="pp-form-type" className={FIELD_LABEL}>
+            Form type
+          </label>
+          <select id="pp-form-type" value={form.form_type} onChange={set("form_type")} className={FIELD}>
+            <option value="INTERNATIONAL">International</option>
+            <option value="US">US Form</option>
+          </select>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                Practice date
-              </label>
-              <input
-                type="date"
-                value={form.practice_date}
-                onChange={set("practice_date")}
-                className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                Form label
-              </label>
-              <input
-                value={form.label}
-                onChange={set("label")}
-                placeholder="A, B, …"
-                className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              Form type
-            </label>
-            <select
-              value={form.form_type}
-              onChange={set("form_type")}
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="INTERNATIONAL">International</option>
-              <option value="US">US Form</option>
-            </select>
-          </div>
-
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saving ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <ModalActions saving={saving} onCancel={onClose} />
+      </form>
+    </LibraryModal>
   );
 }
 
-// ─── Section row ─────────────────────────────────────────────────────────────────
+// ─── Section card ─────────────────────────────────────────────────────────────────
 
 function SectionCard({
   section,
+  index,
   onEdit,
   onDelete,
   onTogglePublish,
@@ -316,152 +223,68 @@ function SectionCard({
   violations,
 }: {
   section: AdminPastpaperSection;
+  index: number;
   onEdit: () => void;
   onDelete: () => void;
   onTogglePublish: () => void;
   busy: boolean;
   violations: SectionPublishViolation[] | null;
 }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const isRW = section.subject === "READING_WRITING";
   const isPublished = section.is_published === true;
   const modules = section.modules ?? [];
-  const accent = isRW ? "var(--color-primary, #2a68c0)" : "#16a34a";
+  const title = section.title?.trim() || `${subjectLabel(section.subject)} · ${formatDate(section.practice_date)}`;
+  const first = sortedModules(section)[0];
+  const href = first ? `/builder/pastpapers/${section.id}/${first.id}` : undefined;
+  const shape = sectionShape(section);
 
   return (
-    <div
-      className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
-      style={{ borderTop: `3px solid ${accent}` }}
-    >
-      <div className="flex flex-1 flex-col gap-3 p-5">
-        {/* Badges: subject · region · status */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-              isRW ? "bg-primary/10 text-primary" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-            }`}
-          >
-            <SubjectIcon subject={section.subject} />
-            {isRW ? "R&W" : "Math"}
-          </span>
-          <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+    <LibraryCard
+      delay={Math.min(index, 8) * 40}
+      cover={<TestCover short blocks={shape.blocks} minutes={shape.minutes} href={href} label={`Open ${title}`} />}
+      icon="ms-pastpaper"
+      title={title}
+      href={href}
+      meta={
+        <span className="inline-flex items-center gap-1">
+          <Icon name="cal" size="sm" className="size-3.5" />
+          {formatDate(section.practice_date)}
+          <span aria-hidden>·</span>
+          {modules.length} module{modules.length !== 1 ? "s" : ""}
+        </span>
+      }
+      status={
+        <>
+          {/* Badges: subject · region · status */}
+          <SubjectBadge subject={section.subject} />
+          <Badge tone="line">
             {section.form_type === "US" ? "🇺🇸 US" : "🌐 International"}
             {section.label ? ` · Form ${section.label}` : ""}
-          </span>
-          <span
-            className={`ml-auto rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-              isPublished ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-2 text-muted-foreground"
-            }`}
-          >
-            {isPublished ? "Live" : "Draft"}
-          </span>
-        </div>
-
-        {/* Title + date */}
-        <div>
-          <h3 className="line-clamp-2 text-[15px] font-extrabold leading-snug text-foreground">
-            {section.title?.trim() || `${subjectLabel(section.subject)} · ${formatDate(section.practice_date)}`}
-          </h3>
-          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <Calendar className="h-3 w-3 shrink-0" />
-            {formatDate(section.practice_date)}
-            <span className="text-muted-foreground/50">·</span>
-            <span>{modules.length} module{modules.length !== 1 ? "s" : ""}</span>
-          </p>
-        </div>
-
-        {/* Publish violations (blocking SAT rules) */}
-        {violations && violations.length > 0 ? (
-          <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <div>
-              <strong>Can&apos;t publish yet:</strong>
-              <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                {violations.map((v, i) => (
-                  <li key={`${v.code}-${i}`}>{v.message}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Per-module edit links */}
-        {modules.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border px-3 py-2 text-xs italic text-muted-foreground">
-            No modules yet.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {modules.map((mod) => (
-              <Link
-                key={mod.id}
-                href={`/builder/pastpapers/${section.id}/${mod.id}`}
-                className={`group flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors hover:border-primary/30 hover:bg-primary/5 ${
-                  isRW ? "border-primary/20 bg-primary/5" : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-500/20 dark:bg-emerald-500/5"
-                }`}
-              >
-                <p className="min-w-0 flex-1 truncate text-xs font-extrabold text-foreground">
-                  {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`} — edit questions
-                </p>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Footer actions */}
-      <div className="flex items-center gap-1.5 border-t border-border bg-surface-2/40 px-4 py-3">
-        <button
-          type="button"
-          onClick={onTogglePublish}
-          disabled={busy}
-          className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${
-            isPublished
-              ? "border border-border bg-card text-foreground hover:bg-surface-2"
-              : "bg-emerald-600 text-white hover:bg-emerald-700"
-          }`}
-        >
-          {busy ? "…" : isPublished ? "Unpublish" : "Publish"}
-        </button>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-surface-2"
-        >
-          <Pencil className="h-3 w-3" />
-          Edit
-        </button>
-        {confirmDelete ? (
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onDelete}
-              className="rounded-xl bg-red-600 px-2.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-red-700"
-            >
-              Confirm
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            aria-label="Delete section"
-            className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
-          >
-            <Trash2 className="h-3 w-3" />
-            Delete
-          </button>
-        )}
-      </div>
-    </div>
+          </Badge>
+          {isPublished ? (
+            <Badge tone="positive" dot>
+              Live
+            </Badge>
+          ) : (
+            <Badge tone="line">Draft</Badge>
+          )}
+        </>
+      }
+      /* Per-module edit links */
+      body={<ModuleLinks section={section} hrefFor={(m) => `/builder/pastpapers/${section.id}/${m.id}`} />}
+      /* Publish violations (blocking SAT rules) */
+      note={<PublishViolations violations={violations} />}
+      actions={
+        <>
+          <Button variant="secondary" size="sm" icon="eye" state={busy ? "busy" : "idle"} onClick={onTogglePublish}>
+            {isPublished ? "Unpublish" : "Publish"}
+          </Button>
+          <Button variant="ghost" size="sm" icon="pencil" onClick={onEdit}>
+            Edit
+          </Button>
+          <InlineDelete label="Delete section" onDelete={onDelete} />
+        </>
+      }
+    />
   );
 }
 
@@ -632,75 +455,66 @@ export default function BuilderPastpapersPage() {
       }
     : EMPTY_FORM;
 
+  let cardIndex = 0;
+
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Pastpapers</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+      <LibraryHeader
+        eyebrow="Simulation"
+        title="Pastpapers"
+        description={
+          <>
             Manage standalone pastpaper sections. Each section is a single Reading &amp; Writing or
             Mathematics test, published independently. Use a shared collection name to group sections
             from the same SAT form for students.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void load()}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            New section
-          </button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => void load()} disabled={loading}>
+              <Icon name="refresh" size="md" className={loading ? "animate-ms-spin" : undefined} />
+              Refresh
+            </Button>
+            <Button variant="primary" icon="plus" onClick={openCreate}>
+              New section
+            </Button>
+          </>
+        }
+      />
 
       {/* Error banner */}
-      {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <LibraryError>{error}</LibraryError>}
 
       {/* Search + filters (student-style) */}
       {!loading && sections.length > 0 ? (
         <div className="flex flex-col gap-4">
-          <div className="relative w-full max-w-lg">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <div className={inputShell({ className: "w-full max-w-[640px]" })}>
+            <Icon name="search" className="shrink-0 text-ms-fg-3" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search pastpapers…"
               aria-label="Search pastpapers"
-              className="w-full rounded-xl border border-border bg-card py-2.5 pl-10 pr-3 text-sm font-medium text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-ms-fg-3"
             />
           </div>
-          <div className="flex flex-wrap gap-5">
-            <FilterGroup
+          <div className="flex flex-wrap gap-x-6 gap-y-3">
+            <LibraryFilter
               label="Region"
               value={region}
               onChange={(v) => setRegion(v as RegionFilter)}
               options={[{ v: "ALL", l: "All" }, { v: "US", l: "US" }, { v: "INTL", l: "International" }]}
             />
             {years.length > 0 ? (
-              <FilterGroup
+              <LibraryFilter
                 label="Year"
                 value={year}
                 onChange={setYear}
                 options={[{ v: "ALL", l: "All" }, ...years.map((y) => ({ v: y, l: y }))]}
               />
             ) : null}
-            <FilterGroup
+            <LibraryFilter
               label="Status"
               value={status}
               onChange={(v) => setStatus(v as StatusFilter)}
@@ -712,50 +526,39 @@ export default function BuilderPastpapersPage() {
 
       {/* Content */}
       {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        </div>
+        <LibrarySkeleton count={4} />
       ) : sections.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-12 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
-            <FileText className="h-7 w-7 text-muted-foreground/40" />
-          </div>
-          <p className="font-extrabold text-foreground">No pastpaper sections yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create a section, then add its modules and questions.
-          </p>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            New section
-          </button>
-        </div>
+        <EmptyState
+          icon="ms-pastpaper"
+          title="No pastpaper sections yet"
+          detail="Create a section, then add its modules and questions."
+          action={
+            <Button variant="primary" icon="plus" onClick={openCreate}>
+              New section
+            </Button>
+          }
+        />
       ) : groups.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
-          <p className="font-extrabold text-foreground">No pastpapers match your filters</p>
-          <p className="mt-1 text-sm text-muted-foreground">Try a different region, year, status, or search.</p>
-        </div>
+        <EmptyState icon="filter" title="No pastpapers match your filters" detail="Try a different region, year, status, or search." />
       ) : (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-8">
           {groups.map((g) => (
-            <div key={g.name} className="space-y-3">
+            <section key={g.name} aria-label={g.name} className="flex flex-col gap-3">
               <div className="flex items-center gap-2 px-1">
-                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{g.name}</span>
-                <span className="text-[11px] text-muted-foreground/60">
+                <span className="text-ms-over uppercase text-ms-fg-2">{g.name}</span>
+                <span className="text-[13px] text-ms-fg-3">
                   {g.items.length} section{g.items.length !== 1 ? "s" : ""}
                 </span>
-                <span className="h-px flex-1 bg-border" />
+                <span className="h-px flex-1 bg-ms-line" />
               </div>
               {/* A collection is a form's R&W and Math sections: two columns hold a pair side by side
                   without the empty third track auto-fill left on a wide screen. */}
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-x-[22px] gap-y-8 md:grid-cols-2">
                 {g.items.map((section) => (
                   <SectionCard
                     key={section.id}
                     section={section}
+                    index={cardIndex++}
                     onEdit={() => openEdit(section)}
                     onDelete={() => void handleDelete(section.id)}
                     onTogglePublish={() => void handleTogglePublish(section)}
@@ -764,7 +567,7 @@ export default function BuilderPastpapersPage() {
                   />
                 ))}
               </div>
-            </div>
+            </section>
           ))}
         </div>
       )}

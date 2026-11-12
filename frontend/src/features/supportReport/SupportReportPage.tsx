@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarClock, RefreshCw } from "lucide-react";
-import { Select } from "@/components/ui";
+import { Icon } from "@/components/ui/Icon";
+import { Button } from "@/features/console/ui";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
 
 import { errText, supportReportApi } from "./api";
 import { monthEnd, monthStart } from "./format";
@@ -86,12 +87,12 @@ export function SupportReportPage() {
 
   const monthPicker =
     months.length > 0 ? (
-      <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
-        <CalendarClock className="h-4 w-4" aria-hidden />
+      <label className="flex items-center gap-2 text-[14px] font-medium text-ms-fg-2">
+        <Icon name="cal" size="sm" className="text-ms-fg-3" />
         <span className="sr-only sm:not-sr-only">Month</span>
-        <span className="w-48">
-          <Select
-            selectSize="sm"
+        <span className="block w-48">
+          <select
+            className={CONTROL}
             value={pickerMonth}
             onChange={(e) => setMonth(e.target.value || null)}
             aria-label="Report month"
@@ -100,13 +101,13 @@ export function SupportReportPage() {
                 picker rather than as the honest answer it is. */}
             {pickerMonth ? null : <option value="">No month with sessions</option>}
             {monthOptions(months)}
-          </Select>
+          </select>
         </span>
       </label>
     ) : null;
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* ── 1. The backlog, impossible to miss ──────────────────────────────────────── */}
       {report?.backlog ? (
         <UnsettledBacklogPanel
@@ -125,10 +126,10 @@ export function SupportReportPage() {
       {error ? (
         <ErrorPanel message={error} onRetry={() => void load(month)} />
       ) : loading || report == null ? (
-        <div className="space-y-4" aria-busy>
+        <div className="flex flex-col gap-4" aria-busy>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {[0, 1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-24 animate-pulse rounded-2xl bg-surface-2" />
+              <div key={i} className="animate-ms-shimmer h-[7.5rem] rounded-ms-card" />
             ))}
           </div>
           <SectionCard>
@@ -158,14 +159,9 @@ export function SupportReportPage() {
       )}
 
       <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => void load(month)}
-          className="ds-ring inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-[13px] font-bold text-foreground transition-colors hover:bg-surface-2"
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden />
+        <Button variant="secondary" size="sm" icon="refresh" onClick={() => void load(month)}>
           Refresh the month
-        </button>
+        </Button>
       </div>
     </div>
   );

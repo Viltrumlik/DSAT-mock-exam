@@ -14,14 +14,19 @@
  *   grouped by signature because the question is "what is breaking, on how many phones".
  *
  * Super admins only: raising the minimum can stop every student's app at once.
+ *
+ * In the console's look (design handoff v0.3): cards, the console's fields, chips and dialog. The
+ * words and the calls are the page's own.
  */
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Smartphone } from "lucide-react";
-import { Alert, Badge, Button, Field, Input, Modal, Textarea } from "@/components/ui";
-import type { BadgeVariant } from "@/components/ui";
+
+import { Icon } from "@/components/ui/Icon";
+import { Badge, Button, EmptyState, chipClass, type BadgeTone } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { SCHOOL_TIME_ZONE } from "@/lib/schoolTime";
+import { AREA, FormDialog, FormField, Notice, Panel } from "@/features/ops/settings/settingsParts";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import type { DiagnosticKind, DiagnosticGroup } from "@/features/mobile/mobileApi";
 import {
   useDiagnostic,
@@ -29,6 +34,7 @@ import {
   useReleasePolicy,
   useSaveReleasePolicy,
 } from "@/features/mobile/mobileHooks";
+import { cn } from "@/lib/cn";
 
 const KIND_LABEL: Record<DiagnosticKind, string> = {
   crash: "Crash",
@@ -38,15 +44,18 @@ const KIND_LABEL: Record<DiagnosticKind, string> = {
   error: "App error",
 };
 
-const KIND_BADGE: Record<DiagnosticKind, BadgeVariant> = {
-  crash: "danger",
-  hang: "warning",
-  cpu: "warning",
+const KIND_BADGE: Record<DiagnosticKind, BadgeTone> = {
+  crash: "critical",
+  hang: "attention",
+  cpu: "attention",
   disk: "neutral",
   error: "info",
 };
 
 const DAYS = [7, 30, 90] as const;
+
+const TH = "h-10 whitespace-nowrap border-b border-ms-border px-3 text-left text-[13px] font-medium text-ms-fg-3 first:pl-5 last:pr-5";
+const TD = "border-b border-ms-line px-3 py-2.5 first:pl-5 last:pr-5";
 
 function when(iso: string | null): string {
   if (!iso) return "—";
@@ -55,15 +64,13 @@ function when(iso: string | null): string {
   return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SCHOOL_TIME_ZONE });
 }
 
-function Panel({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
+/** "Loading…", as the page has always said it, beside the console's spinner. */
+function LoadingLine() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{title}</p>
-        {aside}
-      </div>
-      <div className="p-5">{children}</div>
-    </div>
+    <p role="status" className="inline-flex items-center gap-2 text-[14px] font-medium text-ms-fg-2">
+      <Icon name="loader" size="sm" className="animate-ms-spin" />
+      Loading…
+    </p>
   );
 }
 
@@ -111,79 +118,99 @@ function PolicyPanel() {
   return (
     <Panel
       title="Release policy"
+      icon="ms-appversion"
       aside={
         policy.data?.updated_at ? (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-[13px] text-ms-fg-3">
             Last changed {when(policy.data.updated_at)}
             {policy.data.updated_by ? ` by ${policy.data.updated_by}` : ""}
           </span>
         ) : null
       }
     >
-      {policy.isError ? (
-        <Alert tone="danger">The policy didn&apos;t load. Nothing has changed — reload to try again.</Alert>
-      ) : (
-        <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Latest version in the App Store"
-              hint="Builds older than this are asked, never forced, to update. Empty: ask nobody."
-              error={errors.latest_version}
-            >
-              <Input
-                placeholder="1.2.0"
-                value={form.latest_version}
-                onChange={(e) => setForm({ ...form, latest_version: e.target.value })}
+      <div className="p-4 sm:p-5">
+        {policy.isError ? (
+          <Notice tone="danger">The policy didn&apos;t load. Nothing has changed — reload to try again.</Notice>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                label="Latest version in the App Store"
+                htmlFor="policy-latest"
+                hint="Builds older than this are asked, never forced, to update. Empty: ask nobody."
+                error={errors.latest_version}
+              >
+                <input
+                  id="policy-latest"
+                  className={cn(CONTROL, "tabular-nums")}
+                  placeholder="1.2.0"
+                  aria-invalid={errors.latest_version ? true : undefined}
+                  value={form.latest_version}
+                  onChange={(e) => setForm({ ...form, latest_version: e.target.value })}
+                />
+              </FormField>
+              <FormField
+                label="Minimum version"
+                htmlFor="policy-minimum"
+                hint="Builds older than this see an update screen and nothing else. Empty: allow every build."
+                error={errors.minimum_version}
+              >
+                <input
+                  id="policy-minimum"
+                  className={cn(CONTROL, "tabular-nums")}
+                  placeholder="1.1.0"
+                  aria-invalid={errors.minimum_version ? true : undefined}
+                  value={form.minimum_version}
+                  onChange={(e) => setForm({ ...form, minimum_version: e.target.value })}
+                />
+              </FormField>
+            </div>
+            <FormField label="App Store link" htmlFor="policy-url" hint="Where the Update button goes." error={errors.update_url}>
+              <input
+                id="policy-url"
+                className={CONTROL}
+                placeholder="https://apps.apple.com/app/id…"
+                aria-invalid={errors.update_url ? true : undefined}
+                value={form.update_url}
+                onChange={(e) => setForm({ ...form, update_url: e.target.value })}
               />
-            </Field>
-            <Field
-              label="Minimum version"
-              hint="Builds older than this see an update screen and nothing else. Empty: allow every build."
-              error={errors.minimum_version}
+            </FormField>
+            <FormField
+              label="Message"
+              htmlFor="policy-message"
+              hint="Optional. One sentence shown with the update prompt — what the new build brings."
+              error={errors.message}
             >
-              <Input
-                placeholder="1.1.0"
-                value={form.minimum_version}
-                onChange={(e) => setForm({ ...form, minimum_version: e.target.value })}
+              <textarea
+                id="policy-message"
+                className={AREA}
+                rows={2}
+                aria-invalid={errors.message ? true : undefined}
+                value={form.message}
+                onChange={(e) => setForm({ ...form, message: e.target.value })}
               />
-            </Field>
-          </div>
-          <Field label="App Store link" hint="Where the Update button goes." error={errors.update_url}>
-            <Input
-              placeholder="https://apps.apple.com/app/id…"
-              value={form.update_url}
-              onChange={(e) => setForm({ ...form, update_url: e.target.value })}
-            />
-          </Field>
-          <Field
-            label="Message"
-            hint="Optional. One sentence shown with the update prompt — what the new build brings."
-            error={errors.message}
-          >
-            <Textarea
-              rows={2}
-              value={form.message}
-              onChange={(e) => setForm({ ...form, message: e.target.value })}
-            />
-          </Field>
-          {raisingMinimum ? (
-            <Alert tone="warning">
-              <span className="inline-flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            </FormField>
+            {raisingMinimum ? (
+              <Notice tone="warning">
                 Every app older than {form.minimum_version} will stop at an update screen within a
                 minute of saving. Make sure that version is already live in the App Store.
-              </span>
-            </Alert>
-          ) : null}
-          {errors.detail ? <Alert tone="danger">{errors.detail}</Alert> : null}
-          {saved ? <Alert tone="success">Saved. Phones pick it up within a minute.</Alert> : null}
-          <div className="flex justify-end">
-            <Button onClick={submit} loading={save.isPending} disabled={policy.isLoading}>
-              Save policy
-            </Button>
+              </Notice>
+            ) : null}
+            {errors.detail ? <Notice tone="danger">{errors.detail}</Notice> : null}
+            {saved ? <Notice tone="success">Saved. Phones pick it up within a minute.</Notice> : null}
+            <div className="flex justify-end">
+              <Button
+                variant="primary"
+                state={save.isPending ? "busy" : "idle"}
+                disabled={policy.isLoading || save.isPending}
+                onClick={() => void submit()}
+              >
+                Save policy
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </Panel>
   );
 }
@@ -192,44 +219,44 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
   const detail = useDiagnostic(id);
   const d = detail.data;
   return (
-    <Modal open onClose={onClose} title={d ? KIND_LABEL[d.kind] : "Report"}>
+    <FormDialog open onClose={onClose} title={d ? KIND_LABEL[d.kind] : "Report"} width={640}>
       {detail.isError ? (
-        <Alert tone="danger">This report didn&apos;t load.</Alert>
+        <Notice tone="danger">This report didn&apos;t load.</Notice>
       ) : !d ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <LoadingLine />
       ) : (
-        <div className="space-y-3 text-sm">
-          <p className="break-words font-mono text-xs">{d.signature}</p>
-          {d.message ? <p>{d.message}</p> : null}
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <dt className="text-muted-foreground">App</dt>
-            <dd>
+        <div className="flex flex-col gap-3 text-[14px] text-ms-fg">
+          <p className="break-words rounded-ms-ctl bg-ms-surface px-3 py-2 font-ms-mono text-[12px] leading-5">{d.signature}</p>
+          {d.message ? <p className="text-ms-fg-2">{d.message}</p> : null}
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[13px]">
+            <dt className="text-ms-fg-3">App</dt>
+            <dd className="tabular-nums">
               {d.app_version || "—"} ({d.build || "—"})
             </dd>
-            <dt className="text-muted-foreground">Device</dt>
+            <dt className="text-ms-fg-3">Device</dt>
             <dd>
               {d.device_model || "—"} · {d.os_version || "—"}
             </dd>
-            <dt className="text-muted-foreground">Happened</dt>
-            <dd>{when(d.occurred_at)}</dd>
-            <dt className="text-muted-foreground">Received</dt>
-            <dd>{when(d.received_at)}</dd>
-            <dt className="text-muted-foreground">Signed in</dt>
+            <dt className="text-ms-fg-3">Happened</dt>
+            <dd className="tabular-nums">{when(d.occurred_at)}</dd>
+            <dt className="text-ms-fg-3">Received</dt>
+            <dd className="tabular-nums">{when(d.received_at)}</dd>
+            <dt className="text-ms-fg-3">Signed in</dt>
             <dd>{d.user ?? "Nobody"}</dd>
           </dl>
           {d.payload != null ? (
             <div>
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="text-ms-over mb-1.5 uppercase text-ms-fg-3">
                 Payload — symbolicate call stacks against this build&apos;s dSYM
               </p>
-              <pre className="max-h-80 overflow-auto rounded-lg bg-surface-2 p-3 text-[11px] leading-snug">
+              <pre className="max-h-80 overflow-auto rounded-ms-ctl bg-ms-surface-2 p-3 font-ms-mono text-[11px] leading-snug text-ms-fg">
                 {JSON.stringify(d.payload, null, 2)}
               </pre>
             </div>
           ) : null}
         </div>
       )}
-    </Modal>
+    </FormDialog>
   );
 }
 
@@ -241,85 +268,84 @@ function DiagnosticsPanel() {
   const q = useDiagnostics(days, kind, version);
   const data = q.data;
 
-  const chip = (active: boolean) =>
-    `rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-      active ? "border-primary bg-primary text-white" : "border-border bg-card text-muted-foreground hover:text-foreground"
-    }`;
-
   return (
-    <Panel title="Crash & error reports">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+    <Panel title="Crash & error reports" icon="alert">
+      <div className="flex flex-wrap items-center gap-2 border-b border-ms-line px-5 py-3">
         {DAYS.map((d) => (
-          <button key={d} type="button" className={chip(days === d)} onClick={() => setDays(d)}>
+          <button key={d} type="button" aria-pressed={days === d} className={chipClass(days === d)} onClick={() => setDays(d)}>
             {d} days
           </button>
         ))}
-        <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-        <button type="button" className={chip(kind === "")} onClick={() => setKind("")}>
+        <span className="mx-1 h-5 w-px bg-ms-border" aria-hidden />
+        <button type="button" aria-pressed={kind === ""} className={chipClass(kind === "")} onClick={() => setKind("")}>
           All kinds
         </button>
         {(Object.keys(KIND_LABEL) as DiagnosticKind[]).map((k) => (
-          <button key={k} type="button" className={chip(kind === k)} onClick={() => setKind(k)}>
+          <button key={k} type="button" aria-pressed={kind === k} className={chipClass(kind === k)} onClick={() => setKind(k)}>
             {KIND_LABEL[k]}
             {data ? ` · ${data.totals[k]}` : ""}
           </button>
         ))}
         {data && data.app_versions.length > 0 ? (
-          <select
-            className="ml-auto rounded-lg border border-border bg-card px-2 py-1 text-xs"
-            value={version}
-            onChange={(e) => setVersion(e.target.value)}
-            aria-label="App version"
-          >
-            <option value="">Every version</option>
-            {data.app_versions.map((v) => (
-              <option key={v} value={v}>
-                {v || "Unknown"}
-              </option>
-            ))}
-          </select>
+          // Sized on a wrapper: CONTROL carries `w-full`.
+          <div className="ml-auto w-44">
+            <select className={CONTROL} value={version} onChange={(e) => setVersion(e.target.value)} aria-label="App version">
+              <option value="">Every version</option>
+              {data.app_versions.map((v) => (
+                <option key={v} value={v}>
+                  {v || "Unknown"}
+                </option>
+              ))}
+            </select>
+          </div>
         ) : null}
       </div>
 
       {q.isError ? (
-        <Alert tone="danger">The reports didn&apos;t load. They are still on the server — reload to try again.</Alert>
-      ) : q.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : !data || data.groups.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
-          <p className="text-sm font-semibold">Nothing reported in the last {days} days</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Crashes arrive the next time the app opens after one; errors as they happen.
-          </p>
+        <div className="p-4 sm:p-5">
+          <Notice tone="danger">The reports didn&apos;t load. They are still on the server — reload to try again.</Notice>
         </div>
+      ) : q.isLoading ? (
+        <div className="px-5 py-4">
+          <LoadingLine />
+        </div>
+      ) : !data || data.groups.length === 0 ? (
+        <EmptyState
+          icon="ok"
+          title={`Nothing reported in the last ${days} days`}
+          detail="Crashes arrive the next time the app opens after one; errors as they happen."
+        />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full border-separate border-spacing-0 text-[14px] text-ms-fg">
             <thead>
-              <tr className="border-b border-border text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                <th className="py-2 pr-3">What</th>
-                <th className="py-2 pr-3">Kind</th>
-                <th className="py-2 pr-3 text-right">Reports</th>
-                <th className="py-2 pr-3 text-right">Phones</th>
-                <th className="py-2 pr-3">First seen</th>
-                <th className="py-2">Last seen</th>
+              <tr>
+                <th className={TH}>What</th>
+                <th className={TH}>Kind</th>
+                <th className={cn(TH, "text-right")}>Reports</th>
+                <th className={cn(TH, "text-right")}>Phones</th>
+                <th className={TH}>First seen</th>
+                <th className={TH}>Last seen</th>
               </tr>
             </thead>
             <tbody>
               {data.groups.map((g: DiagnosticGroup) => (
                 <tr
                   key={`${g.kind}:${g.signature}`}
-                  className="cursor-pointer border-b border-border/60 hover:bg-surface-2"
+                  data-group={g.sample_id}
+                  className="ms-transition cursor-pointer hover:bg-ms-surface [&:last-child>td]:border-b-0"
                   onClick={() => setOpenId(g.sample_id)}
                 >
-                  <td className="max-w-[28rem] py-2 pr-3 font-mono text-xs">{g.signature}</td>
-                  <td className="py-2 pr-3">
-                    <Badge variant={KIND_BADGE[g.kind]}>{KIND_LABEL[g.kind]}</Badge>
+                  <td className={cn(TD, "max-w-[28rem] break-words font-ms-mono text-[12px]")}>{g.signature}</td>
+                  <td className={TD}>
+                    <Badge tone={KIND_BADGE[g.kind]} dot={g.kind === "crash" || g.kind === "hang" || g.kind === "cpu"}>
+                      {KIND_LABEL[g.kind]}
+                    </Badge>
                   </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{g.count}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{g.installs}</td>
-                  <td className="py-2 pr-3 text-xs text-muted-foreground">{when(g.first_seen)}</td>
-                  <td className="py-2 text-xs text-muted-foreground">{when(g.last_seen)}</td>
+                  <td className={cn(TD, "text-right font-semibold tabular-nums")}>{g.count}</td>
+                  <td className={cn(TD, "text-right tabular-nums")}>{g.installs}</td>
+                  <td className={cn(TD, "whitespace-nowrap text-[13px] text-ms-fg-2")}>{when(g.first_seen)}</td>
+                  <td className={cn(TD, "whitespace-nowrap text-[13px] text-ms-fg-2")}>{when(g.last_seen)}</td>
                 </tr>
               ))}
             </tbody>
@@ -333,12 +359,16 @@ function DiagnosticsPanel() {
 
 export default function OpsMobilePage() {
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <OpsPageHeader
         section="Mobile app"
         title="Mobile app"
         description="Which iOS builds may still be used, and what is breaking on students' phones."
-        actions={<Smartphone className="h-5 w-5 text-muted-foreground" aria-hidden />}
+        actions={
+          <span aria-hidden className="grid size-10 place-items-center rounded-[12px] bg-ms-surface-2 text-ms-fg-3">
+            <Icon name="mobile" />
+          </span>
+        }
       />
       <PolicyPanel />
       <DiagnosticsPanel />

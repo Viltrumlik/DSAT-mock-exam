@@ -1,9 +1,10 @@
 "use client";
 
-import type { LucideIcon } from "lucide-react";
-import { CalendarX2, CircleCheck, CircleX, GraduationCap, Users } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { cn } from "@/lib/cn";
-import { RATE_TONE_FILL, RATE_TONE_TEXT, expectedNote, notPassed, ofTotal, rateTone } from "./outcome";
+import { RATE_TONE_FILL, RATE_TONE_TEXT } from "./look";
+import { expectedNote, notPassed, ofTotal, rateTone } from "./outcome";
 import { SplitBar } from "./SplitBar";
 import { monthLabel, plural } from "./format";
 import { ScheduledFigure } from "./StatsUI";
@@ -22,35 +23,22 @@ import type { MonthlyStats } from "./types";
  * The counts themselves are unchanged, and so is the rule they were computed by: passed
  * over everyone who was due to sit, an absent student counting as not passed. Only the
  * words and the colours are new.
+ *
+ * Drawn as the console's stat tiles (design handoff v0.3): a white card, the verdict in the
+ * icon's chip and the number's colour, never in colour alone.
  */
 
 type Tone = "primary" | "success" | "danger" | "info";
 
-const TONE: Record<Tone, { card: string; icon: string; value: string }> = {
-  primary: {
-    card: "border-primary/25 bg-primary-soft",
-    icon: "bg-primary/15 text-primary dark:text-primary-hover",
-    value: "text-primary dark:text-primary-hover",
-  },
-  success: {
-    card: "border-success/25 bg-success-soft",
-    icon: "bg-success/15 text-success-foreground",
-    value: "text-success-foreground",
-  },
-  danger: {
-    card: "border-danger/25 bg-danger-soft",
-    icon: "bg-danger/15 text-danger-foreground",
-    value: "text-danger-foreground",
-  },
-  info: {
-    card: "border-border bg-card",
-    icon: "bg-surface-2 text-muted-foreground",
-    value: "text-foreground",
-  },
+const TONE: Record<Tone, { icon: string; value: string }> = {
+  primary: { icon: "bg-ms-primary-soft text-ms-primary-text", value: "text-ms-primary-text" },
+  success: { icon: "bg-ms-positive-soft text-ms-positive-fg", value: "text-ms-positive-fg" },
+  danger: { icon: "bg-ms-critical-soft text-ms-critical-fg", value: "text-ms-critical-fg" },
+  info: { icon: "bg-ms-surface-2 text-ms-fg-2", value: "text-ms-fg" },
 };
 
 function Card({
-  icon: Icon,
+  icon,
   label,
   value,
   detail,
@@ -59,32 +47,30 @@ function Card({
   index = 0,
   children,
 }: {
-  icon: LucideIcon;
+  icon: IconName;
   label: string;
-  value: React.ReactNode;
-  detail?: React.ReactNode;
+  value: ReactNode;
+  detail?: ReactNode;
   tone?: Tone;
   valueClass?: string;
   /** Position in the row, so the four arrive left to right rather than together. */
   index?: number;
-  children?: React.ReactNode;
+  children?: ReactNode;
 }) {
   const t = TONE[tone];
   return (
     <div
-      className={cn("cr-card flex flex-col rounded-2xl border p-4", t.card)}
+      className="animate-ms-card-in flex min-w-0 flex-col rounded-ms-card bg-ms-card p-4 shadow-ms-1"
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="flex items-center gap-2">
-        <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg", t.icon)}>
-          <Icon className="h-4 w-4" aria-hidden />
+        <span className={cn("grid size-7 shrink-0 place-items-center rounded-[8px]", t.icon)}>
+          <Icon name={icon} size="sm" />
         </span>
-        <p className="text-[12px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-[13.5px] font-medium text-ms-fg-2">{label}</p>
       </div>
-      <p className={cn("mt-2 text-3xl font-extrabold tracking-tight tabular-nums", valueClass ?? t.value)}>
-        {value}
-      </p>
-      {detail ? <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">{detail}</p> : null}
+      <p className={cn("mt-2 text-ms-display tabular-nums", valueClass ?? t.value)}>{value}</p>
+      {detail ? <p className="mt-1 text-[13px] leading-[18px] text-ms-fg-3">{detail}</p> : null}
       {children}
     </div>
   );
@@ -97,22 +83,22 @@ function Booked({ stats }: { stats: MonthlyStats }) {
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <Card
         index={0}
-        icon={CalendarX2}
+        icon="cal"
         tone="primary"
         label="Pass rate"
-        value={<ScheduledFigure className="text-3xl font-extrabold" />}
+        value={<ScheduledFigure />}
         detail={`Nobody has sat ${monthLabel(stats.month) || "this month"} yet, so there is no rate — not a rate of zero.`}
       />
       <Card
         index={1}
-        icon={GraduationCap}
+        icon="cap"
         label="Exams booked"
         value={t.midterms}
         detail={`${plural(t.classrooms, "class", "classes")} have an exam in this month.`}
       />
       <Card
         index={2}
-        icon={Users}
+        icon="users"
         label="Students"
         value={t.distinct_students}
         detail="None of them has missed anything yet."
@@ -134,7 +120,7 @@ export function SummaryCards({ stats }: { stats: MonthlyStats }) {
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Card
         index={0}
-        icon={CircleCheck}
+        icon="ok"
         tone="primary"
         label="Pass rate"
         valueClass={RATE_TONE_TEXT[tone]}
@@ -145,20 +131,20 @@ export function SummaryCards({ stats }: { stats: MonthlyStats }) {
             : "Nobody was due to sit an exam this month."
         }
       >
-        <span className="mt-3 block h-2 w-full overflow-hidden rounded-full bg-card/70">
+        <span className="mt-3 block h-2 w-full overflow-hidden rounded-full bg-ms-surface-2">
           <span
             className={cn("mts-grow block h-full rounded-full", RATE_TONE_FILL[tone])}
             style={{
               width: `${Math.max(0, Math.min(100, t.pass_rate ?? 0))}%`,
               "--mts-delay": "220ms",
-            } as React.CSSProperties}
+            } as CSSProperties}
           />
         </span>
       </Card>
 
       <Card
         index={1}
-        icon={CircleCheck}
+        icon="ok"
         tone="success"
         label="Passed"
         value={t.passed}
@@ -171,7 +157,7 @@ export function SummaryCards({ stats }: { stats: MonthlyStats }) {
 
       <Card
         index={2}
-        icon={CircleX}
+        icon="x"
         tone="danger"
         label="Did not pass"
         value={notPassed(t)}
@@ -187,7 +173,7 @@ export function SummaryCards({ stats }: { stats: MonthlyStats }) {
 
       <Card
         index={3}
-        icon={Users}
+        icon="users"
         label="Students"
         value={t.distinct_students}
         detail={

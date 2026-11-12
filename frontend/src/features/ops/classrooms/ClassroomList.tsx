@@ -9,6 +9,7 @@ import { ChangeList, type ChangeListColumn } from "@/features/ops/changelist/Cha
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import { withListFilters } from "@/features/ops/changelist/backLink";
 import { Truncated } from "@/features/ops/users/peopleColumns";
+import { Button } from "@/features/console/ui";
 import { CLASSROOM_FILTER_KEYS, classroomKeys, useClassrooms, type ClassroomRow } from "./classroomsApi";
 import { CreateClassroomModal } from "./CreateClassroomModal";
 
@@ -37,7 +38,7 @@ const COLUMNS: ChangeListColumn<ClassroomRow>[] = [
   {
     key: "level",
     label: "Level",
-    render: (r) => (r.level ? levelLabel(r.level as never) : <span className="text-muted-foreground">—</span>),
+    render: (r) => (r.level ? levelLabel(r.level as never) : <span className="text-ms-fg-3">—</span>),
   },
   { key: "teacher", label: "Teacher", render: (r) => <Truncated text={r.teacher?.name ?? ""} /> },
   {
@@ -50,9 +51,9 @@ const COLUMNS: ChangeListColumn<ClassroomRow>[] = [
   {
     key: "schedule",
     label: "Schedule",
-    render: (r) => <span className="text-muted-foreground">{scheduleText(r.lesson_days, r.lesson_time)}</span>,
+    render: (r) => <span className="text-ms-fg-2">{scheduleText(r.lesson_days, r.lesson_time)}</span>,
   },
-  { key: "room", label: "Room", render: (r) => r.room_number || <span className="text-muted-foreground">—</span> },
+  { key: "room", label: "Room", render: (r) => r.room_number || <span className="text-ms-fg-3">—</span> },
   {
     key: "lcup",
     label: "lc-up",
@@ -60,14 +61,14 @@ const COLUMNS: ChangeListColumn<ClassroomRow>[] = [
       r.lcup ? (
         <span title="Paired with an lc-up group">Yes</span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-ms-fg-3">—</span>
       ),
   },
   {
     key: "status",
     label: "Status",
     render: (r) => (
-      <span className={r.is_active ? "text-muted-foreground" : "text-foreground"}>
+      <span className={r.is_active ? "text-ms-fg-2" : "text-ms-fg"}>
         {r.is_active ? "Active" : "Archived"}
       </span>
     ),
@@ -107,13 +108,9 @@ function ClassroomListInner() {
         searchPlaceholder="Search class, room or teacher"
         rowLabel={(row) => row.name}
         headerAction={
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="h-8 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-          >
+          <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>
             Add classroom
-          </button>
+          </Button>
         }
       />
 

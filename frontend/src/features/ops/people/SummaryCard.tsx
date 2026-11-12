@@ -10,8 +10,7 @@ import {
   Target,
   Users,
 } from "lucide-react";
-import { Badge } from "@/components/ui";
-import { Fieldset, Row } from "./Fieldset";
+import { Fieldset, Pill, Row } from "./Fieldset";
 import { formatDay } from "./format";
 import type { PersonCore } from "./personApi";
 
@@ -40,7 +39,7 @@ function hasSatGoal(sat: PersonCore["sat"]): boolean {
 }
 
 const yesNo = (yes: boolean, good: string, bad: string) =>
-  yes ? <Badge variant="success">{good}</Badge> : <Badge variant="warning">{bad}</Badge>;
+  yes ? <Pill tone="positive">{good}</Pill> : <Pill tone="attention">{bad}</Pill>;
 
 export function SummaryCard({ person }: { person: PersonCore }) {
   const staff = person.staff;
@@ -57,9 +56,9 @@ export function SummaryCard({ person }: { person: PersonCore }) {
           </Row>
           <Row label="lc-up teacher" icon={Link2}>
             {staff.lcup_teacher ? (
-              <Badge variant="neutral">{staff.lcup_teacher.name}</Badge>
+              <Pill>{staff.lcup_teacher.name}</Pill>
             ) : (
-              <Badge variant="outline">Not linked</Badge>
+              <Pill tone="line">Not linked</Pill>
             )}
           </Row>
         </>
@@ -70,13 +69,13 @@ export function SummaryCard({ person }: { person: PersonCore }) {
               {person.groups.length > 0 ? (
                 <span className="inline-flex flex-wrap justify-end gap-1">
                   {person.groups.map((g) => (
-                    <Badge key={g.id} variant="primary">
+                    <Pill key={g.id}>
                       {g.name}
-                    </Badge>
+                    </Pill>
                   ))}
                 </span>
               ) : (
-                <Badge variant="warning">Not in any class</Badge>
+                <Pill tone="attention">Not in any class</Pill>
               )}
             </Row>
           ) : person.past_groups.length > 0 ? (
@@ -88,10 +87,10 @@ export function SummaryCard({ person }: { person: PersonCore }) {
       )}
 
       <Row label="Email" icon={Mail}>
-        {person.email ? yesNo(person.email_verified, "Verified", "Not verified") : <span className="text-muted-foreground">None</span>}
+        {person.email ? yesNo(person.email_verified, "Verified", "Not verified") : <span className="text-ms-fg-3">None</span>}
       </Row>
       <Row label="Telegram" icon={Send}>
-        {person.telegram_linked ? <Badge variant="success">Linked</Badge> : <Badge variant="outline">Not linked</Badge>}
+        {person.telegram_linked ? <Pill tone="positive">Linked</Pill> : <Pill tone="line">Not linked</Pill>}
       </Row>
 
       {/* A centre student always shows these; a public user only what is there — a "No" and two
@@ -110,7 +109,7 @@ export function SummaryCard({ person }: { person: PersonCore }) {
               </Row>
               <Row label="Targets" icon={Target}>
                 {targetsText(person.sat)}
-                <span className="block text-xs font-normal text-muted-foreground">set by the student</span>
+                <span className="block text-xs font-normal text-ms-fg-3">set by the student</span>
               </Row>
             </>
           ) : null}

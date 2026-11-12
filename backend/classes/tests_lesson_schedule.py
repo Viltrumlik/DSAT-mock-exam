@@ -19,6 +19,7 @@ from classes.lesson_schedule import (
     parse_lesson_time,
 )
 from classes.models import Classroom
+from classes.models_attendance import AttendanceSession
 
 User = get_user_model()
 
@@ -95,6 +96,13 @@ class NextLessonTests(TestCase):
         got = next_lesson_start_after(c, self._aware(2026, 7, 13, 8, 0))
         self.assertIsNotNone(got)
         self.assertGreaterEqual(got.date(), date(2026, 8, 1))
+
+    def test_a_class_moved_up_a_level_is_due_at_its_next_lesson_not_the_new_course(self):
+        # 2026-07-13 is a Monday and the class met then; lc-up's new course starts Thursday the 16th.
+        c = self._classroom(start_date=date(2026, 7, 16))
+        AttendanceSession.objects.create(classroom=c, date=date(2026, 7, 13))
+        got = next_lesson_start_after(c, self._aware(2026, 7, 13, 19, 0))
+        self.assertEqual(got, self._aware(2026, 7, 15, 18, 0))
 
     def test_unparseable_lesson_time_means_no_deadline(self):
         c = self._classroom(lesson_time="whenever")

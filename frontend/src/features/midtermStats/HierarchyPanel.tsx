@@ -1,7 +1,6 @@
 "use client";
 
-import { ChevronRight, Home } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { Icon } from "@/components/ui/Icon";
 import {
   UNASSIGNED_BRANCH_NOTE,
   UNASSIGNED_TEACHER_NOTE,
@@ -80,24 +79,22 @@ export function HierarchyBreadcrumb({
     icon?: boolean,
   ) => (
     <li key={key} className="flex min-w-0 items-center gap-1">
-      {depth > 0 ? (
-        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      ) : null}
+      {depth > 0 ? <Icon name="right" size="sm" className="size-3.5 text-ms-fg-3" /> : null}
       {current ? (
         <span
           aria-current="page"
-          className="inline-flex min-w-0 items-center gap-1 px-1.5 py-0.5 font-bold text-foreground"
+          className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1 font-semibold text-ms-fg"
         >
-          {icon ? <Home className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
+          {icon ? <Icon name="home" size="sm" className="size-3.5" /> : null}
           <span className="truncate">{label}</span>
         </span>
       ) : (
         <button
           type="button"
           onClick={() => onGo(depth)}
-          className="ds-ring inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+          className="ms-transition inline-flex min-w-0 items-center gap-1.5 rounded-[8px] px-2 py-1 font-medium text-ms-fg-2 hover:bg-ms-surface-2 hover:text-ms-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ms-ring"
         >
-          {icon ? <Home className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
+          {icon ? <Icon name="home" size="sm" className="size-3.5" /> : null}
           <span className="truncate">{label}</span>
         </button>
       )}
@@ -106,7 +103,7 @@ export function HierarchyBreadcrumb({
 
   return (
     <nav aria-label="Where you are">
-      <ol className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px]">
+      <ol className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[14px]">
         {crumb("__root", rootLabel, 0, path.length === 0, true)}
         {path.map((node, i) =>
           crumb(node.key, node.name, i + 1, i === path.length - 1, false),
@@ -127,13 +124,13 @@ export function HierarchyBreadcrumb({
 function ScopeFigure({ node }: { node: TreeNode }) {
   return (
     <div className="text-right">
-      <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+      <p className="text-[13px] text-ms-fg-3">
         {LEVEL_NOUN[node.level].one} total
       </p>
-      <p className="mt-0.5 text-xl font-extrabold tabular-nums text-foreground">
+      <p className="mt-0.5 text-[22px] font-bold leading-7 tabular-nums text-ms-fg">
         <RateFigure rate={node.pass_rate} reason={rateReason("pass", node.roster)} />
       </p>
-      <p className="text-[11px] tabular-nums text-muted-foreground">
+      <p className="text-[12px] tabular-nums text-ms-fg-3">
         {formatShare(node.passed, node.roster)} students
       </p>
     </div>
@@ -157,14 +154,11 @@ function NodeNameButton({ node, onOpen }: { node: TreeNode; onOpen: (node: TreeN
       <button
         type="button"
         onClick={() => onOpen(node)}
-        className="ds-ring group -mx-1 flex w-full min-w-0 items-center gap-2 rounded-lg px-1 py-0.5 text-left"
+        className="group -mx-1 flex w-full min-w-0 items-center gap-2 rounded-[8px] px-1 py-0.5 text-left focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ms-ring"
       >
-        <span className="flex min-w-0 items-center gap-2 truncate font-bold text-foreground group-hover:text-primary">
+        <span className="ms-transition flex min-w-0 items-center gap-1.5 truncate font-semibold text-ms-fg group-hover:text-ms-primary-text">
           {node.name}
-          <ChevronRight
-            className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary"
-            aria-hidden
-          />
+          <Icon name="right" size="sm" className="size-3.5 text-ms-fg-3 group-hover:text-ms-primary-text" />
         </span>
         <span className="sr-only">
           {leaf
@@ -172,7 +166,7 @@ function NodeNameButton({ node, onOpen }: { node: TreeNode; onOpen: (node: TreeN
             : `Show the ${childCountLabel(node)} inside ${node.name}`}
         </span>
       </button>
-      <p className="mt-0.5 flex items-center gap-2 truncate text-[12px] text-muted-foreground">
+      <p className="mt-0.5 flex items-center gap-2 truncate text-[12px] text-ms-fg-3">
         <span className="truncate">{nodeSubline(node)}</span>
         {isGapNode(node) ? <GapMarker note={gapNote(node.level)} /> : null}
       </p>
@@ -269,7 +263,7 @@ export function HierarchyPanel({
   const rootLabel = `All ${LEVEL_NOUN[roots[0]?.level ?? "region"].many}`;
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <HierarchyBreadcrumb path={path} rootLabel={rootLabel} onGo={onGo} />
 
       <SectionCard
@@ -292,19 +286,19 @@ export function HierarchyPanel({
         <HierarchyTable rows={rows} level={level} kidLevel={kidLevel} onOpen={onOpen} />
         <DenominatorNote rows={rows} />
         {derived ? (
-          <div className="border-t border-border px-5 py-3">
+          <div className="border-t border-ms-line px-5 py-3">
             <p
               role="status"
-              className={cn(
-                "rounded-xl border border-warning/25 bg-warning-soft px-3 py-2",
-                "text-[13px] text-warning-foreground",
-              )}
+              className="flex items-start gap-2 rounded-ms-ctl border border-ms-attention-line bg-ms-attention-soft px-3 py-2 text-[13px] leading-[19px] text-ms-attention-fg"
             >
-              <strong className="font-bold">This hierarchy was rebuilt in the browser.</strong>{" "}
-              The server sent no tree with this month, so the levels above were grouped from the
-              class list here. Every count is exact except the student headcount, which is left
-              off the rows it cannot be known for — a student in two classes would be counted
-              twice.
+              <Icon name="warn" size="sm" className="mt-0.5 size-3.5" />
+              <span>
+                <strong className="font-semibold">This hierarchy was rebuilt in the browser.</strong>{" "}
+                The server sent no tree with this month, so the levels above were grouped from the
+                class list here. Every count is exact except the student headcount, which is left
+                off the rows it cannot be known for — a student in two classes would be counted
+                twice.
+              </span>
             </p>
           </div>
         ) : null}

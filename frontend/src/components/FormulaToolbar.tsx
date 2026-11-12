@@ -189,23 +189,55 @@ const QUICK_BTN =
 const GRID_BTN =
   "inline-flex h-8 min-w-[2.5rem] items-center justify-center rounded-lg border border-border/60 bg-card px-1.5 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5 active:scale-95 active:bg-primary/10";
 
+/**
+ * The console's look (design handoff v0.3; the module editor, PR 14b): its hairlines and corners, the
+ * active group in the primary's soft tint. The bank, assessment and set editors keep the studio look.
+ */
+const LOOK = {
+  studio: {
+    root: "select-none bg-surface-2/40 px-3 py-2 space-y-2",
+    label: "mr-1 shrink-0 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60",
+    quick: QUICK_BTN,
+    grid: GRID_BTN,
+    divider: "border-t border-border/40",
+    tab: "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide transition-colors",
+    tabOn: "bg-primary text-primary-foreground",
+    tabOff: "text-muted-foreground hover:text-foreground hover:bg-surface-2",
+  },
+  console: {
+    root: "select-none space-y-2 px-4 pb-2.5 pt-2",
+    label: "mr-1.5 shrink-0 text-ms-over uppercase text-ms-fg-3",
+    quick:
+      "ms-transition ms-press inline-flex h-8 min-w-9 items-center justify-center rounded-[10px] border border-ms-border bg-ms-card px-1.5 text-[14px] font-medium text-ms-fg hover:border-ms-border-strong hover:bg-ms-surface-2",
+    grid:
+      "ms-transition ms-press inline-flex h-8 min-w-10 items-center justify-center rounded-[10px] border border-ms-border bg-ms-card px-1.5 text-[14px] text-ms-fg hover:border-ms-border-strong hover:bg-ms-surface-2",
+    divider: "border-t border-ms-line",
+    tab: "ms-transition shrink-0 rounded-[8px] px-2.5 py-1 text-[12px] font-semibold",
+    tabOn: "bg-ms-primary-soft text-ms-primary-text",
+    tabOff: "text-ms-fg-2 hover:bg-ms-surface-2 hover:text-ms-fg",
+  },
+} as const;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export type FormulaToolbarProps = {
   /** Called when a formula button is clicked. Parent handles insertion. */
   onInsert: (snippet: string, cursorOffset: number) => void;
+  /** "console": the module editor's look; every other editor keeps "studio". */
+  look?: keyof typeof LOOK;
 };
 
-export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
+export function FormulaToolbar({ onInsert, look = "studio" }: FormulaToolbarProps) {
   const [activeGroupId, setActiveGroupId] = React.useState<string>(GROUPS[0].id);
   const group = GROUPS.find((g) => g.id === activeGroupId) ?? GROUPS[0];
+  const k = LOOK[look];
 
   return (
-    <div className="select-none bg-surface-2/40 px-3 py-2 space-y-2">
+    <div className={k.root}>
 
       {/* ── Quick-access row ───────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 flex-wrap">
-        <span className="mr-1 shrink-0 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
+        <span className={k.label}>
           Quick
         </span>
         {QUICK.map((item) => (
@@ -216,7 +248,7 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
             aria-label={item.title}
             onPointerDown={noFocusSteal}
             onClick={() => onInsert(item.insert, item.cursor)}
-            className={QUICK_BTN}
+            className={k.quick}
           >
             {item.textLabel
               ? <span
@@ -235,7 +267,7 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
       </div>
 
       {/* ── Divider ────────────────────────────────────────────────────────── */}
-      <div className="border-t border-border/40" />
+      <div className={k.divider} />
 
       {/* ── Category tab strip ─────────────────────────────────────────────── */}
       <div className="flex gap-0.5 overflow-x-auto scrollbar-none">
@@ -246,12 +278,7 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
             aria-pressed={g.id === activeGroupId}
             onPointerDown={noFocusSteal}
             onClick={() => setActiveGroupId(g.id)}
-            className={[
-              "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide transition-colors",
-              g.id === activeGroupId
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-surface-2",
-            ].join(" ")}
+            className={[k.tab, g.id === activeGroupId ? k.tabOn : k.tabOff].join(" ")}
           >
             {g.label}
           </button>
@@ -268,7 +295,7 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
             aria-label={item.title}
             onPointerDown={noFocusSteal}
             onClick={() => onInsert(item.insert, item.cursor)}
-            className={GRID_BTN}
+            className={k.grid}
           >
             <MathText text={item.display} className="pointer-events-none leading-none" />
           </button>

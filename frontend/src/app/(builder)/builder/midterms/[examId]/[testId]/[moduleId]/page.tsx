@@ -56,21 +56,20 @@ function MidtermModuleEditor({
     moduleData?.module_order != null ? `Module ${moduleData.module_order}` : `Module #${moduleId}`;
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">
-      <ModuleQuestionsPanel
-        testId={testId}
-        moduleId={moduleId}
-        packTitle={exam?.title ?? undefined}
-        sectionSubject={section?.subject ?? undefined}
-        moduleOrder={moduleLabel}
-        backHref="/builder/midterms"
-        backLabel="Midterms"
-        examKind={exam?.kind ?? "MIDTERM"}
-        scoringScale={exam?.midterm_scoring_scale ?? undefined}
-        midtermModuleQuestionLimit={exam?.midterm_module_question_limit ?? undefined}
-        midtermLevel={exam?.midterm_level ?? undefined}
-      />
-    </div>
+    // The panel is the whole window: its own top bar, outline and question (PR 14a).
+    <ModuleQuestionsPanel
+      testId={testId}
+      moduleId={moduleId}
+      packTitle={exam?.title ?? undefined}
+      sectionSubject={section?.subject ?? undefined}
+      moduleOrder={moduleLabel}
+      backHref="/builder/midterms"
+      backLabel="Midterms"
+      examKind={exam?.kind ?? "MIDTERM"}
+      scoringScale={exam?.midterm_scoring_scale ?? undefined}
+      midtermModuleQuestionLimit={exam?.midterm_module_question_limit ?? undefined}
+      midtermLevel={exam?.midterm_level ?? undefined}
+    />
   );
 }
 
@@ -89,10 +88,10 @@ export default function BuilderMidtermModulePage() {
     return (
       <div className="flex min-h-[40vh] items-center justify-center p-8">
         <div className="text-center">
-          <p className="font-semibold text-foreground">Invalid route parameters.</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="font-semibold text-ms-fg">Invalid route parameters.</p>
+          <p className="mt-1 text-[14px] text-ms-fg-2">
             Expected{" "}
-            <code className="rounded bg-muted px-1">/builder/midterms/[examId]/[testId]/[moduleId]</code>
+            <code className="rounded-[6px] bg-ms-surface-2 px-1 font-ms-mono text-[13px]">/builder/midterms/[examId]/[testId]/[moduleId]</code>
           </p>
         </div>
       </div>

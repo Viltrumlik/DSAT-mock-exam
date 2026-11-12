@@ -1,18 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BookMarked, Loader2, Plus, ShieldX, Users } from "lucide-react";
+
+import { Icon } from "@/components/ui/Icon";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { Button, EmptyState } from "@/features/console/ui";
 import { accessApi, type ResourceAccessGrant } from "@/lib/accessApi";
 import { cn } from "@/lib/cn";
 import { GrantPanel } from "./GrantPanel";
 import { ResourcePicker, type SelectedResource } from "./ResourcePicker";
-import { Avatar } from "./accessUi";
-
-const STATUS_STYLES: Record<string, string> = {
-  ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  REVOKED: "bg-red-50 text-red-700 border-red-200",
-  EXPIRED: "bg-amber-50 text-amber-700 border-amber-200",
-};
+import {
+  AccessAvatar,
+  CARD,
+  EYEBROW,
+  GrantStatus,
+  LoadingRows,
+  RowAction,
+  TABLE,
+  TABLE_CARD,
+  TD,
+  TH,
+  TH_R,
+  TR,
+} from "./accessConsole";
 
 /** By resource: pick one resource, see who can access it and grant/revoke. */
 export function ResourceAccessViewer({ onChanged }: { onChanged?: () => void }) {
@@ -65,37 +75,33 @@ export function ResourceAccessViewer({ onChanged }: { onChanged?: () => void }) 
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* Resource picker (single) */}
-      <div className="rounded-2xl border border-border bg-card p-3">
-        <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-          <BookMarked className="h-3.5 w-3.5" /> Pick a test / resource
-        </label>
+      <div className={cn(CARD, "p-4")}>
+        <p className={cn(EYEBROW, "mb-2")}>
+          <Icon name="bookmark" size="sm" /> Pick a test / resource
+        </p>
         <ResourcePicker value={picked} onChange={setPicked} single />
       </div>
 
       {active && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           {/* Active resource header */}
-          <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center gap-3">
-              <span className="rounded-xl bg-surface-2 p-2.5 text-primary">
-                <BookMarked className="h-5 w-5" />
+          <div className={cn(CARD, "flex flex-wrap items-center justify-between gap-3 p-4")}>
+            <div className="flex min-w-0 flex-1 basis-[18rem] items-center gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-ms-ctl bg-ms-primary-soft text-ms-primary-text">
+                <Icon name="bookmark" />
               </span>
-              <div>
-                <div className="text-base font-extrabold text-foreground">{active.label}</div>
-                <div className="text-xs text-muted-foreground">
+              <div className="min-w-0">
+                <div className="truncate text-[16px] font-bold text-ms-fg">{active.label}</div>
+                <div className="text-[13px] text-ms-fg-3">
                   {grants.length} user{grants.length === 1 ? "" : "s"} with active access
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setAdding((v) => !v)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-[var(--primary-hover)]"
-            >
-              <Plus className="h-4 w-4" /> Add users
-            </button>
+            <Button variant="primary" icon="plus" onClick={() => setAdding((v) => !v)}>
+              Add users
+            </Button>
           </div>
 
           {adding && (
@@ -109,69 +115,60 @@ export function ResourceAccessViewer({ onChanged }: { onChanged?: () => void }) 
             />
           )}
 
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div>
-          )}
+          {error && <LibraryError>{error}</LibraryError>}
 
           {/* Users table */}
-          <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3">User</th>
-                  <th className="px-4 py-3">Source</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Expires</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /></td></tr>
-                ) : grants.length === 0 ? (
+          <div className={TABLE_CARD}>
+            <div className="overflow-x-auto">
+              <table className={TABLE}>
+                <thead>
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                      <Users className="mx-auto mb-2 h-5 w-5 opacity-50" />
-                      No one has access yet. Use “Add users”.
-                    </td>
+                    <th scope="col" className={TH}>User</th>
+                    <th scope="col" className={TH}>Source</th>
+                    <th scope="col" className={TH}>Status</th>
+                    <th scope="col" className={TH}>Expires</th>
+                    <th scope="col" className={TH_R}>Actions</th>
                   </tr>
-                ) : (
-                  grants.map((g) => (
-                    <tr key={g.id} className="border-b border-border last:border-b-0 hover:bg-surface-2/50">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar name={g.user_name || g.user_email || `#${g.id}`} seed={g.user_email || g.id} size={32} src={g.user_profile_image_url} />
-                          <div className="min-w-0">
-                            <div className="truncate font-bold text-foreground">{g.user_name}</div>
-                            <div className="truncate text-xs text-muted-foreground">{g.user_email}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3"><span className="text-xs font-semibold text-muted-foreground">{g.source}</span></td>
-                      <td className="px-4 py-3">
-                        <span className={cn("inline-block rounded-md border px-2 py-0.5 text-xs font-bold", STATUS_STYLES[g.status])}>{g.status}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {g.expires_at ? new Date(g.expires_at).toLocaleDateString() : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end">
-                          <button
-                            type="button"
-                            title="Revoke"
-                            onClick={() => void revoke(g)}
-                            disabled={busyId === g.id}
-                            className="rounded-lg border border-border p-1.5 text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
-                          >
-                            {busyId === g.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldX className="h-4 w-4" />}
-                          </button>
-                        </div>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <LoadingRows cols={5} />
+                  ) : grants.length === 0 ? (
+                    <tr>
+                      <td colSpan={5}>
+                        <EmptyState icon="users" title="No one has access yet. Use “Add users”." />
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    grants.map((g) => (
+                      <tr key={g.id} className={TR}>
+                        <td className={TD}>
+                          <div className="flex items-center gap-2.5">
+                            <AccessAvatar name={g.user_name || g.user_email || `#${g.id}`} seed={g.user_email || g.id} size="sm" src={g.user_profile_image_url} />
+                            <div className="min-w-0">
+                              <div className="truncate font-semibold text-ms-fg">{g.user_name}</div>
+                              <div className="truncate text-[13px] text-ms-fg-3">{g.user_email}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className={cn(TD, "text-[13px] font-medium text-ms-fg-3")}>{g.source}</td>
+                        <td className={TD}>
+                          <GrantStatus status={g.status} />
+                        </td>
+                        <td className={cn(TD, "whitespace-nowrap text-[13px] text-ms-fg-3")}>
+                          {g.expires_at ? new Date(g.expires_at).toLocaleDateString() : "—"}
+                        </td>
+                        <td className={TD}>
+                          <div className="flex items-center justify-end">
+                            <RowAction title="Revoke" danger onClick={() => void revoke(g)} icon="shield" busy={busyId === g.id} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

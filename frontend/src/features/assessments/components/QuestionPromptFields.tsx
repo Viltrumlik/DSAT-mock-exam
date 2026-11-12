@@ -1,8 +1,11 @@
 "use client";
 
+import { useId } from "react";
+
 import type { AssessmentQuestion } from "@/features/assessments/types";
 import { AssessmentText } from "@/lib/assessmentText";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { cn } from "@/lib/cn";
+import { FIELD_LABEL, SERIF_AREA } from "@/features/questionsAdmin/questionLook";
 import { ImageUpload } from "@/features/assessments/components/ImageUpload";
 import type {
   AssessmentImageKey,
@@ -10,10 +13,9 @@ import type {
   AssessmentQuestionEditorDraft,
 } from "@/features/assessments/components/assessmentQuestionEditorShared";
 
-const INPUT = STUDIO_INPUT;
-const LABEL = STUDIO_FIELD_LABEL;
-
 // ─── Question stem + image + stimulus excerpt ─────────────────────────────────
+// In the student's Georgia (PR 17c, as the module editor's question pane). The face sits on a wrapper:
+// globals.css gives every control `font-family: inherit`, so a font utility on the textarea never applies.
 
 export function QuestionPromptFields({
   draft,
@@ -34,23 +36,29 @@ export function QuestionPromptFields({
     setVal: (v: string) => void,
   ) => (e: React.FocusEvent<HTMLTextAreaElement | HTMLInputElement>) => void;
 }) {
+  const id = useId();
   return (
     <>
       {/* ── Primary content (rendered FIRST, at the top) ── */}
       <div>
-        <label className={LABEL}>Main content — shown first (Math: the question · Reading: the passage)</label>
-        <textarea
-          className={`${INPUT} min-h-[140px] leading-relaxed`}
-          disabled={disabled}
-          placeholder="Shown at the top. Math: the full question. Reading: the passage/stimulus. LaTeX supported: \( x^2 + 1 = 0 \). Bold **like this**, italic *like this*."
-          value={draft.prompt}
-          onChange={(e) => onPatch({ prompt: e.target.value })}
-          onFocus={trackFocus((v) => onPatch({ prompt: v }))}
-        />
+        <label htmlFor={`${id}-main`} className={FIELD_LABEL}>
+          Main content — shown first (Math: the question · Reading: the passage)
+        </label>
+        <div className="font-ms-serif">
+          <textarea
+            id={`${id}-main`}
+            className={cn(SERIF_AREA, "min-h-[140px] text-[17px] leading-7")}
+            disabled={disabled}
+            placeholder="Shown at the top. Math: the full question. Reading: the passage/stimulus. LaTeX supported: \( x^2 + 1 = 0 \). Bold **like this**, italic *like this*."
+            value={draft.prompt}
+            onChange={(e) => onPatch({ prompt: e.target.value })}
+            onFocus={trackFocus((v) => onPatch({ prompt: v }))}
+          />
+        </div>
         {draft.prompt.trim() && (
-          <div className="mt-2 rounded-xl border border-border/60 bg-surface-2/50 px-3 py-2.5">
-            <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">Preview</p>
-            <AssessmentText text={draft.prompt} block className="text-sm leading-relaxed text-foreground" />
+          <div className="animate-ms-fade-in mt-2.5 rounded-ms-ctl border border-ms-border bg-ms-card px-4 py-3">
+            <p className="mb-1 text-ms-over uppercase text-ms-fg-3">Preview</p>
+            <AssessmentText text={draft.prompt} block className="font-ms-serif text-[17px] leading-7 text-ms-fg" />
           </div>
         )}
       </div>
@@ -69,15 +77,20 @@ export function QuestionPromptFields({
 
       {/* ── Question prompt (rendered AFTER the main content, right above the choices) ── */}
       <div>
-        <label className={LABEL}>Question prompt — shown right above the choices (optional)</label>
-        <textarea
-          className={`${INPUT} min-h-[80px] leading-relaxed`}
-          disabled={disabled}
-          placeholder="For a reading question: the actual question shown under the passage, e.g. “Based on the text, why …?”. Leave blank if the main content already is the question."
-          value={draft.question_prompt}
-          onChange={(e) => onPatch({ question_prompt: e.target.value })}
-          onFocus={trackFocus((v) => onPatch({ question_prompt: v }))}
-        />
+        <label htmlFor={`${id}-prompt`} className={FIELD_LABEL}>
+          Question prompt — shown right above the choices (optional)
+        </label>
+        <div className="font-ms-serif">
+          <textarea
+            id={`${id}-prompt`}
+            className={cn(SERIF_AREA, "min-h-[80px] text-[16px] leading-[26px]")}
+            disabled={disabled}
+            placeholder="For a reading question: the actual question shown under the passage, e.g. “Based on the text, why …?”. Leave blank if the main content already is the question."
+            value={draft.question_prompt}
+            onChange={(e) => onPatch({ question_prompt: e.target.value })}
+            onFocus={trackFocus((v) => onPatch({ question_prompt: v }))}
+          />
+        </div>
       </div>
     </>
   );

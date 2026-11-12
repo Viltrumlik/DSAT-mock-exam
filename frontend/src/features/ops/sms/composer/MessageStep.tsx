@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 
-import { Alert, Field, Input, Select } from "@/components/ui";
+import { Alert, Field, Input, Select } from "../consoleKit";
 import { cn } from "@/lib/cn";
 import { defaultRoles, firstLine, plural, roleLabel, slotLabel } from "../format";
 import { LoadError } from "../panelKit";
@@ -58,7 +58,7 @@ export function MessageStep({
         <Input id={`${uid}-search`} inputSize="sm" value={search} onChange={(e) => setSearch(e.target.value)} />
       </Field>
       {!templates.isPending && usable.length === 0 ? (
-        <p className="text-[13px] text-muted-foreground">No usable template yet — refresh the list on the Templates tab.</p>
+        <p className="text-[13px] text-ms-fg-3">No usable template yet — refresh the list on the Templates tab.</p>
       ) : (
         <ul className="max-h-72 space-y-1.5 overflow-y-auto">
           {shown.map((t) => (
@@ -68,18 +68,18 @@ export function MessageStep({
                 aria-pressed={t.eskiz_id === templateId}
                 onClick={() => choose(t)}
                 className={cn(
-                  "w-full rounded-md border px-3 py-2 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                  t.eskiz_id === templateId ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
+                  "w-full rounded-md border px-3 py-2 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ms-ring",
+                  t.eskiz_id === templateId ? "border-ms-primary bg-ms-primary-soft" : "border-ms-border hover:bg-ms-surface-2",
                 )}
               >
                 <span className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-semibold text-foreground">{t.label}</span>
+                  <span className="font-semibold text-ms-fg">{t.label}</span>
                   {t.used_count > 0 ? (
-                    <span className="text-[12px] text-muted-foreground">Used {plural(t.used_count, "time")}</span>
+                    <span className="text-[12px] text-ms-fg-3">Used {plural(t.used_count, "time")}</span>
                   ) : null}
-                  {t.status === "reklama" ? <span className="text-[12px] text-muted-foreground">Ad price</span> : null}
+                  {t.status === "reklama" ? <span className="text-[12px] text-ms-fg-3">Ad price</span> : null}
                 </span>
-                <span className="mt-0.5 block truncate text-muted-foreground">{firstLine(t.original || t.pattern)}</span>
+                <span className="mt-0.5 block truncate text-ms-fg-3">{firstLine(t.original || t.pattern)}</span>
               </button>
             </li>
           ))}
@@ -87,11 +87,11 @@ export function MessageStep({
       )}
 
       {chosen && chosen.slots.length === 0 ? (
-        <p className="text-[13px] text-muted-foreground">This template has no slots: everyone gets the same text.</p>
+        <p className="text-[13px] text-ms-fg-3">This template has no slots: everyone gets the same text.</p>
       ) : null}
       {chosen
         ? chosen.slots.map((slot, i) => (
-            <div key={i} className="space-y-2 border border-border p-3">
+            <div key={i} className="space-y-2 border border-ms-border p-3">
               <Field label={`Slot ${i + 1} — ${slotLabel(slot)}`} htmlFor={`${uid}-role-${i}`}>
                 <Select
                   id={`${uid}-role-${i}`}
@@ -120,7 +120,7 @@ export function MessageStep({
           ))
         : null}
       {chosen && roles.includes("debt") ? (
-        <p className="text-[13px] text-muted-foreground">A debt slot leaves out anyone who is not in debt when it sends.</p>
+        <p className="text-[13px] text-ms-fg-3">A debt slot leaves out anyone who is not in debt when it sends.</p>
       ) : null}
     </div>
   );

@@ -20,7 +20,7 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-const { DebtorsPanel, FinanceOverviewPanel, PaymentsPanel } = await import("../FinancePanels");
+const { DebtorsPanel, FinanceOverviewPanel, PaymentsPanel, debtFinding, methodFinding } = await import("../FinancePanels");
 
 let host: HTMLElement;
 let root: Root;
@@ -128,9 +128,9 @@ describe("finance overview", () => {
     const text = host.textContent ?? "";
     expect(text).toContain("Debt freeze: on — from day 6 of each month");
     expect(text).toContain("Total debt");
-    expect(text).toContain("2,500,000 UZS");
-    expect(text).toContain("4,200,000 UZS");
-    expect(text).toContain("300,000 UZS");
+    expect(text).toMatch(/2,500,000\s*UZS/); // a tile: the number, its unit beside it
+    expect(text).toMatch(/4,200,000\s*UZS/); // a tile: the number, its unit beside it
+    expect(text).toMatch(/300,000\s*UZS/); // a tile: the number, its unit beside it
     expect(text).toContain("Cash");
     expect(text).toContain("Card");
     const row = [...host.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes("Junior G21 | Math"));
@@ -144,6 +144,18 @@ describe("finance overview", () => {
       "/lcup/finance/summary/": { ...SUMMARY, freeze: { enabled: false, day: 6 } },
     });
     expect(host.textContent).toContain("Debt freeze: off");
+  });
+});
+
+describe("the overview's findings", () => {
+  it("names the group that owes the most, and the method most money came by", () => {
+    expect(debtFinding([{ label: "G1", value: 300_000 }, { label: "G2", value: 900_000 }, { label: "G3", value: 0 }])).toBe(
+      "G2 owes the most: 900,000 UZS, 75% of the debt.",
+    );
+    expect(debtFinding([{ label: "G1", value: 300_000 }])).toBe("Only G1 owes: 300,000 UZS.");
+    expect(debtFinding([{ label: "G1", value: 0 }])).toBe("No group owes anything.");
+    expect(methodFinding([{ label: "Cash", value: 600 }, { label: "Card", value: 200 }])).toBe("Cash brought 75% of the month's payments.");
+    expect(methodFinding([])).toBe("");
   });
 });
 
@@ -177,6 +189,13 @@ describe("debtors", () => {
     expect(host.textContent).toContain("Not in a group");
     expect(host.textContent).toContain("No account");
     expect(host.textContent).toContain("2 students · 1,300,000 UZS owed");
+  });
+
+  it("offers to remind every debtor by SMS, through the composer's review step", async () => {
+    await mount(<DebtorsPanel />, { "/lcup/finance/debtors/": DEBTORS });
+    // All of them, not just the filtered rows: the composer's Debtors audience is every learner who owes.
+    const remind = [...host.querySelectorAll("a")].find((a) => a.textContent === "Remind all 2");
+    expect(remind?.getAttribute("href")).toBe("/ops/sms/campaigns/new?audience=debtors");
   });
 
   it("asks first, then exempts the student from the freeze", async () => {

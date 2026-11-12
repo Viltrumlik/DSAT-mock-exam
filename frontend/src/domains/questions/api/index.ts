@@ -13,7 +13,7 @@
 
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import type { AssessmentQuestion } from "@/features/assessments/types";
-import type { QuestionWithContext, QuestionBankFilters } from "../types";
+import { UNCATEGORISED_CATEGORY, type QuestionWithContext, type QuestionBankFilters } from "../types";
 
 /**
  * List all questions across all assessment sets the current user can access.
@@ -90,6 +90,11 @@ export function applyClientFilters(
 
   if (filters.setId && filters.setId !== "all") {
     result = result.filter((q) => q.setId === filters.setId);
+  }
+
+  // The same grouping the Categories page shows: the trimmed name, or "(Uncategorised)" for none.
+  if (filters.category && filters.category !== "all") {
+    result = result.filter((q) => (q.category?.trim() || UNCATEGORISED_CATEGORY) === filters.category);
   }
 
   if (filters.search) {

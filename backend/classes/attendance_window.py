@@ -67,13 +67,17 @@ _REASON = {
 }
 
 
-def marking_window(classroom, day) -> tuple[datetime, datetime]:
+def marking_window(classroom, day, *, pushes_lcup: bool | None = None) -> tuple[datetime, datetime]:
     """``(opens_at, closes_at)`` for ``classroom``'s register on ``day``. Never ``None``.
 
     Opens when the lesson starts and closes :data:`MARKING_GRACE_MINUTES` after it ends, or
     :data:`LCUP_PUSH_LEAD_MINUTES` before that if its registers go to lc-up. A classroom whose
     ``lesson_time`` cannot be read gets the whole of ``day`` instead — see the module docstring
     on why that is the right degradation.
+
+    ``pushes_lcup`` is ``lcup.attendance_guard.pushes_to_lcup(classroom)``, passed by a caller that
+    already holds it for many classes at once (``classes.lessons_today``). Left out, it is asked
+    here, which costs a query per class while lc-up is on.
     """
     interval = lesson_interval(classroom, day)
     if interval is None:
@@ -82,14 +86,16 @@ def marking_window(classroom, day) -> tuple[datetime, datetime]:
         return opens_at, opens_at + timedelta(days=1)
 
     starts_at, ends_at = interval
-    grace = MARKING_GRACE_MINUTES - (LCUP_PUSH_LEAD_MINUTES if _pushes_to_lcup(classroom) else 0)
+    if pushes_lcup is None:
+        pushes_lcup = _pushes_to_lcup(classroom)
+    grace = MARKING_GRACE_MINUTES - (LCUP_PUSH_LEAD_MINUTES if pushes_lcup else 0)
     return starts_at, ends_at + timedelta(minutes=grace)
 
 
-def marking_state(classroom, day, *, now=None) -> str:
-    """``PENDING`` / ``OPEN`` / ``LOCKED`` for one register."""
+def marking_state(classroom, day, *, now=None, pushes_lcup: bool | None = None) -> str:
+    """``PENDING`` / ``OPEN`` / ``LOCKED`` for one register. ``pushes_lcup``: see ``marking_window``."""
     now = now or timezone.now()
-    opens_at, closes_at = marking_window(classroom, day)
+    opens_at, closes_at = marking_window(classroom, day, pushes_lcup=pushes_lcup)
     if now < opens_at:
         return STATE_PENDING
     if now > closes_at:

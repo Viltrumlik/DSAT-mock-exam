@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { Send } from "lucide-react";
 
-import { Badge } from "@/components/ui";
+import { Badge } from "./consoleKit";
 import { DeliveryRing, ringOf } from "./DeliveryRing";
 import { campaignBadge, dateTime, firstLine } from "./format";
 import { LiveDot } from "./look";
@@ -37,7 +37,7 @@ export function CampaignsPanel() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-[13px] text-ms-fg-3">
           Recipients are worked out when a campaign sends: a debtor who has paid by then is skipped.
         </p>
         <Link href={NEW_CAMPAIGN_PATH} className={`${LINK_BUTTON} ml-auto`}>
@@ -52,19 +52,19 @@ export function CampaignsPanel() {
         <LoadError what="campaigns" onRetry={() => void campaigns.refetch()} />
       ) : rows.length === 0 ? (
         <div className={`${BOX} px-3 py-10 text-center`}>
-          <Send className="mx-auto mb-2 h-7 w-7 text-muted-foreground" aria-hidden />
-          <p className="text-[13px] font-semibold text-foreground">No campaigns yet</p>
-          <p className="mt-1 text-[13px] text-muted-foreground">
+          <Send className="mx-auto mb-2 h-7 w-7 text-ms-fg-3" aria-hidden />
+          <p className="text-[13px] font-semibold text-ms-fg">No campaigns yet</p>
+          <p className="mt-1 text-[13px] text-ms-fg-3">
             Send an approved template to a student, some classes, a filter or every debtor.
           </p>
         </div>
       ) : (
-        <ul className={`${BOX} divide-y divide-border`}>
+        <ul className={`${BOX} divide-y divide-ms-line`}>
           {rows.map((c) => {
             const badge = campaignBadge(c.status);
             const ring = ringOf(c);
             return (
-              <li key={c.id} className="flex items-center gap-3 px-3 py-2 hover:bg-surface-2">
+              <li key={c.id} className="flex items-center gap-3 px-3 py-2 hover:bg-ms-surface-2">
                 {/* The same width either way, so the rows' text lines up. */}
                 <div className="w-[52px] shrink-0">{ring ? <DeliveryRing {...ring} /> : null}</div>
                 <div className="min-w-0 flex-1 text-[13px]">
@@ -74,12 +74,12 @@ export function CampaignsPanel() {
                     <Link
                       href={campaignHref(c.id)}
                       title={c.original || c.pattern}
-                      className="min-w-0 truncate font-medium text-primary hover:underline dark:text-primary-hover"
+                      className="min-w-0 truncate font-medium text-ms-primary-text hover:underline "
                     >
                       {firstLine(c.original || c.pattern) || `Campaign #${c.id}`}
                     </Link>
                   </div>
-                  <p className="mt-0.5 text-[12px] text-muted-foreground">
+                  <p className="mt-0.5 text-[12px] text-ms-fg-3">
                     {[c.audience_label, dateTime(c.scheduled_at), c.created_by_name, resultLabel(c)].filter(Boolean).join(" · ")}
                   </p>
                 </div>

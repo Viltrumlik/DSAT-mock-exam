@@ -1,49 +1,31 @@
 "use client";
 
-import {
-  AtSign,
-  BookCheck,
-  CalendarCheck,
-  ClipboardList,
-  Clock,
-  GraduationCap,
-  KeyRound,
-  LogOut,
-  Mail,
-  MoreHorizontal,
-  Phone,
-  School,
-  Snowflake,
-  Sun,
-  Trash2,
-  Trophy,
-  Users,
-  Wallet,
-} from "lucide-react";
-import { Avatar, Badge, DropdownMenu, DropdownMenuItem } from "@/components/ui";
-import { formatUzs } from "@/features/finance/financeApi";
+import type { ReactNode } from "react";
+
 import { ROLE_LABELS } from "@/lib/roles";
 import { formatDate, formatLastSeen } from "@/features/ops/users/peopleColumns";
-import { StatTile, type Tone } from "./Fieldset";
+import { Avatar, Badge, Button, HeaderCard, Menu, groupDigits, type GlanceFact } from "@/features/console/ui";
+import type { Tone as VerdictTone } from "@/features/console/ui";
+import type { Tone } from "./Fieldset";
 import { formatPhone } from "./format";
 import type { PersonCore } from "./personApi";
 
 /**
- * Who this is, at the top of every tab: the photo (owner, 2026-10-15: "studentning ma'lumotlari
- * yonida doim rasmi ham ko'rinib turishi kerak"), the name, how to reach them, what they are and
- * what state the account is in — each state in its own colour. On the Overview it also says the
- * figures the tabs below hold, once; the other tabs leave them out, so their own content starts
- * near the top. The actions sit on the right: the everyday ones as buttons, the rare and
- * destructive ones behind "More".
+ * Who this is, at the top of every tab (design handoff v0.3, DataDisplay · Header card; PR 10a): the photo
+ * (owner, 2026-10-15: "studentning ma'lumotlari yonida doim rasmi ham ko'rinib turishi kerak"), the name, how
+ * to reach them, what they are and what state the account is in — then the glance facts, which answer the
+ * desk's two questions first ("Did he come today?", "Does he owe?"), a notice that explains a frozen account
+ * in words, and the tab row at the card's foot. The everyday actions are buttons; the rare and destructive
+ * ones sit behind ⋯.
  */
 
 /** Roles that may be given a one-time password here (users.views_people_detail.ONE_TIME_PASSWORD_ROLES). */
 export const ONE_TIME_PASSWORD_ROLES = new Set(["student", "public_student", "teacher", "support_teacher"]);
 
 /**
- * Green from 85 %, amber from 60 %, red below — the same reading for attendance and homework. Red
- * is kept for a real problem: with amber starting at 70 a 64 % attendance and 2 of 3 homeworks
- * turned the whole glance red, and red that is everywhere stops being read.
+ * Green from 85 %, amber from 60 %, red below — the same reading for attendance and homework. Red is kept for
+ * a real problem: with amber starting at 70 a 64 % attendance and 2 of 3 homeworks turned the whole glance red,
+ * and red that is everywhere stops being read.
  */
 export function rateTone(rate: number | null | undefined): Tone {
   if (rate == null) return "neutral";
@@ -52,237 +34,188 @@ export function rateTone(rate: number | null | undefined): Tone {
   return "danger";
 }
 
-const ACTION =
-  "inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground shadow-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
-
-function RoleBadge({ person }: { person: PersonCore }) {
-  if (person.section === "students") return <Badge variant="primary">Student</Badge>;
-  if (person.section === "public") return <Badge variant="info">Public user</Badge>;
-  return <Badge variant="info">{ROLE_LABELS[person.role as keyof typeof ROLE_LABELS] ?? person.role}</Badge>;
+/** The same reading in the console's verdict words. */
+export function rateVerdict(rate: number | null | undefined): VerdictTone | undefined {
+  if (rate == null) return undefined;
+  return rate >= 85 ? "positive" : rate >= 60 ? "attention" : "critical";
 }
 
-function StatusBadge({ person }: { person: PersonCore }) {
-  if (person.frozen_reason === "debt") {
-    return (
-      <Badge variant="warning" dot>
-        Frozen — unpaid
-      </Badge>
-    );
-  }
-  if (person.is_frozen) {
-    return (
-      <Badge variant="danger" dot>
-        Frozen by admin
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="success" dot>
-      Active
-    </Badge>
-  );
+const MARK: Record<string, { word: string; tone: VerdictTone }> = {
+  PRESENT: { word: "Came", tone: "positive" },
+  LATE: { word: "Late", tone: "attention" },
+  ABSENT: { word: "Absent", tone: "critical" },
+  EXCUSED: { word: "Excused", tone: "neutral" },
+};
+
+/** "Did he come today?" — the first class meeting today, and how many more. */
+export function todayFact(person: PersonCore): GlanceFact {
+  const today = person.glance?.today ?? [];
+  if (!today.length) return { label: "Today", value: "No lesson", sub: person.groups.length ? "none of their classes meets today" : "in no class" };
+  const first = today[0];
+  const mark = first.status ? MARK[first.status] : null;
+  const where = [first.class_name, first.lesson_time ? `lesson ${first.lesson_time}` : ""].filter(Boolean).join(" · ");
+  return {
+    label: "Today",
+    value: mark ? mark.word : "Not marked yet",
+    tone: mark?.tone,
+    sub: today.length > 1 ? `${where} · +${today.length - 1} more` : where,
+  };
 }
 
-function Glance({ person }: { person: PersonCore }) {
+/** "Does he owe?" — lc-up's balance: a debt in so'm, or paid up. */
+export function moneyFact(person: PersonCore): GlanceFact {
+  if (!person.lcup) return { label: "Balance", value: "—", sub: "Not linked to lc-up" };
+  const balance = person.lcup.balance;
+  if (balance !== null && balance < 0) {
+    return { label: "Owes", value: groupDigits(String(Math.round(-balance))), unit: "so'm", tone: "critical", sub: person.lcup.exempt ? "lc-up balance · never frozen for debt" : "lc-up balance" };
+  }
+  return { label: "Balance", value: balance === null ? "—" : "Paid up", tone: balance === null ? undefined : "positive", sub: "lc-up balance" };
+}
+
+function facts(person: PersonCore): GlanceFact[] {
+  const seen: GlanceFact = { label: "Last seen", value: formatLastSeen(person.last_seen), sub: `Joined ${formatDate(person.date_joined)}` };
   const g = person.glance;
   if (person.staff) {
     const w = person.staff.workload;
-    return (
-      <>
-        <StatTile label="Classes" value={w.classes} icon={School} tone="primary" />
-        <StatTile label="Students" value={w.students} icon={Users} tone="primary" />
-        <StatTile
-          label="To review"
-          value={w.to_review}
-          icon={ClipboardList}
-          tone={w.to_review > 0 ? "warning" : "success"}
-          sub={w.to_review > 0 ? "submissions waiting" : "all reviewed"}
-        />
-        <StatTile label="Last seen" value={formatLastSeen(person.last_seen)} icon={Clock} sub={`Joined ${formatDate(person.date_joined)}`} />
-      </>
-    );
+    return [
+      { label: "Classes", value: w.classes },
+      { label: "Students", value: w.students },
+      { label: "To review", value: w.to_review, tone: w.to_review > 0 ? "attention" : "positive", sub: w.to_review > 0 ? "submissions waiting" : "all reviewed" },
+      seen,
+    ];
   }
-  const balance = person.lcup?.balance ?? null;
-  const balanceTile = !person.lcup ? (
-    <StatTile label="Balance" value="—" icon={Wallet} sub="Not linked to lc-up" />
-  ) : balance !== null && balance < 0 ? (
-    <StatTile label="Owes" value={formatUzs(-balance)} icon={Wallet} tone="danger" sub="lc-up balance" />
-  ) : (
-    <StatTile label="Balance" value={balance === null ? "—" : "Paid up"} icon={Wallet} tone="success" sub="lc-up balance" />
-  );
-
   if (person.section === "public") {
-    return (
-      <>
-        <StatTile label="Mock exams" value={g?.mocks_taken ?? 0} icon={Trophy} tone="primary" sub="completed" />
-        <StatTile
-          label="Last mock"
-          value={g?.last_mock_total != null ? g.last_mock_total.toLocaleString("en-US") : "—"}
-          icon={GraduationCap}
-          tone={g?.last_mock_total ? "primary" : "neutral"}
-          sub={g?.last_mock_total ? "total score" : "none yet"}
-        />
-        {person.lcup ? balanceTile : <StatTile label="Joined" value={formatDate(person.date_joined)} icon={CalendarCheck} />}
-        <StatTile
-          label="Last seen"
-          value={formatLastSeen(person.last_seen)}
-          icon={Clock}
-          sub={person.lcup ? `Joined ${formatDate(person.date_joined)}` : undefined}
-        />
-      </>
-    );
+    return [
+      { label: "Mock exams", value: g?.mocks_taken ?? 0, sub: "completed" },
+      { label: "Last mock", value: g?.last_mock_total != null ? g.last_mock_total.toLocaleString("en-US") : "—", sub: g?.last_mock_total ? "total score" : "none yet" },
+      person.lcup ? moneyFact(person) : { label: "Joined", value: formatDate(person.date_joined) },
+      { ...seen, sub: person.lcup ? seen.sub : undefined },
+    ];
   }
-
   const rate = g?.attendance_rate ?? null;
-  const hw = g?.homework ?? null;
-  const hwRate = hw ? Math.round((100 * hw.completed) / hw.total) : null;
+  return [
+    todayFact(person),
+    moneyFact(person),
+    {
+      label: "Attendance",
+      value: rate == null ? "—" : `${Math.round(rate)} %`,
+      tone: rateVerdict(rate),
+      sub: rate == null ? "nothing marked yet" : `in ${person.groups.length} class${person.groups.length === 1 ? "" : "es"}`,
+    },
+    seen,
+  ];
+}
+
+function notice(person: PersonCore) {
+  if (person.frozen_reason === "debt") {
+    return {
+      tone: "frozen" as const,
+      icon: "ms-freeze" as const,
+      title: "Frozen for debt.",
+      body: "They can still come to lessons but can’t open homework or mocks. The freeze lifts when lc-up records the payment.",
+    };
+  }
+  if (person.is_frozen) {
+    return { tone: "frozen" as const, icon: "ms-freeze" as const, title: "Frozen by an admin.", body: "Their access stays closed until an admin unfreezes the account." };
+  }
+  return undefined;
+}
+
+function badges(person: PersonCore): ReactNode {
+  const otp = person.one_time_password;
+  const role =
+    person.section === "students" ? "Student" : person.section === "public" ? "Public user" : (ROLE_LABELS[person.role as keyof typeof ROLE_LABELS] ?? person.role);
   return (
     <>
-      {balanceTile}
-      <StatTile
-        label="Attendance"
-        value={rate == null ? "—" : `${Math.round(rate)}%`}
-        icon={CalendarCheck}
-        tone={rateTone(rate)}
-        sub={rate == null ? "nothing marked yet" : `in ${person.groups.length} class${person.groups.length === 1 ? "" : "es"}`}
-      />
-      <StatTile
-        label="Homework"
-        value={hw ? `${hw.completed} / ${hw.total}` : "—"}
-        icon={BookCheck}
-        tone={rateTone(hwRate)}
-        sub={hw ? `${hwRate}% handed in` : "none set yet"}
-      />
-      <StatTile label="Last seen" value={formatLastSeen(person.last_seen)} icon={Clock} sub={`Joined ${formatDate(person.date_joined)}`} />
+      <Badge tone={person.section === "public" ? "info" : "neutral"} icon="user">{role}</Badge>
+      {person.frozen_reason === "debt" ? (
+        <Badge tone="frozen" icon="snow">Frozen for debt</Badge>
+      ) : person.is_frozen ? (
+        <Badge tone="frozen" icon="snow">Frozen by an admin</Badge>
+      ) : (
+        <Badge tone="positive" dot>Active</Badge>
+      )}
+      {person.lcup ? <Badge tone="line" icon="link">lc-up linked</Badge> : null}
+      {otp ? (
+        <Badge tone={otp.locked ? "critical" : "attention"} icon="key">
+          {otp.locked ? "One-time password locked" : `One-time password · until ${formatDate(otp.expires_at)}`}
+        </Badge>
+      ) : null}
+      {person.last_seen ? null : <Badge tone="neutral">Never signed in</Badge>}
     </>
   );
 }
 
+function meta(person: PersonCore): ReactNode[] {
+  const out: ReactNode[] = [];
+  if (person.username) out.push(`@${person.username}`);
+  if (person.phone) out.push(formatPhone(person.phone));
+  if (person.email) {
+    const [user, ...domain] = person.email.split("@");
+    // A break allowed before the "@" only, so a phone splits "name" from "@domain".
+    out.push(
+      <span className="break-words">
+        {user}
+        <wbr />
+        {domain.length ? `@${domain.join("@")}` : ""}
+      </span>,
+    );
+  }
+  if (person.parent?.name || person.parent?.phone) {
+    out.push(`Parent: ${[person.parent.name, person.parent.phone ? formatPhone(person.parent.phone) : ""].filter(Boolean).join(" · ")}`);
+  }
+  return out;
+}
+
 export function PersonHeader({
   person,
-  glance,
   busy,
   onToggleFreeze,
   onOneTimePassword,
   onRevoke,
   onDelete,
+  children,
 }: {
   person: PersonCore;
-  /** Show the figures (the Overview); the other tabs hold them in full. */
-  glance: boolean;
   busy: boolean;
   onToggleFreeze: () => void;
   onOneTimePassword: () => void;
   onRevoke: () => void;
   onDelete: () => void;
+  /** The tab row, at the card's foot. */
+  children?: ReactNode;
 }) {
-  const otp = person.one_time_password;
   const canOtp = ONE_TIME_PASSWORD_ROLES.has(person.role);
-
   return (
-    <div className="rounded-2xl border border-border bg-card shadow-sm">
-      <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 items-start gap-4 sm:gap-5">
-          <Avatar
-            src={person.avatar_url}
-            name={person.name}
-            size={72}
-            className="ring-4 ring-primary-soft"
-          />
-          <div className="min-w-0 space-y-2.5">
-            <div>
-              {/* Wrapped, never cut: the name is the page's most important text ("Malika Karim…" on a phone). */}
-              <h1 className="break-words text-2xl font-semibold tracking-tight text-foreground">{person.name}</h1>
-              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                {person.username ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <AtSign aria-hidden className="h-3.5 w-3.5" />
-                    {person.username}
-                  </span>
-                ) : null}
-                {person.phone ? (
-                  <span className="inline-flex items-center gap-1.5 tabular-nums">
-                    <Phone aria-hidden className="h-3.5 w-3.5" />
-                    {formatPhone(person.phone)}
-                  </span>
-                ) : null}
-                {person.email ? (
-                  <span className="inline-flex min-w-0 items-center gap-1.5">
-                    <Mail aria-hidden className="h-3.5 w-3.5 shrink-0" />
-                    {/* A break allowed before the "@" only, so a phone splits "name" from "@domain"
-                        instead of leaving a lone "m" of ".com" on a line of its own. */}
-                    <span className="break-words">
-                      {person.email.split("@")[0]}
-                      <wbr />
-                      {person.email.includes("@") ? `@${person.email.split("@").slice(1).join("@")}` : ""}
-                    </span>
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <RoleBadge person={person} />
-              <StatusBadge person={person} />
-              {person.lcup ? <Badge variant="neutral">lc-up linked</Badge> : null}
-              {otp ? (
-                <Badge variant={otp.locked ? "danger" : "warning"}>
-                  {otp.locked
-                    ? "One-time password locked"
-                    : `One-time password · until ${formatDate(otp.expires_at)}`}
-                </Badge>
-              ) : null}
-              {person.last_seen ? null : <Badge variant="outline">Never signed in</Badge>}
-            </div>
-          </div>
-        </div>
-
-        {/* On a phone the one-time password takes a row of its own at full width, and Freeze and
-            "More" share the next — no label cut ("One-time…") and no "More" left alone on a line. */}
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap">
+    <HeaderCard
+      avatar={<Avatar name={person.name || person.username} src={person.avatar_url} size="lg" frozen={person.is_frozen} />}
+      title={person.name || person.username}
+      badges={badges(person)}
+      meta={meta(person)}
+      actions={
+        <>
           {canOtp ? (
-            <button
-              type="button"
-              disabled={busy || !person.phone}
-              title={person.phone ? undefined : "Add a phone number first"}
-              onClick={onOneTimePassword}
-              className={`${ACTION} col-span-2`}
-            >
-              <KeyRound aria-hidden className="h-4 w-4 shrink-0 text-primary" />
+            <Button icon="key" disabled={busy || !person.phone} title={person.phone ? undefined : "Add a phone number first"} onClick={onOneTimePassword}>
               One-time password
-            </button>
+            </Button>
           ) : null}
-          <button type="button" disabled={busy} onClick={onToggleFreeze} className={ACTION}>
-            {person.is_frozen ? (
-              <Sun aria-hidden className="h-4 w-4 text-success" />
-            ) : (
-              <Snowflake aria-hidden className="h-4 w-4 text-info-foreground" />
-            )}
+          <Button variant={person.is_frozen ? "primary" : "secondary"} icon="snow" disabled={busy} onClick={onToggleFreeze}>
             {person.is_frozen ? "Unfreeze" : "Freeze"}
-          </button>
-          <DropdownMenu
-            trigger={
-              <button type="button" aria-label="More actions" disabled={busy} className={`${ACTION} px-2.5`}>
-                <MoreHorizontal aria-hidden className="h-4 w-4" />
-              </button>
-            }
-          >
-            <DropdownMenuItem onClick={onRevoke}>
-              <LogOut aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="whitespace-nowrap">Log out everywhere</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem destructive onClick={onDelete}>
-              <Trash2 aria-hidden className="h-4 w-4 shrink-0" />
-              <span className="whitespace-nowrap">Delete account</span>
-            </DropdownMenuItem>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {glance ? (
-        <div className="grid grid-cols-2 gap-3 border-t border-border bg-surface-2/40 p-4 sm:p-5 lg:grid-cols-4">
-          <Glance person={person} />
-        </div>
-      ) : null}
-    </div>
+          </Button>
+          <Menu
+            label="More actions"
+            disabled={busy}
+            items={[
+              { label: "Log out everywhere", icon: "logout", onSelect: onRevoke },
+              { label: "Delete account", icon: "trash", danger: true, onSelect: onDelete },
+            ]}
+          />
+        </>
+      }
+      facts={facts(person)}
+      notice={notice(person)}
+    >
+      {children}
+    </HeaderCard>
   );
 }

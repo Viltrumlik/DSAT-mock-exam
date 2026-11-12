@@ -5,11 +5,18 @@
 //   • content is scoped by the Journal's (subject, level), loaded from /journals/content-options/
 //   • the deadline is RELATIVE ("due N days after the lesson") — not an absolute date.
 // Midterm lessons render a distinct info panel with no homework fields.
+//
+// In the console's look (design handoff v0.3). The words, the rules and the calls are the editor's own.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { Button, EmptyState, Segmented, Switch, Tabs } from "@/features/console/ui";
 import { journalsApi } from "@/features/journals/api";
 import type { ContentOptions, JournalDetail, LessonDetail } from "@/features/journals/types";
+import { CONTROL, SERIF_AREA } from "@/features/questionsAdmin/questionLook";
 import {
   buildHomeworkPastpaperCards,
   filterPastpaperCards,
@@ -22,24 +29,28 @@ import {
   type CardSingle,
 } from "@/lib/practiceTestCards";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
-import {
-  ClassroomAlert,
-  ClassroomButton,
-  ClassroomField,
-  crInputClass,
-  crTextareaClass,
-} from "@/components/classroom";
-import { SegmentedControl } from "@/components/SegmentedControl";
+import { cn } from "@/lib/cn";
 import MultiLinkInput, { fromLinkRows, toLinkRows, type LinkRow } from "@/components/MultiLinkInput";
 import LessonVideoField from "@/components/LessonVideoField";
 import VocabPicker from "@/features/journals/VocabPicker";
 import {
-  ArrowLeft, BookOpen, Check, ClipboardList, Clock, GraduationCap, Inbox, Languages, Layers,
-  Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
-} from "lucide-react";
+  BACK_LINK,
+  CHIP,
+  FileDrop,
+  JField,
+  LoadingLine,
+  Medallion,
+  PANEL,
+  PendingFile,
+  PickTick,
+  StoredFile,
+} from "@/features/journals/journalParts";
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
 type TabKey = "pastpapers" | "assessments" | "vocabulary" | "submission";
+
+/** A long text field in the console's shell (sans: this is the admin's brief, not a question). */
+const AREA = SERIF_AREA;
 
 // No deadline helpers here: homework is due at the start of the class's next lesson,
 // derived server-side when the session is released to a classroom.
@@ -269,17 +280,13 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   };
 
   if (loading) {
-    return (
-      <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading lesson…
-      </div>
-    );
+    return <LoadingLine card className="mx-auto max-w-3xl">Loading lesson…</LoadingLine>;
   }
   if (loadError || !lesson || !journal) {
     return (
       <div className="mx-auto max-w-3xl">
         <BackButton onClick={back} />
-        <ClassroomAlert tone="error">{loadError || "Lesson not found."}</ClassroomAlert>
+        <LibraryError>{loadError || "Lesson not found."}</LibraryError>
       </div>
     );
   }
@@ -289,12 +296,12 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
     return (
       <div className="mx-auto w-full max-w-3xl">
         <BackButton onClick={back} />
-        <div className="rounded-2xl border border-[#6d4ec7]/40 bg-[#6d4ec7]/5 p-8 text-center">
-          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6d4ec7]/15 text-[#6d4ec7]">
-            <GraduationCap className="h-7 w-7" />
+        <div className="animate-ms-card-in rounded-ms-card border border-ms-info-line bg-ms-info-soft p-8 text-center">
+          <span className="mx-auto grid size-14 place-items-center rounded-[16px] bg-ms-card text-ms-info-fg">
+            <Icon name="ms-midterm" size="xl" />
           </span>
-          <h1 className="mt-4 text-2xl font-extrabold text-foreground">Lesson {lesson.lesson_number} · Midterm</h1>
-          <p className="mx-auto mt-2 max-w-md text-sm font-semibold text-muted-foreground">
+          <h1 className="mt-4 text-ms-title text-ms-fg">Lesson {lesson.lesson_number} · Midterm</h1>
+          <p className="mx-auto mt-2 max-w-md text-[14px] text-ms-fg-2">
             This is a midterm checkpoint for {journal.display_title}. Midterm lessons carry no homework —
             students sit the midterm exam here. Homework configuration is intentionally disabled.
           </p>
@@ -303,76 +310,60 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
     );
   }
 
-  const searchInputCls = `${crInputClass} pl-10`;
   const cardGrid = "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(228px,1fr))]";
-  const cartDot: Record<CartItem["type"], string> = { pastpaper: "bg-primary", practice: "bg-emerald-500", assessment: "bg-[#6d4ec7]" };
-  const panelCls = "flex flex-col gap-4 rounded-[20px] border border-border bg-background p-6 shadow-sm";
-  const groupTitle = (t: string) => <h3 className="text-[15px] font-extrabold text-foreground">{t}</h3>;
+  const cartDot: Record<CartItem["type"], string> = { pastpaper: "bg-ms-primary", practice: "bg-ms-positive", assessment: "bg-ms-math" };
+  const panelCls = cn(PANEL, "animate-ms-fade-in flex flex-col gap-4 p-5 sm:p-6");
+  const groupTitle = (t: string) => <h3 className="text-[15px] font-semibold text-ms-fg">{t}</h3>;
 
-  function PickCard({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        aria-pressed={selected}
-        className={`relative flex w-full flex-col gap-1.5 rounded-[14px] border-[1.5px] p-4 pr-9 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-primary hover:shadow-md ${selected ? "border-primary bg-primary/10 shadow-[0_0_0_1px_var(--primary)]" : "border-border bg-card"}`}
-      >
-        <span className={`absolute right-3.5 top-3.5 flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-all ${selected ? "border-primary bg-primary text-white" : "border-border bg-background text-transparent"}`}>
-          <Check className="h-3 w-3" strokeWidth={3} />
-        </span>
-        {children}
-      </button>
-    );
-  }
-
-  const TABS: { key: TabKey; label: string; icon: typeof BookOpen }[] = [
-    ...(showPastpapers ? [{ key: "pastpapers" as const, label: "Pastpapers", icon: BookOpen }] : []),
-    { key: "assessments", label: "Assessments", icon: ClipboardList },
-    { key: "vocabulary", label: "Vocabulary", icon: Languages },
-    { key: "submission", label: "Submission", icon: SlidersHorizontal },
+  const TABS: { key: TabKey; label: string; icon: IconName }[] = [
+    ...(showPastpapers ? [{ key: "pastpapers" as const, label: "Pastpapers", icon: "ms-pastpaper" as const }] : []),
+    { key: "assessments", label: "Assessments", icon: "clipboard" },
+    { key: "vocabulary", label: "Vocabulary", icon: "ms-vocab" },
+    { key: "submission", label: "Submission", icon: "sliders" },
   ];
+  const panelProps = (key: TabKey) => ({ role: "tabpanel", id: `jl-content-${key}-panel`, "aria-labelledby": `jl-content-${key}` });
 
   return (
     <div className="mx-auto w-full max-w-[1600px]">
       <div className="mb-5">
         <BackButton onClick={back} />
-        <div className="flex items-center gap-4">
-          <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[15px] bg-primary/10 text-primary"><ClipboardList className="h-6 w-6" /></div>
-          <div>
-            <h1 className="text-[25px] font-extrabold tracking-tight text-foreground">Lesson {lesson.lesson_number} homework</h1>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[13.5px] font-semibold text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-4">
+          <Medallion icon="clipboard" size="lg" />
+          <div className="min-w-0">
+            <h1 className="text-ms-title text-ms-fg">Lesson {lesson.lesson_number} homework</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-2.5 text-[14px] text-ms-fg-2">
               <span>{journal.display_title}</span>
-              <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">{lesson.status}</span>
+              <span className={CHIP}>{lesson.status}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {formError && <div className="mb-4"><ClassroomAlert tone="error">{formError}</ClassroomAlert></div>}
+      {formError && <div className="mb-4"><LibraryError>{formError}</LibraryError></div>}
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
         {/* LEFT */}
-        <section className="flex flex-col overflow-hidden rounded-[20px] border border-border bg-panel shadow-md lg:sticky lg:top-4 lg:max-h-[calc(100vh-120px)]">
-          <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto p-5">
-            <div className="flex flex-col gap-3.5">
+        <section className={cn(PANEL, "flex flex-col overflow-hidden lg:sticky lg:top-[calc(var(--ms-topbar)_+_16px)] lg:max-h-[calc(100vh_-_var(--ms-topbar)_-_32px)]")}>
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
+            <div className="flex flex-col gap-4">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-primary/10 text-primary"><ClipboardList className="h-[17px] w-[17px]" /></span>
-                <h2 className="flex-1 text-[15.5px] font-extrabold text-foreground">Lesson homework</h2>
+                <Medallion icon="clipboard" />
+                <h2 className="flex-1 text-[16px] font-semibold text-ms-fg">Lesson homework</h2>
               </div>
 
-              <ClassroomField label="Title" htmlFor="jl-title">
-                <input id="jl-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Reading practice set" className={`${crInputClass} font-semibold`} />
-              </ClassroomField>
+              <JField label="Title" htmlFor="jl-title">
+                <input id="jl-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Reading practice set" className={CONTROL} />
+              </JField>
 
-              <ClassroomField label="Instructions *" htmlFor="jl-inst" hint="Tell students exactly what to do — this is the main brief.">
-                <textarea id="jl-inst" value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Write clear, detailed directions for students" rows={9} className={crTextareaClass} />
-              </ClassroomField>
+              <JField label="Instructions *" htmlFor="jl-inst" hint="Tell students exactly what to do — this is the main brief.">
+                <textarea id="jl-inst" value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Write clear, detailed directions for students" rows={9} className={AREA} />
+              </JField>
 
-              <div className="flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-3">
-                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+              <div className="flex items-start gap-2.5 rounded-ms-ctl border border-dashed border-ms-border-strong bg-ms-surface px-4 py-3">
+                <Icon name="clock" size="sm" className="mt-0.5 text-ms-primary-text" />
                 <div>
-                  <div className="text-[13.5px] font-bold text-foreground">Due at the next lesson</div>
-                  <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                  <div className="text-[14px] font-semibold text-ms-fg">Due at the next lesson</div>
+                  <p className="mt-0.5 text-[13px] text-ms-fg-2">
                     When a class receives this homework it stays open until that class&apos;s
                     next lesson begins — no deadline to set here.
                   </p>
@@ -381,27 +372,34 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
             </div>
 
             {/* cart */}
-            <div className="flex flex-col gap-3.5 border-t border-border pt-[18px]">
+            <div className="flex flex-col gap-3.5 border-t border-ms-line pt-5">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-primary/10 text-primary"><Layers className="h-[17px] w-[17px]" /></span>
-                <h2 className="flex-1 text-[15.5px] font-extrabold text-foreground">Selected content</h2>
-                <span className="whitespace-nowrap rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-bold text-muted-foreground">{cartItems.length} selected</span>
+                <Medallion icon="layers" />
+                <h2 className="flex-1 text-[16px] font-semibold text-ms-fg">Selected content</h2>
+                <span className={CHIP}>{cartItems.length} selected</span>
               </div>
               {cartItems.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-5 text-center">
-                  <Inbox className="h-6 w-6 text-muted-foreground/60" />
-                  <p className="text-[13px] text-muted-foreground">Nothing selected yet. Add an assessment or past paper from the library.</p>
+                <div className="flex flex-col items-center gap-2 rounded-ms-ctl border border-dashed border-ms-border-strong bg-ms-surface px-4 py-5 text-center">
+                  <Icon name="inbox" size="lg" className="text-ms-fg-3" />
+                  <p className="text-[13px] text-ms-fg-2">Nothing selected yet. Add an assessment or past paper from the library.</p>
                 </div>
               ) : (
                 <ul className="flex flex-col">
                   {cartItems.map((it) => (
-                    <li key={it.key} className="flex items-center gap-2.5 border-t border-dashed border-border py-2.5 first:border-t-0">
-                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${cartDot[it.type]}`} />
+                    <li key={it.key} data-cart={it.key} className="animate-ms-fade-in flex items-center gap-2.5 border-t border-dashed border-ms-line py-2.5 first:border-t-0">
+                      <span aria-hidden="true" className={cn("size-2.5 shrink-0 rounded-full", cartDot[it.type])} />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13.5px] font-bold text-foreground">{it.title}</div>
-                        <div className="truncate text-[11.5px] text-muted-foreground/80">{it.meta}</div>
+                        <div className="truncate text-[14px] font-semibold text-ms-fg">{it.title}</div>
+                        <div className="truncate text-[12px] text-ms-fg-3">{it.meta}</div>
                       </div>
-                      <button type="button" onClick={it.onRemove} aria-label={`Remove ${it.title}`} className="flex shrink-0 rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
+                      <button
+                        type="button"
+                        onClick={it.onRemove}
+                        aria-label={`Remove ${it.title}`}
+                        className="ms-transition grid size-7 shrink-0 place-items-center rounded-[8px] text-ms-fg-3 hover:bg-ms-critical-soft hover:text-ms-critical-fg"
+                      >
+                        <Icon name="x" size="sm" />
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -409,51 +407,65 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
             </div>
           </div>
 
-          <div className="border-t border-border bg-panel px-5 pb-[18px] pt-3.5">
-            <p className="mb-2.5 flex items-center gap-2 text-[12.5px] font-semibold text-muted-foreground">
-              <span className={`h-[7px] w-[7px] shrink-0 rounded-full ${ready ? "bg-emerald-500" : "bg-amber-500"}`} />
+          <div className="border-t border-ms-line bg-ms-surface px-5 pb-4 pt-3.5">
+            <p className="mb-2.5 flex items-center gap-2 text-[13px] font-medium text-ms-fg-2">
+              <span aria-hidden="true" className={cn("size-[7px] shrink-0 rounded-full", ready ? "bg-ms-positive" : "bg-ms-attention")} />
               {!hasInstructions ? "Add instructions for students." : !hasContent ? "Add content, a file, or enable file upload." : "Ready to save."}
             </p>
             <div className="flex gap-2">
-              <ClassroomButton type="button" variant="secondary" onClick={back}>Cancel</ClassroomButton>
-              <ClassroomButton type="button" variant="primary" className="flex-1" onClick={save} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              <Button variant="secondary" onClick={back}>Cancel</Button>
+              <Button variant="primary" className="flex-1" onClick={save} state={saving ? "busy" : "idle"}>
                 Save lesson
-                {cartItems.length > 0 ? <span className="ml-1 rounded-md bg-white/25 px-1.5 py-0.5 text-xs">{cartItems.length}</span> : null}
-              </ClassroomButton>
+                {cartItems.length > 0 ? <span className="ml-1 rounded-[6px] bg-white/25 px-1.5 py-0.5 text-[12px] tabular-nums">{cartItems.length}</span> : null}
+              </Button>
             </div>
           </div>
         </section>
 
         {/* RIGHT */}
         <section className="flex min-w-0 flex-col gap-[18px]">
-          <div className="flex gap-2 overflow-x-auto pb-0.5" role="tablist">
-            {TABS.map((tab) => {
-              const active = activeTab === tab.key;
-              const Icon = tab.icon;
-              return (
-                <button key={tab.key} type="button" role="tab" aria-selected={active} onClick={() => setActiveTab(tab.key)}
-                  className={`flex items-center gap-2 whitespace-nowrap rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-bold transition-all ${active ? "border-primary bg-primary/10 text-primary" : "border-border bg-panel text-muted-foreground hover:-translate-y-px hover:border-primary hover:text-primary"}`}>
-                  <Icon className="h-4 w-4" /> {tab.label}
-                </button>
-              );
-            })}
-          </div>
+          <Tabs<TabKey>
+            label="Homework content"
+            idPrefix="jl-content"
+            value={activeTab}
+            onChange={setActiveTab}
+            tabs={TABS.map((tab) => ({
+              id: tab.key,
+              label: (
+                <span className="inline-flex items-center gap-2">
+                  <Icon name={tab.icon} size="sm" /> {tab.label}
+                </span>
+              ),
+            }))}
+          />
 
           {activeTab === "pastpapers" && (
-            <div className={panelCls} role="tabpanel">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input value={pastpaperSearch} onChange={(e) => setPastpaperSearch(e.target.value)} placeholder="Search pastpapers…" className={searchInputCls} />
-              </div>
+            <div className={panelCls} {...panelProps("pastpapers")}>
+              <SearchInput value={pastpaperSearch} onChange={setPastpaperSearch} placeholder="Search pastpapers…" />
               <div className="flex flex-wrap items-center gap-3">
-                <SegmentedControl label="Region" value={pastpaperRegion} onChange={(v) => setPastpaperRegion(v as "ALL" | "US" | "INTL")} options={[{ value: "ALL", label: "All" }, { value: "US", label: "US" }, { value: "INTL", label: "International" }]} />
+                <LabelledSegmented label="Region">
+                  <Segmented
+                    label="Region"
+                    size="sm"
+                    value={pastpaperRegion}
+                    onChange={(v) => setPastpaperRegion(v as "ALL" | "US" | "INTL")}
+                    options={[{ value: "ALL", label: "All" }, { value: "US", label: "US" }, { value: "INTL", label: "International" }]}
+                  />
+                </LabelledSegmented>
                 {pastpaperYears.length > 0 && (
-                  <SegmentedControl label="Year" value={pastpaperYear} onChange={setPastpaperYear} options={[{ value: "ALL", label: "All" }, ...pastpaperYears.map((y) => ({ value: y, label: y }))]} />
+                  <LabelledSegmented label="Year">
+                    <Segmented
+                      label="Year"
+                      size="sm"
+                      value={pastpaperYear}
+                      onChange={setPastpaperYear}
+                      options={[{ value: "ALL", label: "All" }, ...pastpaperYears.map((y) => ({ value: y, label: y }))]}
+                    />
+                  </LabelledSegmented>
                 )}
               </div>
               {filteredPastpaperCards.length === 0 ? (
-                <EmptyPanel icon={BookOpen} title="No pastpapers match" text="Try clearing the search or filters." />
+                <EmptyPanel icon="ms-pastpaper" title="No pastpapers match" text="Try clearing the search or filters." />
               ) : (
                 <>
                   {groupTitle("Available")}
@@ -463,11 +475,11 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
                       const rows = c.kind === "pastpaper_pack" ? c.tests : [{ id: c.test.id, subject: c.test.subject }];
                       return (
                         <PickCard key={cardReactKey(c)} selected={cardSelected(c)} onClick={() => handleCardSelect(c)}>
-                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">{c.kind === "pastpaper_pack" ? "Full exam" : "Past paper"}</span>
-                          <span className="text-[12.5px] font-semibold text-muted-foreground">{formatLineDate(lineDate)}</span>
-                          <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{cardHeading(c)}</span>
+                          <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-ms-primary-text">{c.kind === "pastpaper_pack" ? "Full exam" : "Past paper"}</span>
+                          <span className="text-[13px] text-ms-fg-2">{formatLineDate(lineDate)}</span>
+                          <span className="line-clamp-2 text-[15px] font-semibold leading-snug text-ms-fg">{cardHeading(c)}</span>
                           <span className="mt-0.5 flex flex-wrap gap-1.5">
-                            {rows.map((t) => <span key={t.id} className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-primary">{subjectLabel(t.subject)}</span>)}
+                            {rows.map((t) => <span key={t.id} className="inline-flex h-6 items-center rounded-full bg-ms-primary-soft px-[9px] text-[12px] font-semibold leading-none text-ms-primary-text">{subjectLabel(t.subject)}</span>)}
                           </span>
                         </PickCard>
                       );
@@ -479,21 +491,22 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
           )}
 
           {activeTab === "assessments" && (
-            <div className={panelCls} role="tabpanel">
+            <div className={panelCls} {...panelProps("assessments")}>
               <div className="flex flex-col gap-3 sm:flex-row">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input value={assessmentSearch} onChange={(e) => setAssessmentSearch(e.target.value)} placeholder="Search assessments…" className={searchInputCls} />
+                <div className="min-w-0 flex-1">
+                  <SearchInput value={assessmentSearch} onChange={setAssessmentSearch} placeholder="Search assessments…" />
                 </div>
                 {allowedSources.length > 0 && (
-                  <select aria-label="Source" value={assessmentSource} onChange={(e) => setAssessmentSource(e.target.value)} className={`${crInputClass} sm:w-[180px]`}>
-                    <option value="ALL">All sources</option>
-                    {allowedSources.map((s) => <option key={s} value={s}>{sourceLabel(s)}</option>)}
-                  </select>
+                  <div className="sm:w-[180px] sm:shrink-0">
+                    <select aria-label="Source" value={assessmentSource} onChange={(e) => setAssessmentSource(e.target.value)} className={CONTROL}>
+                      <option value="ALL">All sources</option>
+                      {allowedSources.map((s) => <option key={s} value={s}>{sourceLabel(s)}</option>)}
+                    </select>
+                  </div>
                 )}
               </div>
               {filteredAssessmentSets.length === 0 ? (
-                <EmptyPanel icon={ClipboardList} title="No assessment sets found" text={`Create ${journal.level} ${domainSubject} sets in the Builder console.`} />
+                <EmptyPanel icon="clipboard" title="No assessment sets found" text={`Create ${journal.level} ${domainSubject} sets in the Builder console.`} />
               ) : (
                 <>
                   {groupTitle("Available")}
@@ -501,23 +514,23 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
                     {filteredAssessmentSets.map((a) => (
                       <PickCard key={a.id} selected={selectedAssessmentIds.has(a.id)} onClick={() => handleAssessmentSelect(a)}>
                         <span className="flex flex-wrap items-center gap-1.5">
-                          <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${a.subject === "math" ? "bg-[#6d4ec7]/12 text-[#6d4ec7] dark:bg-purple-900/40 dark:text-purple-300" : "bg-primary/10 text-primary"}`}>{a.subject}</span>
-                          {a.source && <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{sourceLabel(a.source)}</span>}
-                          {a.category && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">{a.category}</span>}
+                          <span className={cn("inline-flex h-[22px] items-center rounded-full px-2 text-[12px] font-semibold capitalize leading-none", a.subject === "math" ? "bg-ms-math-soft text-ms-math-fg" : "bg-ms-rw-soft text-ms-rw-fg")}>{a.subject}</span>
+                          {a.source && <span className="inline-flex h-[22px] items-center rounded-full bg-ms-positive-soft px-2 text-[12px] font-medium leading-none text-ms-positive-fg">{sourceLabel(a.source)}</span>}
+                          {a.category && <span className="inline-flex h-[22px] items-center rounded-full bg-ms-surface-2 px-2 text-[12px] font-medium leading-none text-ms-fg-2">{a.category}</span>}
                         </span>
-                        <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{a.title}</span>
-                        <span className="text-[12px] font-semibold text-muted-foreground">{a.question_count} questions</span>
+                        <span className="line-clamp-2 text-[15px] font-semibold leading-snug text-ms-fg">{a.title}</span>
+                        <span className="text-[13px] text-ms-fg-2">{a.question_count} questions</span>
                       </PickCard>
                     ))}
                   </div>
                 </>
               )}
-              <p className="text-[12.5px] font-medium text-muted-foreground/80">Only {journal.level_label} {domainSubject} sets are shown — content is scoped to this journal&apos;s level.</p>
+              <p className="text-[13px] text-ms-fg-3">Only {journal.level_label} {domainSubject} sets are shown — content is scoped to this journal&apos;s level.</p>
             </div>
           )}
 
           {activeTab === "vocabulary" && (
-            <div className={panelCls} role="tabpanel">
+            <div className={panelCls} {...panelProps("vocabulary")}>
               <VocabPicker
                 sections={options.vocabulary_sections}
                 selectedIds={selectedVocabIds}
@@ -529,32 +542,28 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
                     return next;
                   })
                 }
-                inputClassName={crInputClass}
+                inputClassName={CONTROL}
                 idPrefix="jl-vocab"
               />
-              <p className="text-[12.5px] font-medium text-muted-foreground/80">Students study these word sets on the Vocabulary page. Vocabulary is shared across all levels.</p>
+              <p className="text-[13px] text-ms-fg-3">Students study these word sets on the Vocabulary page. Vocabulary is shared across all levels.</p>
             </div>
           )}
 
           {activeTab === "submission" && (
-            <div className={panelCls} role="tabpanel">
+            <div className={panelCls} {...panelProps("submission")}>
               {groupTitle("Submission & resources")}
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-sm font-bold text-foreground">Allow file submissions</div>
-                  <p className="mt-1 text-[12.5px] text-muted-foreground">Students can turn in a file for manual grading.</p>
-                </div>
-                <button type="button" role="switch" aria-checked={allowFileUpload} aria-label="Allow file submissions" onClick={() => setAllowFileUpload((v) => !v)}
-                  className={`inline-flex h-[25px] w-[44px] shrink-0 items-center rounded-full transition-colors ${allowFileUpload ? "bg-primary" : "bg-border"}`}>
-                  <span className={`inline-block h-[19px] w-[19px] transform rounded-full bg-white shadow-sm transition-transform duration-200 ${allowFileUpload ? "translate-x-[22px]" : "translate-x-[3px]"}`} />
-                </button>
-              </div>
+              <Switch
+                checked={allowFileUpload}
+                onChange={setAllowFileUpload}
+                label="Allow file submissions"
+                help="Students can turn in a file for manual grading."
+              />
 
-              <ClassroomField label="External links" hint="Add one or more links to outside material, like videos or articles. Give a link a name and students see the name instead of the address.">
-                <MultiLinkInput value={links} onChange={setLinks} inputClassName={crInputClass} idPrefix="jl-url" />
-              </ClassroomField>
+              <JField label="External links" hint="Add one or more links to outside material, like videos or articles. Give a link a name and students see the name instead of the address.">
+                <MultiLinkInput value={links} onChange={setLinks} inputClassName={CONTROL} idPrefix="jl-url" />
+              </JField>
 
-              <ClassroomField label="Lesson video" hint="A student who missed the lesson can watch it. Upload the recording from your computer, or paste a YouTube/Vimeo/Loom/Drive link.">
+              <JField label="Lesson video" hint="A student who missed the lesson can watch it. Upload the recording from your computer, or paste a YouTube/Vimeo/Loom/Drive link.">
                 <LessonVideoField
                   url={videoUrl}
                   onUrlChange={setVideoUrl}
@@ -564,39 +573,30 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
                   onRemovedChange={setVideoRemoved}
                   existingUrl={lesson?.video_file_url || lesson?.video_url || ""}
                   requestUpload={(filename) => journalsApi.videoUploadUrl(filename)}
-                  inputClassName={crInputClass}
+                  inputClassName={CONTROL}
                   idPrefix="jl-video"
                 />
-              </ClassroomField>
+              </JField>
 
-              <ClassroomField label="Files" hint="PDF, Word, Excel, PowerPoint, text, or images — students can download these.">
+              <JField label="Files" hint="PDF, Word, Excel, PowerPoint, text, or images — students can download these.">
                 {lesson.attachment_urls.length > 0 && (
-                  <div className="mb-2 space-y-1">
+                  <div className="mb-2 flex flex-col gap-1">
                     {lesson.attachment_urls.map((f, i) => (
-                      <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-2">
-                        <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" /><span className="truncate">{f.name}</span>
-                      </a>
+                      <StoredFile key={i} href={f.url} name={f.name} />
                     ))}
                   </div>
                 )}
-                <label htmlFor="jl-files" className="flex cursor-pointer flex-col items-center gap-1.5 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-6 text-center transition-colors hover:border-primary hover:bg-primary/5">
-                  <Upload className="h-[22px] w-[22px] text-primary" />
-                  <p className="text-[13.5px] text-muted-foreground"><strong className="text-foreground">Click to browse</strong> or drop files</p>
-                </label>
+                <FileDrop htmlFor="jl-files" roomy />
                 <input id="jl-files" name="attachment_file" type="file" multiple hidden accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp"
                   onChange={(e) => { setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} />
                 {files.length > 0 && (
-                  <div className="mt-2 space-y-1">
+                  <div className="mt-2 flex flex-col gap-1">
                     {files.map((f, i) => (
-                      <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5">
-                        <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="flex-1 truncate text-xs font-medium text-foreground">{f.name}</span>
-                        <button type="button" onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
-                      </div>
+                      <PendingFile key={`${f.name}-${f.size}-${i}`} name={f.name} onRemove={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))} />
                     ))}
                   </div>
                 )}
-              </ClassroomField>
+              </JField>
             </div>
           )}
         </section>
@@ -605,20 +605,58 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   );
 }
 
-function EmptyPanel({ icon: Icon, title, text }: { icon: typeof BookOpen; title: string; text: string }) {
+/** A content card to pick: the tick at the top right, blue once chosen. */
+function PickCard({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2.5 rounded-2xl border-[1.5px] border-dashed border-border bg-card px-5 py-10 text-center">
-      <span className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-panel text-muted-foreground shadow-sm"><Icon className="h-6 w-6" /></span>
-      <h4 className="text-base font-extrabold text-foreground">{title}</h4>
-      <p className="max-w-[320px] text-[13.5px] text-muted-foreground">{text}</p>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        "ms-hover-lift relative flex w-full flex-col gap-1.5 rounded-ms-ctl border-[1.5px] p-4 pr-10 text-left",
+        selected ? "border-ms-primary bg-ms-primary-soft" : "border-ms-border bg-ms-card hover:border-ms-border-strong",
+      )}
+    >
+      <span className="absolute right-3.5 top-3.5">
+        <PickTick on={selected} />
+      </span>
+      {children}
+    </button>
+  );
+}
+
+/** A list's search box with its magnifier. */
+function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div className="relative">
+      <Icon name="search" size="sm" className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-ms-fg-3" />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={cn(CONTROL, "pl-9")} />
+    </div>
+  );
+}
+
+/** A segmented control with its name shown before it. */
+function LabelledSegmented({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 max-w-full items-center gap-2">
+      <span aria-hidden="true" className="text-[13px] font-medium text-ms-fg-3">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function EmptyPanel({ icon, title, text }: { icon: IconName; title: string; text: string }) {
+  return (
+    <div className="rounded-ms-ctl border border-dashed border-ms-border-strong bg-ms-surface">
+      <EmptyState icon={icon} title={title} detail={text} />
     </div>
   );
 }
 
 function BackButton({ onClick }: { onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="mb-4 inline-flex items-center gap-2 text-[13.5px] font-bold text-muted-foreground transition-colors hover:text-primary">
-      <ArrowLeft className="h-4 w-4" /> Back to journal
+    <button type="button" onClick={onClick} className={BACK_LINK}>
+      <Icon name="left" size="sm" /> Back to journal
     </button>
   );
 }

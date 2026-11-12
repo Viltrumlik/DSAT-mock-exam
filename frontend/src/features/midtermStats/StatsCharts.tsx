@@ -1,7 +1,10 @@
 "use client";
 
-import { AreaChart, ChartCard, DonutChart, StackedBarChart } from "@/components/ui/charts";
-import { OUTCOME, outcomeSlices } from "./outcome";
+import type { ReactNode } from "react";
+import { AreaChart, DonutChart, StackedBarChart } from "@/components/ui/charts";
+import { cn } from "@/lib/cn";
+import { OUTCOME_COLOR, outcomeSlicesMs } from "./look";
+import { OUTCOME } from "./outcome";
 import { monthLabel, plural } from "./format";
 import { LEVEL_NOUN, isGapNode } from "./tree";
 import type { MonthKey, MonthlyStats, TreeLevel, TreeNode, TrendPoint } from "./types";
@@ -35,10 +38,48 @@ const BAR_MAX = 12;
 const MIN_BARS = 2;
 
 const STACK_SERIES = [
-  { key: "passed", label: OUTCOME.passed.label, color: OUTCOME.passed.color },
-  { key: "failed", label: OUTCOME.failed.label, color: OUTCOME.failed.color },
-  { key: "absent", label: OUTCOME.absent.label, color: OUTCOME.absent.color },
+  { key: "passed", label: OUTCOME.passed.label, color: OUTCOME_COLOR.passed },
+  { key: "failed", label: OUTCOME.failed.label, color: OUTCOME_COLOR.failed },
+  { key: "absent", label: OUTCOME.absent.label, color: OUTCOME_COLOR.absent },
 ];
+
+/**
+ * A chart's card, in the console's look (design handoff v0.3): the title, the one line that says what
+ * the picture shows, the legend, the picture. The drawings inside are the page's own.
+ */
+function ChartCard({
+  title,
+  description,
+  legend,
+  className,
+  children,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  legend?: { key: string; label: string; color: string }[];
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={cn("animate-ms-card-in flex min-w-0 flex-col rounded-ms-card bg-ms-card p-5 shadow-ms-1", className)}>
+      <header className="mb-4 min-w-0">
+        <h3 className="text-ms-h text-ms-fg">{title}</h3>
+        {description ? <p className="mt-0.5 text-[14px] leading-5 text-ms-fg-2">{description}</p> : null}
+      </header>
+      {legend && legend.length > 0 ? (
+        <ul className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {legend.map((s) => (
+            <li key={s.key} className="inline-flex items-center gap-1.5 text-[13px] text-ms-fg-2">
+              <span aria-hidden className="size-2.5 rounded-full" style={{ background: s.color }} />
+              {s.label}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="min-w-0 flex-1">{children}</div>
+    </section>
+  );
+}
 
 /** Long names never fit under a bar; the tooltip carries the whole one. */
 function shortName(name: string): string {
@@ -47,7 +88,7 @@ function shortName(name: string): string {
 
 export function ResultsDonut({ stats }: { stats: MonthlyStats }) {
   const t = stats.totals;
-  const slices = outcomeSlices(t);
+  const slices = outcomeSlicesMs(t);
   return (
     <ChartCard
       title="What happened this month"
@@ -67,10 +108,10 @@ export function ResultsDonut({ stats }: { stats: MonthlyStats }) {
       />
       <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5">
         {slices.map((slice) => (
-          <li key={slice.name} className="flex items-center gap-2 text-[13px] text-muted-foreground">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: slice.color }} aria-hidden />
+          <li key={slice.name} className="flex items-center gap-2 text-[13px] text-ms-fg-2">
+            <span className="size-2.5 shrink-0 rounded-full" style={{ background: slice.color }} aria-hidden />
             <span className="truncate">{slice.name}</span>
-            <span className="ml-auto font-bold tabular-nums text-foreground">{slice.value}</span>
+            <span className="ml-auto font-semibold tabular-nums text-ms-fg">{slice.value}</span>
           </li>
         ))}
       </ul>
@@ -147,7 +188,7 @@ export function TrendChart({
   if (error) {
     return (
       <ChartCard title="Month by month" description="Could not load the earlier months.">
-        <p className="py-8 text-center text-[13px] text-muted-foreground">{error}</p>
+        <p className="py-8 text-center text-[14px] text-ms-fg-3">{error}</p>
       </ChartCard>
     );
   }
@@ -182,7 +223,7 @@ export function TrendChart({
       <AreaChart
         data={data}
         xKey="name"
-        series={[{ key: "rate", label: "Pass rate", color: "var(--primary)" }]}
+        series={[{ key: "rate", label: "Pass rate", color: "var(--ms-primary)" }]}
         height={200}
         loading={loading}
         valueFormatter={(v) => `${v}%`}

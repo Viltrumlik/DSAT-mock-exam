@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Building2, ChevronRight, MapPin, Plus } from "lucide-react";
-import { Alert, Badge, Button, Input, Select } from "@/components/ui";
+import { useMemo, useState, type ReactNode } from "react";
+
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { Badge, Button, EmptyState } from "@/features/console/ui";
 import {
   useBranches,
   useCreateBranch,
@@ -12,6 +13,9 @@ import {
   useSetClassroomBranch,
 } from "@/features/org/orgHooks";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { CaptionCount, LoadFailed, Notice, Panel, SkeletonRows } from "@/features/ops/settings/settingsParts";
+import { CONTROL, FIELD_LABEL } from "@/features/questionsAdmin/questionLook";
+import { cn } from "@/lib/cn";
 
 /**
  * Regions, branches, and which branch each classroom meets at.
@@ -28,6 +32,9 @@ import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
  * The one bucket that is NOT in the hierarchy is the important one: classrooms with no branch
  * yet. They sit in their own tile at the top level, because they belong to no region and would
  * otherwise be invisible on the very page whose job is to give them one.
+ *
+ * In the console's look (design handoff v0.3): cards, the console's fields and buttons, a tile per
+ * step. The words, the drill-down and the calls are the page's own.
  */
 
 /** Where the drill-down is. Nothing → regions; a region → its branches; a branch → its rooms. */
@@ -39,7 +46,64 @@ type Crumb =
   | { kind: "unassigned" };
 
 const TILE =
-  "ds-ring flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3.5 text-left transition-colors hover:border-primary hover:bg-surface-2";
+  "ms-transition ms-press flex w-full items-center gap-3 rounded-ms-ctl border border-ms-line bg-ms-card px-4 py-3.5 text-left hover:border-ms-border-strong hover:bg-ms-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-ring";
+
+/** One step down the drill-down: its icon, its name, its counts, and the chevron that says it opens. */
+function Tile({
+  icon,
+  tone = "primary",
+  dashed = false,
+  title,
+  badge,
+  detail,
+  onOpen,
+}: {
+  icon: IconName;
+  tone?: "primary" | "attention";
+  dashed?: boolean;
+  title: string;
+  badge?: ReactNode;
+  detail: ReactNode;
+  onOpen: () => void;
+}) {
+  return (
+    <button type="button" className={cn(TILE, dashed && "border-dashed border-ms-border-strong")} onClick={onOpen}>
+      <span
+        className={cn(
+          "grid size-9 shrink-0 place-items-center rounded-[10px]",
+          tone === "attention" ? "bg-ms-attention-soft text-ms-attention-fg" : "bg-ms-primary-soft text-ms-primary-text",
+        )}
+      >
+        <Icon name={icon} size="sm" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[15px] font-semibold leading-[22px] text-ms-fg">{title}</span>
+          {badge}
+        </span>
+        <span className="block text-[13px] text-ms-fg-2">{detail}</span>
+      </span>
+      <Icon name="right" size="sm" className="text-ms-fg-3" />
+    </button>
+  );
+}
+
+/** A step of the breadcrumb: a button while it leads back up, plain words where you are. */
+function CrumbStep({ current, onClick, children }: { current: boolean; onClick?: () => void; children: ReactNode }) {
+  return current || !onClick ? (
+    <span aria-current={current ? "page" : undefined} className="rounded-[8px] px-2 py-1 font-semibold text-ms-fg">
+      {children}
+    </span>
+  ) : (
+    <button
+      type="button"
+      onClick={onClick}
+      className="ms-transition rounded-[8px] px-2 py-1 font-semibold text-ms-primary-text hover:bg-ms-surface-2"
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function OpsBranchesPage() {
   const regions = useRegions();
@@ -96,9 +160,11 @@ export default function OpsBranchesPage() {
 
   /** The move control, shared by both places a classroom can be listed. */
   const branchPicker = (c: (typeof rows)[number]) => (
-    <div className="w-56 shrink-0">
-      <Select
+    // Sized on a wrapper: CONTROL carries `w-full`, and `cn` would emit a second width beside it.
+    <div className="w-full sm:w-56">
+      <select
         aria-label={`Branch for ${c.name}`}
+        className={CONTROL}
         value={c.branch ? String(c.branch) : ""}
         disabled={setBranch.isPending || branchRows.length === 0}
         onChange={(e) => {
@@ -128,23 +194,20 @@ export default function OpsBranchesPage() {
             {b.name} · {b.region_name}
           </option>
         ))}
-      </Select>
+      </select>
     </div>
   );
 
   const classroomList = (list: typeof rows, emptyText: string) =>
     list.length === 0 ? (
-      <div className="px-5 py-10 text-center">
-        <Building2 className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-        <p className="font-semibold text-foreground">{emptyText}</p>
-      </div>
+      <EmptyState icon="ms-room" title={emptyText} />
     ) : (
-      <ul className="divide-y divide-border">
+      <ul className="divide-y divide-ms-line">
         {list.map((c) => (
-          <li key={c.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-foreground">{c.name}</p>
-              <p className="text-xs font-semibold text-muted-foreground">
+          <li key={c.id} data-classroom={c.id} className="ms-transition flex flex-wrap items-center gap-3 px-5 py-3.5 hover:bg-ms-surface">
+            <div className="min-w-0 flex-1 basis-[14rem]">
+              <p className="truncate text-[15px] font-semibold leading-[22px] text-ms-fg">{c.name}</p>
+              <p className="text-[13px] text-ms-fg-2">
                 {c.branch ? `${c.branch_name ?? ""} · ${c.region_name ?? ""}` : "No branch"}
               </p>
             </div>
@@ -155,84 +218,77 @@ export default function OpsBranchesPage() {
     );
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <OpsPageHeader
         section="Branches"
         title="Branches"
         description="A student's branch comes from the classroom they study in — assign a classroom here and its whole roster appears on that branch's leaderboard."
       />
 
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-      {note ? <Alert tone="success">{note}</Alert> : null}
+      {error ? <Notice tone="danger">{error}</Notice> : null}
+      {note ? <Notice tone="success">{note}</Notice> : null}
 
       {unassigned.length > 0 && !classrooms.isPending ? (
-        <Alert tone="warning">
+        <Notice tone="warning">
           {unassigned.length} classroom{unassigned.length === 1 ? "" : "s"}{" "}
           {unassigned.length === 1 ? "has" : "have"} no branch yet. Their students appear on the
           Global board but on no branch board.
-        </Alert>
+        </Notice>
       ) : null}
 
       {/* Breadcrumb — the only way back up the drill-down. */}
-      <nav aria-label="Organisation" className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
-        <button
-          type="button"
-          onClick={() => setCrumb({ kind: "regions" })}
-          className={crumb.kind === "regions" ? "text-foreground" : "text-muted-foreground hover:text-primary"}
-        >
+      <nav aria-label="Organisation" className="animate-ms-fade-in -mx-2 flex flex-wrap items-center gap-1 text-[14px]">
+        <CrumbStep current={crumb.kind === "regions"} onClick={() => setCrumb({ kind: "regions" })}>
           Regions
-        </button>
+        </CrumbStep>
         {crumb.kind === "unassigned" ? (
           <>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
-            <span className="text-foreground">No branch yet</span>
+            <Icon name="right" size="sm" className="text-ms-fg-3" />
+            <CrumbStep current>No branch yet</CrumbStep>
           </>
         ) : null}
         {crumb.kind === "branches" || crumb.kind === "rooms" ? (
           <>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
-            <button
-              type="button"
-              onClick={() =>
-                setCrumb({ kind: "branches", regionId: crumb.regionId, regionName: crumb.regionName })
-              }
-              className={crumb.kind === "branches" ? "text-foreground" : "text-muted-foreground hover:text-primary"}
+            <Icon name="right" size="sm" className="text-ms-fg-3" />
+            <CrumbStep
+              current={crumb.kind === "branches"}
+              onClick={() => setCrumb({ kind: "branches", regionId: crumb.regionId, regionName: crumb.regionName })}
             >
               {crumb.regionName}
-            </button>
+            </CrumbStep>
           </>
         ) : null}
         {crumb.kind === "rooms" ? (
           <>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
-            <span className="text-foreground">{crumb.branchName}</span>
+            <Icon name="right" size="sm" className="text-ms-fg-3" />
+            <CrumbStep current>{crumb.branchName}</CrumbStep>
           </>
         ) : null}
       </nav>
 
       {/* Add forms — only at the top of the drill-down, where creating one makes sense. */}
       {crumb.kind === "regions" ? (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card">
-          <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
-            <Plus className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Add
-            </p>
-          </div>
-          <div className="grid gap-3 p-5 lg:grid-cols-2">
-            <div className="rounded-xl border border-border bg-surface-2 p-3">
-              <p className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">
+        <Panel title="Add" icon="plus">
+          <div className="grid gap-3 p-4 sm:p-5 lg:grid-cols-2">
+            <div className="rounded-ms-ctl bg-ms-surface p-3.5">
+              <label htmlFor="ops-new-region" className={FIELD_LABEL}>
                 New region
-              </p>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Tashkent"
-                  value={regionName}
-                  onChange={(e) => setRegionName(e.target.value)}
-                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <div className="min-w-0 flex-1 basis-[10rem]">
+                  <input
+                    id="ops-new-region"
+                    className={CONTROL}
+                    placeholder="Tashkent"
+                    value={regionName}
+                    onChange={(e) => setRegionName(e.target.value)}
+                  />
+                </div>
                 <Button
-                  loading={createRegion.isPending}
-                  disabled={!regionName.trim()}
+                  variant="primary"
+                  icon="plus"
+                  state={createRegion.isPending ? "busy" : "idle"}
+                  disabled={!regionName.trim() || createRegion.isPending}
                   onClick={() => {
                     setError(null);
                     createRegion.mutate(
@@ -241,41 +297,47 @@ export default function OpsBranchesPage() {
                     );
                   }}
                 >
-                  <Plus className="mr-1 h-4 w-4" aria-hidden /> Add
+                  Add
                 </Button>
               </div>
             </div>
 
-            <div className="rounded-xl border border-border bg-surface-2 p-3">
-              <p className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">
+            <div className="rounded-ms-ctl bg-ms-surface p-3.5">
+              <label htmlFor="ops-new-branch" className={FIELD_LABEL}>
                 New branch
-              </p>
-              {/* `Select` wraps itself in a `w-full` div, so its width has to be set on a
-                  container — passing a width in `className` styles the inner <select> only and
-                  the control still claims the whole row, which is what pushed this form into
-                  three stacked lines. */}
-              <div className="flex gap-2">
-                <Input
-                  className="min-w-0 flex-1"
-                  placeholder="Chilonzor"
-                  value={branchName}
-                  onChange={(e) => setBranchName(e.target.value)}
-                />
-                <div className="w-36 shrink-0">
-                  <Select
+              </label>
+              {/* Each control sized on its own wrapper, so the name takes what the region picker
+                  and the button leave — and the row wraps on a phone instead of squeezing. */}
+              <div className="flex flex-wrap gap-2">
+                <div className="min-w-0 flex-1 basis-[10rem]">
+                  <input
+                    id="ops-new-branch"
+                    className={CONTROL}
+                    placeholder="Chilonzor"
+                    value={branchName}
+                    onChange={(e) => setBranchName(e.target.value)}
+                  />
+                </div>
+                <div className="w-36">
+                  <select
                     aria-label="Region for the new branch"
+                    className={CONTROL}
                     value={branchRegion}
                     onChange={(e) => setBranchRegion(e.target.value)}
                   >
                     <option value="">— region —</option>
                     {regionRows.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
                     ))}
-                  </Select>
+                  </select>
                 </div>
                 <Button
-                  loading={createBranch.isPending}
-                  disabled={!branchName.trim() || !branchRegion}
+                  variant="primary"
+                  icon="plus"
+                  state={createBranch.isPending ? "busy" : "idle"}
+                  disabled={!branchName.trim() || !branchRegion || createBranch.isPending}
                   onClick={() => {
                     setError(null);
                     createBranch.mutate(
@@ -284,135 +346,111 @@ export default function OpsBranchesPage() {
                     );
                   }}
                 >
-                  <Plus className="mr-1 h-4 w-4" aria-hidden /> Add
+                  Add
                 </Button>
               </div>
             </div>
           </div>
-        </div>
+        </Panel>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {crumb.kind === "regions"
-              ? "Regions"
-              : crumb.kind === "branches"
-                ? `Branches in ${crumb.regionName}`
-                : crumb.kind === "rooms"
-                  ? `Classrooms at ${crumb.branchName}`
-                  : "Classrooms with no branch"}
-          </p>
-          {crumb.kind === "regions" ? (
-            <span className="ml-auto text-[10px] font-bold text-muted-foreground">
+      <Panel
+        title={
+          crumb.kind === "regions"
+            ? "Regions"
+            : crumb.kind === "branches"
+              ? `Branches in ${crumb.regionName}`
+              : crumb.kind === "rooms"
+                ? `Classrooms at ${crumb.branchName}`
+                : "Classrooms with no branch"
+        }
+        aside={
+          crumb.kind === "regions" ? (
+            <CaptionCount>
               {rows.length} classroom{rows.length === 1 ? "" : "s"} in total
-            </span>
-          ) : null}
-        </div>
-
+            </CaptionCount>
+          ) : null
+        }
+      >
         {listPending ? (
-          <div className="divide-y divide-border">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
-                <div className="h-4 w-48 rounded bg-muted" />
-                <div className="ml-auto h-8 w-40 rounded bg-muted" />
-              </div>
-            ))}
-          </div>
+          <SkeletonRows count={4} />
         ) : listError ? (
           // A failed fetch must never render as "no regions" — an admin acting on that would
           // create a second copy of a region that already exists.
-          <div className="px-5 py-8 text-center">
-            <p className="text-sm font-semibold text-foreground">This didn&apos;t load.</p>
-            <button
-              type="button"
-              onClick={() => {
-                void regions.refetch();
-                void branches.refetch();
-                void classrooms.refetch();
-              }}
-              className="mt-1 text-sm font-bold text-primary underline"
-            >
-              Try again
-            </button>
-          </div>
+          <LoadFailed
+            onRetry={() => {
+              void regions.refetch();
+              void branches.refetch();
+              void classrooms.refetch();
+            }}
+          >
+            This didn&apos;t load.
+          </LoadFailed>
         ) : crumb.kind === "regions" ? (
-          <div className="space-y-2 p-5">
+          <div className="flex flex-col gap-2 p-4 sm:p-5">
             {regionRows.length === 0 && unassigned.length === 0 ? (
-              <div className="px-5 py-10 text-center">
-                <MapPin className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                <p className="font-semibold text-foreground">No regions yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Add one, then a branch inside it — until there is a branch, no student has one.
-                </p>
-              </div>
+              <EmptyState
+                icon="ms-branch"
+                title="No regions yet"
+                detail="Add one, then a branch inside it — until there is a branch, no student has one."
+              />
             ) : null}
 
             {regionRows.map((r) => {
               const rBranches = branchesByRegion.get(r.id) ?? [];
-              const roomCount = rBranches.reduce(
-                (n, b) => n + (roomsByBranch.get(b.id)?.length ?? 0),
-                0,
-              );
+              const roomCount = rBranches.reduce((n, b) => n + (roomsByBranch.get(b.id)?.length ?? 0), 0);
               return (
-                <button
+                <Tile
                   key={r.id}
-                  type="button"
-                  className={TILE}
-                  onClick={() => setCrumb({ kind: "branches", regionId: r.id, regionName: r.name })}
-                >
-                  <MapPin className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-bold text-foreground">{r.name}</span>
-                    <span className="block text-xs font-semibold text-muted-foreground">
-                      {rBranches.length} branch{rBranches.length === 1 ? "" : "es"} ·{" "}
-                      {roomCount} classroom{roomCount === 1 ? "" : "s"}
-                    </span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                </button>
+                  icon="ms-branch"
+                  title={r.name}
+                  detail={
+                    <>
+                      {rBranches.length} branch{rBranches.length === 1 ? "" : "es"} · {roomCount} classroom
+                      {roomCount === 1 ? "" : "s"}
+                    </>
+                  }
+                  onOpen={() => setCrumb({ kind: "branches", regionId: r.id, regionName: r.name })}
+                />
               );
             })}
 
             {/* Outside the hierarchy, and deliberately last so it reads as the outstanding
                 job rather than as another region. */}
             {unassigned.length > 0 ? (
-              <button
-                type="button"
-                className={`${TILE} border-dashed`}
-                onClick={() => setCrumb({ kind: "unassigned" })}
-              >
-                <Building2 className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-bold text-foreground">No branch yet</span>
-                  <span className="block text-xs font-semibold text-muted-foreground">
-                    {unassigned.length} classroom{unassigned.length === 1 ? "" : "s"} on no branch
-                    board
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-              </button>
+              <Tile
+                icon="building"
+                tone="attention"
+                dashed
+                title="No branch yet"
+                detail={
+                  <>
+                    {unassigned.length} classroom{unassigned.length === 1 ? "" : "s"} on no branch board
+                  </>
+                }
+                onOpen={() => setCrumb({ kind: "unassigned" })}
+              />
             ) : null}
           </div>
         ) : crumb.kind === "branches" ? (
-          <div className="space-y-2 p-5">
+          <div className="flex flex-col gap-2 p-4 sm:p-5">
             {(branchesByRegion.get(crumb.regionId) ?? []).length === 0 ? (
-              <div className="px-5 py-10 text-center">
-                <Building2 className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                <p className="font-semibold text-foreground">No branches here yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Add one from the Regions step.
-                </p>
-              </div>
+              <EmptyState icon="building" title="No branches here yet" detail="Add one from the Regions step." />
             ) : (
               (branchesByRegion.get(crumb.regionId) ?? []).map((b) => {
                 const count = roomsByBranch.get(b.id)?.length ?? 0;
                 return (
-                  <button
+                  <Tile
                     key={b.id}
-                    type="button"
-                    className={TILE}
-                    onClick={() =>
+                    icon="building"
+                    title={b.name}
+                    badge={!b.is_active ? <Badge tone="neutral">Inactive</Badge> : null}
+                    detail={
+                      <>
+                        {count} classroom{count === 1 ? "" : "s"}
+                      </>
+                    }
+                    onOpen={() =>
                       setCrumb({
                         kind: "rooms",
                         branchId: b.id,
@@ -421,19 +459,7 @@ export default function OpsBranchesPage() {
                         regionName: crumb.regionName,
                       })
                     }
-                  >
-                    <Building2 className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate font-bold text-foreground">{b.name}</span>
-                        {!b.is_active ? <Badge variant="neutral">Inactive</Badge> : null}
-                      </span>
-                      <span className="block text-xs font-semibold text-muted-foreground">
-                        {count} classroom{count === 1 ? "" : "s"}
-                      </span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                  </button>
+                  />
                 );
               })
             )}
@@ -443,7 +469,7 @@ export default function OpsBranchesPage() {
         ) : (
           classroomList(unassigned, "Every classroom has a branch")
         )}
-      </div>
+      </Panel>
     </div>
   );
 }

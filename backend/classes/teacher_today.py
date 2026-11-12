@@ -52,7 +52,7 @@ from django.db.models import Count, Exists, OuterRef
 from django.utils import timezone
 
 from .capabilities import is_global_admin
-from .lesson_schedule import lesson_weekdays, next_lesson_start_after, parse_lesson_time
+from .lesson_schedule import has_begun, lesson_weekdays, next_lesson_start_after, parse_lesson_time
 from .models import Assignment, ClassroomMembership, Submission
 from .models_attendance import AttendanceRecord
 from .models_schedule import MidtermSchedule
@@ -202,9 +202,9 @@ def _meets_today(classroom, today) -> bool:
     """Whether ``classroom`` has a lesson on ``today``.
 
     Days come from ``lesson_schedule.lesson_weekdays`` (ODD = Mon/Wed/Fri, EVEN =
-    Tue/Thu/Sat, Sunday belongs to neither) — never re-derived here. A class whose
-    ``start_date`` is still in the future has not begun, so it does not meet today; that is
-    the rule ``next_lesson_start_after`` and the calendar both already apply.
+    Tue/Thu/Sat, Sunday belongs to neither) — never re-derived here. A class that has not
+    begun (``lesson_schedule.has_begun``) does not meet today; that is the rule
+    ``next_lesson_start_after`` and the calendar both already apply.
 
     Note this asks nothing about ``lesson_time``: a class with an unreadable time still meets
     today, and its homework is still due at that lesson. It simply cannot be placed on a
@@ -213,7 +213,7 @@ def _meets_today(classroom, today) -> bool:
     weekdays = lesson_weekdays(classroom)
     if not weekdays or today.weekday() not in weekdays:
         return False
-    return not (classroom.start_date and classroom.start_date > today)
+    return has_begun(classroom, today)
 
 
 def _lesson_time_label(classroom) -> str | None:
@@ -302,7 +302,7 @@ def _next_lesson_date(classrooms, today) -> str | None:
             weekdays = lesson_weekdays(classroom)
             if not weekdays or day.weekday() not in weekdays:
                 continue
-            if classroom.start_date and classroom.start_date > day:
+            if not has_begun(classroom, day):
                 continue  # the class has not begun yet — same rule as _meets_today
             return day.isoformat()
     return None

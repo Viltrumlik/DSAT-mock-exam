@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, CalendarClock, ChevronDown, ChevronRight, Info } from "lucide-react";
-import { Select } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Icon } from "@/components/ui/Icon";
+import { Badge, Button } from "@/features/console/ui";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import { MidtermEvidence } from "@/features/midtermReports/MidtermEvidence";
 import { DefinitionNote } from "./DefinitionNote";
 import { errText, midtermStatsApi } from "./api";
@@ -110,23 +110,20 @@ export function ClassroomMonthPanel({
   const nothingSatYet = data != null && data.month == null && futureMonths.length > 0;
 
   return (
-    <div className="space-y-4">
-      <button
-        type="button"
-        onClick={onBack}
-        className="ds-ring inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-bold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        {backLabel}
-      </button>
+    <div className="flex flex-col gap-4">
+      <div>
+        <Button variant="ghost" size="sm" icon="left" onClick={onBack} className="-ml-2">
+          {backLabel}
+        </Button>
+      </div>
 
       <SectionCard>
         <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
-          <div className="min-w-0">
-            <h2 className="text-lg font-extrabold tracking-tight text-foreground">
+          <div className="min-w-0 flex-1 basis-[18rem]">
+            <h2 className="text-[20px] font-bold leading-7 text-ms-fg">
               {classroom?.name ?? fallbackName ?? "Classroom"}
             </h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="mt-0.5 text-[14px] text-ms-fg-2">
               {classroom
                 ? [
                     classroom.level_label,
@@ -143,13 +140,13 @@ export function ClassroomMonthPanel({
           </div>
 
           {monthOptions.length > 0 && (
-            <label className="flex shrink-0 items-center gap-2 text-xs font-bold text-muted-foreground">
-              <CalendarClock className="h-4 w-4" aria-hidden />
+            <label className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-ms-fg-2">
+              <Icon name="cal" size="sm" className="text-ms-fg-3" />
               <span className="sr-only sm:not-sr-only">Month</span>
               {/* Room for the "(scheduled)" marker while the control is closed. */}
-              <span className="w-60">
-                <Select
-                  selectSize="sm"
+              <span className="block w-[min(15rem,60vw)] sm:w-60">
+                <select
+                  className={CONTROL}
                   value={shownMonth}
                   onChange={(e) => setMonth(e.target.value || null)}
                   aria-label="Month for this class"
@@ -160,7 +157,7 @@ export function ClassroomMonthPanel({
                       {monthOptionLabel(m, futureMonths)}
                     </option>
                   ))}
-                </Select>
+                </select>
               </span>
             </label>
           )}
@@ -175,7 +172,7 @@ export function ClassroomMonthPanel({
         </SectionCard>
       ) : data.month == null ? (
         <SectionCard>
-          <div className="p-5">
+          <div className="px-5 pb-5">
             {nothingSatYet ? (
               /* Its papers are booked, not missing. The old copy — "no paper has been
                  timetabled for it" — was the exact opposite of the truth for this class, and
@@ -281,7 +278,7 @@ export function ClassroomMonthPanel({
             )}
 
             {!scheduled && summary.roster !== summary.distinct_students && summary.midterms > 1 && (
-              <div className="border-t border-border px-5 py-3">
+              <div className="border-t border-ms-line px-5 py-3">
                 <Note>
                   This class sat {plural(summary.midterms, "exam")} this month, so its{" "}
                   {summary.distinct_students} students are counted {summary.roster} times —
@@ -291,7 +288,7 @@ export function ClassroomMonthPanel({
             )}
 
             {!scheduled && hasMixedScales(rows) && (
-              <div className="border-t border-border px-5 py-3">
+              <div className="border-t border-ms-line px-5 py-3">
                 <Note>
                   The papers below are not all scored out of the same total. Their pass rates are
                   comparable; their scores are not.
@@ -314,7 +311,7 @@ export function ClassroomMonthPanel({
             }
           >
             {rows.length === 0 ? (
-              <div className="p-5">
+              <div className="px-5">
                 {orphans.length > 0 ? (
                   <EmptyPanel
                     title="No countable papers in this month"
@@ -328,7 +325,7 @@ export function ClassroomMonthPanel({
                 )}
               </div>
             ) : (
-              <ul className="divide-y divide-border">
+              <ul className="divide-y divide-ms-line">
                 {rows.map((row) => (
                   <PaperRow
                     key={row.id}
@@ -354,16 +351,16 @@ function Figure({
   detail,
 }: {
   label: string;
-  value: React.ReactNode;
-  detail: React.ReactNode;
+  value: ReactNode;
+  detail: ReactNode;
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-xl font-extrabold tracking-tight tabular-nums text-foreground">
+      <p className="text-[13px] text-ms-fg-3">{label}</p>
+      <div className="mt-0.5 text-[22px] font-bold leading-7 tabular-nums text-ms-fg">
         {value}
-      </p>
-      <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">{detail}</p>
+      </div>
+      <p className="mt-0.5 text-[13px] leading-[18px] text-ms-fg-3">{detail}</p>
     </div>
   );
 }
@@ -394,20 +391,16 @@ function PaperRow({
           onClick={onToggle}
           aria-expanded={open}
           aria-controls={panelId}
-          className="ds-ring -mx-2 min-w-0 flex-1 rounded-xl px-2 py-1 text-left transition-colors hover:bg-surface-2"
+          className="ms-transition -mx-2 min-w-0 flex-1 basis-[18rem] rounded-ms-ctl px-2 py-1 text-left hover:bg-ms-surface focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ms-ring"
         >
           <span className="flex items-center gap-2">
-            {open ? (
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            ) : (
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            )}
-            <span className="truncate font-bold text-foreground">{row.title}</span>
-            <span className="shrink-0 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+            <Icon name={open ? "down" : "right"} size="sm" className="text-ms-fg-3" />
+            <span className="truncate font-semibold text-ms-fg">{row.title}</span>
+            <Badge tone="line" className="shrink-0">
               {midtermTypeLabel(row.midterm_type)}
-            </span>
+            </Badge>
           </span>
-          <span className="ml-6 mt-0.5 block truncate text-xs text-muted-foreground">
+          <span className="ml-6 mt-0.5 block truncate text-[13px] text-ms-fg-3">
             {[
               midtermSubjectLabel(row.subject),
               `Pass mark ${formatPassMark(row.pass_mark, row.score_ceiling)}`,
@@ -418,7 +411,7 @@ function PaperRow({
               .filter(Boolean)
               .join(" · ")}
           </span>
-          <span className="ml-6 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span className="ml-6 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ms-fg-3">
             {/* In a scheduled month every one of these counts is the same fact — nobody has
                 sat it — dressed as five findings, and "N absent" is the worst of them: it
                 reads as a class that failed to turn up for a paper that has not happened. */}
@@ -428,9 +421,9 @@ function PaperRow({
               </span>
             ) : (
               <>
-                <span className="font-bold text-foreground">
+                <span className="font-semibold text-ms-fg">
                   {row.passed} passed
-                  <span className="font-normal text-muted-foreground">
+                  <span className="font-normal text-ms-fg-3">
                     {" "}
                     ({row.passed_first} first · {row.passed_retake} retake)
                   </span>
@@ -448,17 +441,17 @@ function PaperRow({
           </span>
         </button>
 
-        <div className="shrink-0 text-right">
+        <div className="text-right">
           {scheduled ? (
-            <p className="text-lg font-extrabold tracking-tight">
+            <p className="text-[18px] font-bold leading-6">
               <ScheduledFigure />
             </p>
           ) : (
             <>
-              <p className="text-lg font-extrabold tracking-tight text-foreground">
+              <p className="text-[18px] font-bold leading-6 text-ms-fg">
                 <RateFigure rate={row.pass_rate} reason={rateReason("pass", row.roster)} />
               </p>
-              <p className="text-[11px] tabular-nums text-muted-foreground">
+              <p className="text-[12px] tabular-nums text-ms-fg-3">
                 {formatShare(row.passed, row.roster)}
               </p>
               <RateBar rate={row.pass_rate} />
@@ -472,10 +465,10 @@ function PaperRow({
           immediately ahead of MONTH_BASIS_NOTE, which opens with the same clause. The
           sentence printed twice in a row and read as a rendering bug. */}
       {inferred && basis && (
-        <p className="flex items-start gap-1.5 px-5 pb-3 text-[12px] text-muted-foreground">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+        <p className="flex items-start gap-1.5 px-5 pb-3 text-[13px] leading-[18px] text-ms-fg-3">
+          <Icon name="info" size="sm" className="mt-0.5 size-3.5" />
           <span>
-            <span className="font-bold">{MONTH_BASIS_LABEL[basis]}</span> · {MONTH_BASIS_NOTE[basis]}
+            <span className="font-semibold text-ms-fg-2">{MONTH_BASIS_LABEL[basis]}</span> · {MONTH_BASIS_NOTE[basis]}
           </span>
         </p>
       )}
@@ -483,7 +476,7 @@ function PaperRow({
       {open && (
         <div
           id={panelId}
-          className={cn("border-t border-border bg-surface-2/40 px-5 py-4")}
+          className="border-t border-ms-line bg-ms-surface px-5 py-4"
         >
           <MidtermEvidence
             classroomId={classroomId}

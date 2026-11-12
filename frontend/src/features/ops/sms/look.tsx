@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon } from "@/components/ui/Icon";
+import { useChanged } from "@/features/console/useChanged";
 import type { ReactNode } from "react";
 
 import { reasonOf } from "./format";
@@ -22,18 +24,18 @@ export function toneOf(status: SmsStatus | string): Tone {
 }
 
 const TONE_CLASS: Record<Tone, string> = {
-  delivered: "bg-success-soft text-success",
-  undelivered: "bg-warning-soft text-warning",
-  rejected: "bg-danger-soft text-danger",
-  pending: "bg-surface-2 text-muted-foreground",
+  delivered: "bg-ms-positive-soft text-ms-positive-fg",
+  undelivered: "bg-ms-attention-soft text-ms-attention-fg",
+  rejected: "bg-ms-critical-soft text-ms-critical-fg",
+  pending: "bg-ms-neutral-soft text-ms-neutral-fg",
 };
 
 /** The fill each state wears in a chart. */
 export const TONE_COLOR: Record<Tone, string> = {
-  delivered: "var(--success)",
-  undelivered: "var(--warning)",
-  rejected: "var(--danger)",
-  pending: "var(--text-secondary)",
+  delivered: "var(--ms-positive)",
+  undelivered: "var(--ms-attention)",
+  rejected: "var(--ms-critical)",
+  pending: "var(--ms-fg-3)",
 };
 
 /** Each operator's colour, fixed (the chart ramp, so it follows the light and dark themes). */
@@ -53,15 +55,32 @@ export function operatorColor(operator: string): string {
 
 type PillMessage = Pick<SmsMessage, "status" | "eskiz_status" | "error" | "attempts" | "checked_at">;
 
+/**
+ * Delivery ticks (design handoff v0.3, Motion board): sent = one tick, delivered = two — the second
+ * slides in when a delivery lands while you watch; a failure turns them into "!".
+ */
+function Ticks({ tone, fresh }: { tone: Tone; fresh: boolean }) {
+  if (tone === "undelivered" || tone === "rejected") return <Icon name="alert" size="sm" className="size-3.5 shrink-0" />;
+  return (
+    <span aria-hidden="true" data-ticks={tone === "delivered" ? 2 : 1} className="relative inline-flex h-3.5 w-[19px] shrink-0">
+      <Icon name="check" size="sm" className="absolute left-0 top-0 size-3.5" />
+      {tone === "delivered" ? (
+        <Icon name="check" size="sm" className={`absolute left-[5px] top-0 size-3.5 ${fresh ? "animate-ms-tick-in" : ""}`} />
+      ) : null}
+    </span>
+  );
+}
+
 /** Where an SMS stands, in words, in its state's colour. */
 export function StatusPill({ message }: { message: PillMessage }) {
   const tone = toneOf(message.status);
+  const fresh = useChanged(tone);
   return (
     <span
       data-tone={tone}
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[12px] font-medium ${TONE_CLASS[tone]}`}
+      className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-[12px] font-semibold ${TONE_CLASS[tone]}`}
     >
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
+      <Ticks tone={tone} fresh={fresh} />
       {reasonOf(message)}
     </span>
   );
@@ -90,10 +109,10 @@ export function LiveDot({ label = "Sending now" }: { label?: string }) {
 }
 
 const TILE_TONE: Record<"default" | "good" | "warn" | "bad", string> = {
-  default: "text-foreground",
-  good: "text-success",
-  warn: "text-warning",
-  bad: "text-danger",
+  default: "text-ms-fg",
+  good: "text-ms-positive-fg",
+  warn: "text-ms-attention-fg",
+  bad: "text-ms-critical-fg",
 };
 
 /** One figure the overview leads with; it counts up to its value. */
@@ -112,12 +131,12 @@ export function StatTile({
 }) {
   const shown = useCountUp(value ?? 0);
   return (
-    <div className="border border-border bg-card px-4 py-3">
-      <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-[21px] font-semibold leading-tight tabular-nums sm:text-[26px] ${TILE_TONE[tone]}`}>
+    <div className="animate-ms-card-in flex min-w-0 flex-col gap-1.5 rounded-[16px] bg-ms-surface p-4">
+      <div className="text-[13px] font-medium text-ms-fg-2">{label}</div>
+      <div className={`text-[24px] font-bold leading-7 tabular-nums sm:text-[28px] sm:leading-8 ${TILE_TONE[tone]}`}>
         {value === null ? "—" : format(shown)}
       </div>
-      {hint ? <div className="mt-0.5 text-[12px] text-muted-foreground">{hint}</div> : null}
+      {hint ? <div className="text-[13px] text-ms-fg-3">{hint}</div> : null}
     </div>
   );
 }

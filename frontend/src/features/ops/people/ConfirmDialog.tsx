@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import { cn } from "@/lib/cn";
+import { buttonClass } from "@/features/console/ui";
 
 /**
  * A plain yes/no step before an action that cannot be taken back from this page — the same overlay
@@ -49,19 +49,19 @@ export function ConfirmDialog({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--overlay-scrim)] p-4" onClick={onCancel}>
+    <div className="animate-ms-scrim-in fixed inset-0 z-[60] flex items-center justify-center bg-ms-scrim p-4" onClick={onCancel}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={bodyId}
-        className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-6 shadow-xl"
+        className="animate-ms-dialog-in w-full max-w-md space-y-4 rounded-ms-dlg border border-ms-border bg-ms-card p-[22px] shadow-ms-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id={titleId} className="text-lg font-semibold text-foreground">
+        <h2 id={titleId} className="text-[20px] font-bold leading-7 tracking-[-0.01em] text-ms-fg">
           {title}
         </h2>
-        <div id={bodyId} className="space-y-3 text-sm text-muted-foreground">
+        <div id={bodyId} className="space-y-3 text-[15px] leading-[23px] text-ms-fg-2">
           {body}
         </div>
         <div className="flex justify-end gap-2 pt-2">
@@ -70,7 +70,7 @@ export function ConfirmDialog({
               ref={firstRef}
               type="button"
               onClick={onCancel}
-              className="h-9 rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className={buttonClass()}
             >
               {cancelLabel}
             </button>
@@ -80,12 +80,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className={cn(
-              "h-9 rounded-lg px-4 text-sm font-semibold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50",
-              danger
-                ? "bg-danger text-white focus-visible:ring-danger"
-                : "bg-primary text-primary-foreground focus-visible:ring-primary",
-            )}
+            className={buttonClass({ variant: danger ? "danger" : "primary" })}
           >
             {busy ? "Working…" : confirmLabel}
           </button>

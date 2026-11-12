@@ -58,7 +58,7 @@ class QbChangeListApiTests(TestCase):
         self.assertEqual([r["id"] for r in d["results"]], [self.c.id, self.b.id, self.a.id])
         # The rows are the list serializer's, so the builder's row type fits.
         self.assertEqual(d["results"][-1]["domain_name"], "Information & Ideas")
-        self.assertEqual([f["key"] for f in d["filters"]], ["subject", "status", "difficulty", "classified", "source"])
+        self.assertEqual([f["key"] for f in d["filters"]], ["subject", "status", "difficulty", "classified", "answer", "source"])
 
     def test_facets_count_with_the_other_filters_applied(self):
         d = self.client.get(URL, {"status": "TRIAGE"}).data

@@ -106,6 +106,47 @@ describe("Broadcast", () => {
     expect((host.querySelector("#broadcast-title") as HTMLInputElement | null)?.value ?? "Hello").toBe("Hello");
   });
 
+  it("sends the trimmed message, link and push when they are given, and clears the form", async () => {
+    notifications.broadcast.mockResolvedValueOnce({ audience: "teachers", recipients: 1, notified: 1, pushed: true });
+    await choose("#broadcast-audience", "teachers");
+    await type("#broadcast-title", "  Staff meeting ");
+    await type("#broadcast-body", " At 18:00. ");
+    await type("#broadcast-link", " /events ");
+    await click(host.querySelector<HTMLInputElement>("#broadcast-push")!);
+    await click(button("Review"));
+    expect(host.textContent).toContain("Send “Staff meeting” to Teachers, with a push notification? It cannot be recalled.");
+    // Nothing can be changed while the review is open.
+    expect((host.querySelector("#broadcast-title") as HTMLInputElement).disabled).toBe(true);
+
+    await click(button("Send"));
+    expect(notifications.broadcast).toHaveBeenCalledWith({
+      title: "Staff meeting",
+      audience: "teachers",
+      push: true,
+      body: "At 18:00.",
+      link_url: "/events",
+    });
+    expect(host.textContent).toContain("Sent to 1 person.");
+    expect((host.querySelector("#broadcast-title") as HTMLInputElement).value).toBe("");
+    expect((host.querySelector("#broadcast-push") as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("says how many have notifications on when not everyone does", async () => {
+    await type("#broadcast-title", "Hello");
+    await click(button("Review"));
+    await click(button("Send"));
+    expect(host.textContent).toContain("Sent to 12 people (11 have notifications on).");
+  });
+
+  it("goes back from the review without sending", async () => {
+    await type("#broadcast-title", "Hello");
+    await click(button("Review"));
+    await click(button("Back"));
+    expect(notifications.broadcast).not.toHaveBeenCalled();
+    expect((host.querySelector("#broadcast-title") as HTMLInputElement).disabled).toBe(false);
+    expect(button("Review")).toBeDefined();
+  });
+
   it("is a super admin's alone", async () => {
     await act(async () => root.unmount());
     session.role = "admin";

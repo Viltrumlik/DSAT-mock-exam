@@ -6,40 +6,21 @@
  * Top of the three-level authoring drill-down: section → set → word. A section
  * is what a student browses in the Question Bank tab, so unpublishing one hides
  * every set inside it without destroying anything.
+ *
+ * In the console's look (design handoff v0.3, PR 19): the Builder's header, the create card, a card per section,
+ * the console confirm dialog. The words and the calls are the page's own.
  */
 
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  BookMarked,
-  Check,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  Layers,
-  Loader2,
-  Pencil,
-  Plus,
-  RefreshCcw,
-  Trash2,
-  X,
-} from "lucide-react";
 
-import { StateTag } from "@/components/governance";
-import { StudioEmptyState } from "@/components/studio/StudioEmptyState";
-import { StudioSpinner } from "@/components/studio/StudioSpinner";
-import {
-  STUDIO_BTN_PRIMARY,
-  STUDIO_BTN_SECONDARY,
-  STUDIO_CARD,
-  STUDIO_ERROR_BANNER,
-  STUDIO_FIELD_LABEL,
-  STUDIO_INPUT,
-  STUDIO_SECTION_GAP,
-} from "@/components/studio/primitives";
+import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ToastProvider";
-import { ConfirmDialog } from "@/features/classroom/ui";
+import { LibraryError, LibraryHeader } from "@/features/builderLibrary/sectionParts";
+import { Badge, Button, ConfirmDialog, EmptyState, StatTile, buttonClass } from "@/features/console/ui";
+import { CONTROL, FIELD_LABEL } from "@/features/questionsAdmin/questionLook";
+import { RenameForm } from "@/features/vocabularyAdmin/builderParts";
 import {
   useAdminSections,
   useCreateSection,
@@ -48,7 +29,6 @@ import {
 } from "@/features/vocabularyAdmin/hooks";
 import type { AdminVocabSection } from "@/features/vocabularyAdmin/types";
 import { normalizeApiError } from "@/lib/apiError";
-import { cn } from "@/lib/cn";
 
 export default function BuilderVocabularyPage() {
   const router = useRouter();
@@ -63,8 +43,9 @@ export default function BuilderVocabularyPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
 
+  // The section being deleted outlives the dialog, so its words stay while the dialog leaves.
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AdminVocabSection | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const createMut = useCreateSection();
   const updateMut = useUpdateSection();
@@ -121,22 +102,15 @@ export default function BuilderVocabularyPage() {
     );
   };
 
-  const runDelete = () => {
+  const runDelete = async () => {
     if (!pendingDelete) return;
-    setDeleteError(null);
-    deleteMut.mutate(pendingDelete.id, {
-      onSuccess: () => {
-        setPendingDelete(null);
-        toast.push({ tone: "success", message: "Section deleted." });
-      },
+    try {
+      await deleteMut.mutateAsync(pendingDelete.id);
+    } catch (e) {
       // A 409 means one of its sets is live homework — the message names it.
-      onError: (e) => setDeleteError(normalizeApiError(e).message || "Could not delete this section."),
-    });
-  };
-
-  const closeDelete = () => {
-    setPendingDelete(null);
-    setDeleteError(null);
+      throw new Error(normalizeApiError(e).message || "Could not delete this section.");
+    }
+    toast.push({ tone: "success", message: "Section deleted." });
   };
 
   const totalSets = sections.reduce((sum, s) => sum + s.set_count, 0);
@@ -144,30 +118,17 @@ export default function BuilderVocabularyPage() {
   const busyId = updateMut.isPending ? updateMut.variables?.id : null;
 
   return (
-    <div className={STUDIO_SECTION_GAP}>
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-primary">
-            Vocabulary bank
-          </p>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Vocabulary</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            A section is a named collection — “College Panda”, “650 Hard Words”. Sections hold sets
-            of about 25 words, and a teacher assigns a set as homework. Only a published section is
-            visible to students.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          disabled={isFetching}
-          className={STUDIO_BTN_SECONDARY}
-        >
-          <RefreshCcw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-          Refresh
-        </button>
-      </div>
+    <div className="flex flex-col gap-5">
+      <LibraryHeader
+        eyebrow="Vocabulary bank"
+        title="Vocabulary"
+        description="A section is a named collection — “College Panda”, “650 Hard Words”. Sections hold sets of about 25 words, and a teacher assigns a set as homework. Only a published section is visible to students."
+        actions={
+          <Button variant="secondary" icon="refresh" state={isFetching ? "busy" : "idle"} disabled={isFetching} onClick={() => void refetch()}>
+            Refresh
+          </Button>
+        }
+      />
 
       {/* Create form */}
       <form
@@ -175,11 +136,11 @@ export default function BuilderVocabularyPage() {
           e.preventDefault();
           submitCreate();
         }}
-        className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+        className="animate-ms-card-in rounded-ms-card bg-ms-card p-4 shadow-ms-1 sm:p-5"
       >
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
-            <label className={STUDIO_FIELD_LABEL} htmlFor="vocab-section-title">
+            <label className={FIELD_LABEL} htmlFor="vocab-section-title">
               Section title
             </label>
             <input
@@ -187,11 +148,11 @@ export default function BuilderVocabularyPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. College Panda — Tier 1"
-              className={STUDIO_INPUT}
+              className={CONTROL}
             />
           </div>
           <div className="min-w-[220px] flex-[2]">
-            <label className={STUDIO_FIELD_LABEL} htmlFor="vocab-section-description">
+            <label className={FIELD_LABEL} htmlFor="vocab-section-description">
               Description (optional)
             </label>
             <input
@@ -199,203 +160,157 @@ export default function BuilderVocabularyPage() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What this collection covers"
-              className={STUDIO_INPUT}
+              className={CONTROL}
             />
           </div>
-          <button type="submit" disabled={!title.trim() || createMut.isPending} className={STUDIO_BTN_PRIMARY}>
-            {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          <Button type="submit" variant="primary" icon="plus" state={createMut.isPending ? "busy" : "idle"} disabled={!title.trim() || createMut.isPending}>
             Create section
-          </button>
+          </Button>
         </div>
       </form>
 
       {/* Stats */}
       {!isLoading && sections.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-foreground">{sections.length}</p>
-            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Sections
-            </p>
-          </div>
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-primary">{totalSets}</p>
-            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Sets
-            </p>
-          </div>
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-muted-foreground">{totalWords}</p>
-            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Words
-            </p>
-          </div>
+          <StatTile label="Sections" value={sections.length} icon="ms-vocab" />
+          <StatTile label="Sets" value={totalSets} icon="layers" delay={40} />
+          <StatTile label="Words" value={totalWords} icon="book" delay={80} />
         </div>
       )}
 
       {/* Error */}
-      {error && <div className={STUDIO_ERROR_BANNER}>{normalizeApiError(error).message}</div>}
+      {error ? <LibraryError>{normalizeApiError(error).message}</LibraryError> : null}
 
       {/* List */}
       {isLoading ? (
-        <StudioSpinner size="lg" center />
+        <div aria-busy="true" aria-label="Loading" className="flex flex-col gap-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-[112px] animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+          ))}
+        </div>
       ) : sections.length === 0 ? (
-        <div className={STUDIO_CARD}>
-          <StudioEmptyState
-            icon={BookMarked}
+        <div className="rounded-ms-card bg-ms-card p-4 shadow-ms-1">
+          <EmptyState
+            icon="ms-vocab"
             title="No vocabulary sections yet"
-            body="Create a section above, then fill it with sets of 25 words."
+            detail="Create a section above, then fill it with sets of 25 words."
           />
         </div>
       ) : (
-        <div className="space-y-3">
-          {sections.map((section) => {
+        <div className="flex flex-col gap-3">
+          {sections.map((section, i) => {
             const isEditing = editingId === section.id;
             const isBusy = busyId === section.id;
             return (
-              <div key={section.id} className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+              <article
+                key={section.id}
+                data-section={section.id}
+                style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+                className="animate-ms-card-in rounded-ms-card bg-ms-card p-5 shadow-ms-1"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 basis-[18rem]">
                     {isEditing ? (
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          submitRename(section);
-                        }}
-                        className="flex flex-wrap items-center gap-2"
-                      >
-                        <input
-                          autoFocus
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          className={cn(STUDIO_INPUT, "max-w-sm")}
-                        />
-                        <button
-                          type="submit"
-                          disabled={!editTitle.trim() || isBusy}
-                          className={STUDIO_BTN_PRIMARY}
-                        >
-                          {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingId(null)}
-                          className={STUDIO_BTN_SECONDARY}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                          Cancel
-                        </button>
-                      </form>
+                      <RenameForm
+                        label="Section title"
+                        value={editTitle}
+                        onChange={setEditTitle}
+                        onSubmit={() => submitRename(section)}
+                        onCancel={() => setEditingId(null)}
+                        busy={isBusy}
+                      />
                     ) : (
                       <>
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate font-extrabold text-foreground">
-                            #{section.id} · {section.title}
+                          <h3 className="min-w-0 break-words text-[17px] font-bold leading-6 text-ms-fg">
+                            <Link href={`/builder/vocabulary/${section.id}`} className="hover:text-ms-primary-text">
+                              #{section.id} · {section.title}
+                            </Link>
                           </h3>
-                          <StateTag state={section.is_published ? "PUBLISHED" : "DRAFT"} size="xs" />
+                          {section.is_published ? (
+                            <Badge tone="positive" dot>
+                              Published
+                            </Badge>
+                          ) : (
+                            <Badge tone="line">Draft</Badge>
+                          )}
                         </div>
-                        {section.description && (
-                          <p className="mt-1 text-sm text-muted-foreground">{section.description}</p>
-                        )}
-                        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1">
-                            <Layers className="h-3 w-3" />
+                        {section.description ? <p className="mt-1 text-[14px] text-ms-fg-2">{section.description}</p> : null}
+                        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ms-fg-2">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Icon name="layers" size="sm" className="size-3.5 text-ms-fg-3" />
                             {section.set_count} set{section.set_count !== 1 ? "s" : ""}
                           </span>
-                          <span className="text-muted-foreground/40">·</span>
-                          <span className="inline-flex items-center gap-1">
-                            <BookMarked className="h-3 w-3" />
+                          <span className="inline-flex items-center gap-1.5">
+                            <Icon name="book" size="sm" className="size-3.5 text-ms-fg-3" />
                             {section.word_count} word{section.word_count !== 1 ? "s" : ""}
                           </span>
-                          <span className="text-muted-foreground/40">·</span>
-                          <span className="font-mono text-[11px]">{section.slug}</span>
+                          <span className="font-ms-mono text-[12px] text-ms-fg-3">{section.slug}</span>
                         </p>
                       </>
                     )}
                   </div>
 
                   {!isEditing && (
-                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => togglePublished(section)}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon="eye"
+                        state={isBusy ? "busy" : "idle"}
                         disabled={isBusy}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50",
-                          section.is_published
-                            ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                            : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-                        )}
+                        onClick={() => togglePublished(section)}
                       >
-                        {isBusy ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : section.is_published ? (
-                          <EyeOff className="h-3 w-3" />
-                        ) : (
-                          <Eye className="h-3 w-3" />
-                        )}
                         {section.is_published ? "Unpublish" : "Publish"}
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon="pencil"
+                        aria-label={`Rename section ${section.title}`}
                         onClick={() => {
                           setEditingId(section.id);
                           setEditTitle(section.title);
                         }}
-                        title="Rename section"
-                        aria-label={`Rename section ${section.title}`}
-                        className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <Link
-                        href={`/builder/vocabulary/${section.id}`}
-                        className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-surface-2"
-                      >
+                      />
+                      <Link href={`/builder/vocabulary/${section.id}`} className={buttonClass({ variant: "secondary", size: "sm" })}>
                         Open sets
-                        <ChevronRight className="h-3.5 w-3.5" />
+                        <Icon name="right" size="sm" />
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeleteError(null);
-                          setPendingDelete(section);
-                        }}
-                        title="Delete section"
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon="trash"
                         aria-label={`Delete section ${section.title}`}
-                        className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                        onClick={() => {
+                          setPendingDelete(section);
+                          setDeleteOpen(true);
+                        }}
+                      />
                     </div>
                   )}
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
       )}
 
       <ConfirmDialog
-        open={!!pendingDelete}
-        tone="danger"
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        tone="critical"
+        icon="trash"
         title="Delete vocabulary section?"
-        description={
-          pendingDelete
-            ? `“${pendingDelete.title}” and its ${pendingDelete.set_count} set${
-                pendingDelete.set_count === 1 ? "" : "s"
-              } / ${pendingDelete.word_count} word${
-                pendingDelete.word_count === 1 ? "" : "s"
-              } will be permanently removed.`
-            : undefined
-        }
         confirmLabel="Delete section"
-        loading={deleteMut.isPending}
+        busyLabel="Deleting…"
         onConfirm={runDelete}
-        onCancel={closeDelete}
       >
-        {deleteError ? <div className={STUDIO_ERROR_BANNER}>{deleteError}</div> : null}
+        {pendingDelete
+          ? `“${pendingDelete.title}” and its ${pendingDelete.set_count} set${
+              pendingDelete.set_count === 1 ? "" : "s"
+            } / ${pendingDelete.word_count} word${pendingDelete.word_count === 1 ? "" : "s"} will be permanently removed.`
+          : null}
       </ConfirmDialog>
     </div>
   );

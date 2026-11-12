@@ -1,6 +1,8 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { cn } from "@/lib/cn";
+import { OUTCOME_FILL } from "./look";
 import { OUTCOMES, type OutcomeKey } from "./outcome";
 import type { Tally } from "./types";
 
@@ -37,7 +39,7 @@ export function SplitBar({
   if (!total || parts.length === 0) {
     return (
       <span
-        className={cn("block w-full rounded-full bg-surface-2", height, className)}
+        className={cn("block w-full rounded-full bg-ms-surface-2", height, className)}
         title="Nobody was due to sit an exam here this month."
       />
     );
@@ -45,7 +47,7 @@ export function SplitBar({
 
   return (
     <span
-      className={cn("flex w-full overflow-hidden rounded-full bg-surface-2", height, className)}
+      className={cn("flex w-full overflow-hidden rounded-full bg-ms-surface-2", height, className)}
       role="img"
       aria-label={parts.map((p) => `${p.label}: ${p.count} of ${total}`).join(", ")}
     >
@@ -53,12 +55,12 @@ export function SplitBar({
           each other the whole way across instead of racing. */}
       <span
         className="mts-grow flex w-full"
-        style={{ "--mts-delay": `${delay}ms` } as React.CSSProperties}
+        style={{ "--mts-delay": `${delay}ms` } as CSSProperties}
       >
         {parts.map((p) => (
           <span
             key={p.key}
-            className={p.fill}
+            className={OUTCOME_FILL[p.key]}
             style={{ width: `${(p.count / total) * 100}%` }}
             title={`${p.label}: ${p.count} of ${total}`}
           />
@@ -73,8 +75,8 @@ export function SplitLegend({ className }: { className?: string }) {
   return (
     <ul className={cn("flex flex-wrap items-center gap-x-4 gap-y-1", className)}>
       {OUTCOMES.map((o) => (
-        <li key={o.key} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-          <span className={cn("h-2.5 w-2.5 rounded-full", o.fill)} aria-hidden />
+        <li key={o.key} className="flex items-center gap-1.5 text-[13px] text-ms-fg-2">
+          <span className={cn("size-2.5 rounded-full", OUTCOME_FILL[o.key])} aria-hidden />
           {o.label}
         </li>
       ))}

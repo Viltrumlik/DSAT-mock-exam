@@ -2,11 +2,14 @@
 
 import { useId, useMemo, useState } from "react";
 
-import { Alert, Button, Checkbox, Field, Input, Modal, Textarea } from "@/components/ui";
+import { Button } from "@/features/console/ui";
+import { CONTROL, FIELD_LABEL, HINT } from "@/features/questionsAdmin/questionLook";
+import { cn } from "@/lib/cn";
 import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
 import { AudiencePicker } from "./AudiencePicker";
 import { errorBody } from "./apiError";
 import { WEEKDAYS, draftChats, draftFrom, draftToFields, type AudienceDraft } from "./audience";
+import { AREA, CAPTION, CheckRow, FILE_INPUT, FormDialog, Notice, RadioPill } from "./telegramLook";
 import type { GroupPostDetail, PostWhen } from "./telegramPostsApi";
 import { useSavePost, useTelegramGroups } from "./telegramPostsHooks";
 
@@ -25,6 +28,10 @@ function errorText(e: unknown): string {
   return messages.length ? messages.join(" ") : "Couldn't save that. Try again.";
 }
 
+/**
+ * Write or edit a post (design handoff v0.3: the console dialog, its fields and a Telegram-like preview). The
+ * checks, the confirm sentence and the body the server gets are the form's own.
+ */
 export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onClose: () => void }) {
   const save = useSavePost();
   const groups = useTelegramGroups();
@@ -91,73 +98,128 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
   };
 
   return (
-    <Modal open onClose={onClose} title={post ? "Edit post" : "New post"}>
-      <div className="space-y-3">
+    <FormDialog
+      title={post ? "Edit post" : "New post"}
+      onClose={onClose}
+      width={600}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            icon={when === "NOW" ? "send" : "clock"}
+            state={save.isPending ? "busy" : "idle"}
+            disabled={save.isPending}
+            onClick={submit}
+          >
+            {when === "NOW" ? "Post now" : "Schedule"}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
         {groups.data?.enabled === false ? (
-          <Alert tone="warning">
+          <Notice tone="warning">
             Posting is switched off on this server — Now posts are refused; scheduled posts go out at their time once it
             is on.
-          </Alert>
+          </Notice>
         ) : null}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Field label="Message" htmlFor={`${uid}-text`} hint={`${length}/${limit} characters`}>
-          <Textarea
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+
+        <div>
+          <label htmlFor={`${uid}-text`} className={FIELD_LABEL}>
+            Message
+          </label>
+          <textarea
             id={`${uid}-text`}
+            data-autofocus
             rows={6}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Ertaga yakshanba soat 10:00 da mock! …"
+            className={AREA}
           />
-        </Field>
-        <Field
-          label="Picture"
-          htmlFor={`${uid}-picture`}
-          hint={post?.image_url && !file ? "The current picture is kept." : "Optional. Under a picture Telegram takes 1024 characters."}
-        >
+          <p className={cn(HINT, "tabular-nums", length > limit && "font-medium text-ms-critical-fg")}>
+            {`${length}/${limit} characters`}
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor={`${uid}-picture`} className={FIELD_LABEL}>
+            Picture
+          </label>
           <input
             id={`${uid}-picture`}
             type="file"
             accept="image/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-sm"
+            className={FILE_INPUT}
           />
-        </Field>
+          <p className={HINT}>
+            {post?.image_url && !file ? "The current picture is kept." : "Optional. Under a picture Telegram takes 1024 characters."}
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Button label" htmlFor={`${uid}-button-text`} hint="Optional.">
-            <Input
+          <div className="min-w-0">
+            <label htmlFor={`${uid}-button-text`} className={FIELD_LABEL}>
+              Button label
+            </label>
+            <input
               id={`${uid}-button-text`}
               value={buttonText}
               onChange={(e) => setButtonText(e.target.value)}
               placeholder="Ro'yxatdan o'tish"
+              className={CONTROL}
             />
-          </Field>
-          <Field label="Button link" htmlFor={`${uid}-button-url`} hint="https://…">
-            <Input id={`${uid}-button-url`} value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} />
-          </Field>
+            <p className={HINT}>Optional.</p>
+          </div>
+          <div className="min-w-0">
+            <label htmlFor={`${uid}-button-url`} className={FIELD_LABEL}>
+              Button link
+            </label>
+            <input id={`${uid}-button-url`} value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} className={CONTROL} />
+            <p className={HINT}>https://…</p>
+          </div>
         </div>
-        <Field label="To">
+
+        <fieldset className="min-w-0">
+          <legend className={FIELD_LABEL}>To</legend>
           <AudiencePicker groups={groups.data?.groups ?? []} value={audience} onChange={setAudience} />
-        </Field>
-        <Field label="When" hint={timingLocked ? "This post has already run — its timing can't change." : undefined}>
-          <div className="flex flex-wrap gap-4 text-sm font-semibold">
+        </fieldset>
+
+        <fieldset className="min-w-0">
+          <legend className={FIELD_LABEL}>When</legend>
+          <div className="flex flex-wrap gap-2">
             {(Object.keys(WHEN_LABEL) as When[]).map((w) => (
-              <label key={w} className="inline-flex items-center gap-1.5">
-                <input type="radio" checked={when === w} disabled={timingLocked} onChange={() => setWhen(w)} />
+              <RadioPill key={w} checked={when === w} disabled={timingLocked} onChange={() => setWhen(w)}>
                 {WHEN_LABEL[w]}
-              </label>
+              </RadioPill>
             ))}
           </div>
-        </Field>
+          {timingLocked ? <p className={HINT}>This post has already run — its timing can&apos;t change.</p> : null}
+        </fieldset>
+
         {when === "ONCE" ? (
-          <Field label="Goes out at" htmlFor={`${uid}-send-at`} hint="Tashkent time.">
-            <Input id={`${uid}-send-at`} type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} />
-          </Field>
+          <div>
+            <label htmlFor={`${uid}-send-at`} className={FIELD_LABEL}>
+              Goes out at
+            </label>
+            <div className="max-w-[16rem]">
+              <input id={`${uid}-send-at`} type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} className={CONTROL} />
+            </div>
+            <p className={HINT}>Tashkent time.</p>
+          </div>
         ) : null}
+
         {when === "WEEKLY" ? (
-          <Field label="Every week on" hint="Tashkent time.">
-            <div className="flex flex-wrap gap-3">
+          <fieldset className="min-w-0">
+            <legend className={FIELD_LABEL}>Every week on</legend>
+            <div className="flex flex-wrap gap-x-4">
               {WEEKDAYS.map((day, i) => (
-                <Checkbox
+                <CheckRow
                   key={day}
                   label={day}
                   checked={weekdays.includes(i)}
@@ -167,25 +229,27 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
                 />
               ))}
             </div>
-            <Input type="time" aria-label="Time" value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} className="mt-2 w-32" />
-          </Field>
+            <div className="mt-2 w-32">
+              <input type="time" aria-label="Time" value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} className={CONTROL} />
+            </div>
+            <p className={HINT}>Tashkent time.</p>
+          </fieldset>
         ) : null}
+
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Preview</p>
-          <div className="whitespace-pre-wrap rounded-2xl bg-surface-2 p-3 text-sm">
-            {text.trim() || "…"}
-            {buttonText.trim() && buttonUrl.trim() ? (
-              <span className="mt-2 block rounded-lg border border-border px-3 py-1.5 text-center text-xs font-bold">
-                {buttonText.trim()}
-              </span>
-            ) : null}
+          <p className={cn(CAPTION, "mb-1.5")}>Preview</p>
+          <div className="rounded-ms-card bg-ms-surface-2 p-3">
+            <div className="max-w-md whitespace-pre-wrap rounded-[14px] rounded-bl-[4px] bg-ms-card p-3 text-[14px] leading-5 text-ms-fg shadow-ms-1">
+              {text.trim() || "…"}
+              {buttonText.trim() && buttonUrl.trim() ? (
+                <span className="mt-2 block rounded-ms-ctl border border-ms-border bg-ms-surface px-3 py-1.5 text-center text-[13px] font-semibold text-ms-primary-text">
+                  {buttonText.trim()}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} loading={save.isPending}>{when === "NOW" ? "Post now" : "Schedule"}</Button>
-        </div>
       </div>
-    </Modal>
+    </FormDialog>
   );
 }

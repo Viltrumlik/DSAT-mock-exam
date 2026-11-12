@@ -313,22 +313,26 @@ CHECK_GRACE_MINUTES = 30
 
 def _meeting_classes(day: date, *, order_by: str = "pk"):
     """``(classroom, (starts_at, ends_at))`` of each active paired class that holds a lesson on ``day``:
-    its weekday is one of the class's, the class has begun (``start_date`` is the school's own answer
-    and wins, as in ``classes.attendance_auto``), and its ``lesson_time`` can be read — without a
+    its weekday is one of the class's, the class has begun (``classes.lesson_schedule.begun_by``, the
+    rule ``classes.attendance_auto`` opens registers by), and its ``lesson_time`` can be read — without a
     readable time there is no end to wait for and no close to name. The one place that decides it,
     so the beat and the preview cannot disagree about which classes there is a message for."""
-    from classes.lesson_schedule import lesson_interval, lesson_weekdays
+    from classes.lesson_schedule import begun_by, lesson_interval, lesson_weekdays
     from classes.models import Classroom
 
-    rooms = Classroom.objects.filter(
-        is_active=True,
-        lcup_group_link__status=GroupLinkStatus.CONFIRMED,
-        lcup_group_link__deleted_in_lcup_at__isnull=True,
-    ).order_by(order_by)
+    # ``begun_by`` in the query, not ``has_begun`` per room: this runs every five minutes, and a
+    # level-up season would otherwise cost a query for each class whose new course has not started.
+    rooms = (
+        Classroom.objects.filter(
+            is_active=True,
+            lcup_group_link__status=GroupLinkStatus.CONFIRMED,
+            lcup_group_link__deleted_in_lcup_at__isnull=True,
+        )
+        .filter(begun_by(day))
+        .order_by(order_by)
+    )
     for room in rooms:
         if day.weekday() not in lesson_weekdays(room):
-            continue
-        if room.start_date and day < room.start_date:
             continue
         interval = lesson_interval(room, day)
         if interval is None:

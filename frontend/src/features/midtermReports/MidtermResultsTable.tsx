@@ -1,9 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CircleDashed, Filter, Users } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
+// The student photo keeps the shared Avatar: it falls back to initials when a photo URL is broken, which the
+// console kit's Avatar does not do yet (the same choice as the people lists' peopleColumns).
 import { Avatar } from "@/components/ui/Avatar";
+import { EmptyState, chipClass } from "@/features/console/ui";
 import { cn } from "@/lib/cn";
+import { Notice } from "./reportParts";
 import { OutcomeLegend, StatusPill } from "./StatusPill";
 import {
   NOT_OFFERED,
@@ -77,56 +81,54 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
     "This paper has retakes scored out of different totals, and the record does not say which one this score came from — read it against that paper's own pass mark.";
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       {/* What the numbers in this table are out of. */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5 font-semibold">
-          <Users className="h-3.5 w-3.5" aria-hidden />
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-ms-fg-3">
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="users" size="sm" className="size-3.5" />
           {summary.students} student{summary.students === 1 ? "" : "s"} on the roster
         </span>
-        <span className="font-semibold">
+        <span>
           Pass mark:{" "}
-          <span className="text-foreground tabular-nums">
+          <span className="font-medium text-ms-fg tabular-nums">
             {graded ? formatScore(summary.pass_mark, ceiling) : "not graded"}
           </span>
         </span>
-        <span className="font-semibold">
+        <span>
           Class average:{" "}
-          <span className="text-foreground tabular-nums">
+          <span className="font-medium text-ms-fg tabular-nums">
             {summary.average_score == null
               ? "no scores yet"
               : formatScore(summary.average_score, ceiling)}
           </span>
         </span>
         {retake && (
-          <span className="font-semibold">
-            Retake: <span className="text-foreground">{retake.title}</span>
+          <span>
+            Retake: <span className="font-medium text-ms-fg">{retake.title}</span>
           </span>
         )}
       </div>
 
       {!graded && (
-        <p className="flex items-start gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
-          <CircleDashed className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+        <Notice icon="circle">
           This is a pre-midterm: it is scored but never pass/fail graded, so no student here can
           pass or fail it — and it is left out of every pass rate on the statistics page.
-        </p>
+        </Notice>
       )}
 
       {mixedScales && (
-        <p className="flex items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-xs font-semibold text-warning-foreground">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+        <Notice tone="attention">
           The midterm is scored out of {ceiling} and the retake out of{" "}
           {retake?.score_ceiling}. The two score columns are on different scales — compare each
           against its own pass mark, not against each other.
-        </p>
+        </Notice>
       )}
 
       {summary.mixed_scales && (
-        <p className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
+        <Notice>
           Some students sat this midterm before its scale changed. Each row shows the score on the
           scale it was sat on; the class average converts them to {ceiling} points.
-        </p>
+        </Notice>
       )}
 
       {rows.length === 0 ? (
@@ -143,17 +145,15 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                 onClick={() => setOnlyFailed((v) => !v)}
                 aria-pressed={onlyFailed}
                 className={cn(
-                  "ds-ring inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors",
-                  onlyFailed
-                    ? "border-danger/25 bg-danger-soft text-danger-foreground"
-                    : "border-border bg-card text-foreground hover:bg-surface-2",
+                  chipClass(onlyFailed),
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-ring",
                 )}
               >
-                <Filter className="h-3.5 w-3.5" aria-hidden />
+                <Icon name="filter" size="sm" className="size-3.5" />
                 Only students who failed ({failedCount})
               </button>
               {onlyFailed && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-[13px] text-ms-fg-3">
                   Showing {visible.length} of {rows.length} students in this table.
                 </span>
               )}
@@ -161,10 +161,10 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
           )}
 
           {nobodySat && !onlyFailed && (
-            <p className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
+            <Notice icon="minus">
               Nobody has sat this midterm yet — every student on the roster is marked absent, and
               every one of them counts as not passed.
-            </p>
+            </Notice>
           )}
 
           {visible.length === 0 ? (
@@ -175,37 +175,37 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className={cn("w-full border-collapse text-sm", retake ? "min-w-[620px]" : "min-w-[460px]")}>
+                <table className={cn("w-full border-collapse text-[14px] text-ms-fg", retake ? "min-w-[620px]" : "min-w-[460px]")}>
                   <thead>
-                    <tr className="border-b border-border text-left text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                      <th scope="col" className="py-2 pr-3">
+                    <tr className="border-b border-ms-border text-left text-[13px] font-medium text-ms-fg-3">
+                      <th scope="col" className="py-2 pr-3 font-medium">
                         Student
                       </th>
-                      <th scope="col" className="px-3 py-2 text-right">
+                      <th scope="col" className="px-3 py-2 text-right font-medium">
                         Midterm score
-                        <span className="block font-semibold normal-case tracking-normal">
+                        <span className="block text-[12px] font-normal">
                           out of {ceiling}
                         </span>
                       </th>
                       {retake && (
-                        <th scope="col" className="px-3 py-2 text-right">
+                        <th scope="col" className="px-3 py-2 text-right font-medium">
                           Retake score
-                          <span className="block font-semibold normal-case tracking-normal">
+                          <span className="block text-[12px] font-normal">
                             out of {retakeCeilingLabel}
                           </span>
                         </th>
                       )}
-                      <th scope="col" className="px-3 py-2">
+                      <th scope="col" className="px-3 py-2 font-medium">
                         Outcome
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border">
+                  <tbody className="divide-y divide-ms-line">
                     {visible.map((row, i) => {
                       const outcome = outcomes[i];
                       return (
-                        <tr key={row.student_id} className="align-middle">
-                          <th scope="row" className="py-2.5 pr-3 text-left font-bold text-foreground">
+                        <tr key={row.student_id} className="ms-transition align-middle hover:bg-ms-surface">
+                          <th scope="row" className="py-2.5 pr-3 text-left font-semibold text-ms-fg">
                             <span className="flex items-center gap-2">
                               <Avatar
                                 src={row.student_profile_image_url}
@@ -215,19 +215,19 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                               <span className="truncate">{row.student_name}</span>
                             </span>
                           </th>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                          <td className="px-3 py-2.5 text-right tabular-nums text-ms-fg-3">
                             {row.midterm_score == null ? (
-                              <span className="text-[13px] not-italic">
+                              <span className="text-[13px]">
                                 {scoreText(null, midterm.score_ceiling, row.midterm_state)}
                               </span>
                             ) : (
-                              <span className="text-foreground">
+                              <span className="text-ms-fg">
                                 {formatScore(row.midterm_score, row.midterm_score_ceiling ?? midterm.score_ceiling)}
                               </span>
                             )}
                           </td>
                           {retake && (
-                            <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                            <td className="px-3 py-2.5 text-right tabular-nums text-ms-fg-3">
                               {!row.retake_eligible ? (
                                 <span className="text-[13px]" title={NOT_OFFERED_REASON}>
                                   {NOT_OFFERED}
@@ -238,7 +238,7 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                                 </span>
                               ) : (
                                 <span
-                                  className="text-foreground"
+                                  className="text-ms-fg"
                                   title={
                                     ambiguousRetakeScale && row.retake_score_ceiling == null
                                       ? AMBIGUOUS_SCORE_REASON
@@ -259,7 +259,7 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                           <td className="px-3 py-2.5">
                             <StatusPill outcome={outcome} />
                             {outcome.detail && (
-                              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                              <span className="mt-0.5 block text-[12px] text-ms-fg-3">
                                 {outcome.detail}
                               </span>
                             )}
@@ -281,10 +281,5 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
 }
 
 function EmptyRow({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
-      <p className="text-sm font-bold text-foreground">{title}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{body}</p>
-    </div>
-  );
+  return <EmptyState icon="users" title={title} detail={body} />;
 }

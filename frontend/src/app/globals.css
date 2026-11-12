@@ -1840,3 +1840,537 @@ mark.ts-annot {
 @media (prefers-reduced-motion: reduce) {
   .sms-rise, .sms-pulse { animation: none; }
 }
+
+/* ── console tokens (--ms-*) · design handoff v0.3 ── */
+/*
+  The Builder + Admin redesign's design system, from ui-redesign-kit/design-handoff/console.css
+  (tokens, lines 5–88). Values are copied verbatim; only the names gained `ms-`.
+
+  Why the prefix: fifteen of the design's bare names (--bg, --card, --primary, --surface-2, --ring,
+  …) are already this file's tokens, which every page — the student app included — reads. Defined
+  under their own names they change nothing until a console component asks for them, and because
+  they sit on :root (the <html> element) a dialog or toast portalled into <body> inherits them too.
+
+  Tailwind reads them through `@theme inline`, so `bg-ms-card` compiles to `var(--ms-card)` and is
+  resolved at the element: the Builder's rounder corners ([data-ms-temp="builder"]) and the compact
+  density ([data-ms-density="compact"]) override them on a subtree. Dark is next-themes' `.dark`.
+*/
+:root {
+  --ms-font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --ms-font-display: var(--font-plus-jakarta), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --ms-font-serif: Georgia, "Times New Roman", "Noto Serif", serif;
+  --ms-font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* surfaces — neutral, flat, monochrome chrome */
+  --ms-bg: #f4f5f7;
+  --ms-surface: #f7f8fa;
+  --ms-surface-2: #eceef1;
+  --ms-surface-3: #dfe2e6;
+  --ms-card: #ffffff;
+  --ms-fg: #0f0f10;
+  --ms-fg-2: #41454d;
+  --ms-fg-3: #5f646d;
+  --ms-fg-disabled: #a3a7ae;
+  --ms-border: rgba(0,0,0,.07);
+  --ms-border-strong: rgba(0,0,0,.14);
+  --ms-line: rgba(0,0,0,.06);
+  --ms-border-input: #868b94; /* 3.4:1 against the card: an input's edge must be findable (WCAG 1.4.11) */
+  --ms-scrim: rgba(0,0,0,.5);
+  --ms-inverse-bg: #0f0f10;
+  --ms-inverse-fg: #f2f2f3;
+  --ms-inverse-link: #8ab4f8;
+  --ms-chip-on-bg: #0f0f10;
+  --ms-chip-on-fg: #ffffff;
+
+  /* brand — the one accent: the main action, links, selection */
+  --ms-primary: #2a68c0;
+  --ms-primary-hover: #21539e;
+  --ms-primary-press: #1c4785;
+  --ms-primary-text: #21539e;
+  --ms-primary-soft: rgba(42,104,192,.10);
+  --ms-primary-soft-2: rgba(42,104,192,.18);
+  --ms-ring: #2a68c0; /* solid: the old 40 % ring was 1.8:1 */
+  --ms-danger-btn: #dc2626;
+  --ms-danger-btn-hover: #b91c1c;
+
+  /* verdicts — strong colour is reserved for these six, always with an icon and a word */
+  --ms-positive: #059669;
+  --ms-positive-soft: #ecfdf5;
+  --ms-positive-fg: #047857;
+  --ms-positive-line: rgba(5,150,105,.28);
+  --ms-attention: #d97706;
+  --ms-attention-soft: #fffbeb;
+  --ms-attention-fg: #b45309;
+  --ms-attention-line: rgba(217,119,6,.32);
+  --ms-critical: #dc2626;
+  --ms-critical-soft: #fef2f2;
+  --ms-critical-fg: #b91c1c;
+  --ms-critical-line: rgba(220,38,38,.28);
+  --ms-info: #2a68c0;
+  --ms-info-soft: #eef4fc;
+  --ms-info-fg: #21539e;
+  --ms-info-line: rgba(42,104,192,.28);
+  --ms-frozen: #0891b2;
+  --ms-frozen-soft: #ecfeff;
+  --ms-frozen-fg: #155e75;
+  --ms-frozen-line: rgba(8,145,178,.30);
+  --ms-neutral: #64748b;
+  --ms-neutral-soft: #f1f5f9;
+  --ms-neutral-fg: #475569;
+  --ms-neutral-line: rgba(100,116,139,.28);
+
+  /* subjects (Builder) */
+  --ms-rw: #be185d;
+  --ms-rw-soft: #fdf2f8;
+  --ms-rw-fg: #9d174d;
+  --ms-math: #6d28d9;
+  --ms-math-soft: #f5f3ff;
+  --ms-math-fg: #5b21b6;
+
+  /* SAT score bands — sequential blue, never red/green */
+  --ms-band1-bg: #e8f0fb;
+  --ms-band1-fg: #21539e;
+  --ms-band2-bg: #c9dbf3;
+  --ms-band2-fg: #1c4785;
+  --ms-band3-bg: #2a68c0;
+  --ms-band3-fg: #ffffff;
+  --ms-band4-bg: #173a6e;
+  --ms-band4-fg: #ffffff;
+
+  /* avatars — muted, never status hues */
+  --ms-av1-bg: #dbe5f5;
+  --ms-av1-fg: #1e3a6e;
+  --ms-av2-bg: #dcebe3;
+  --ms-av2-fg: #1f4d3a;
+  --ms-av3-bg: #efe6d6;
+  --ms-av3-fg: #5b4421;
+  --ms-av4-bg: #f1e1dc;
+  --ms-av4-fg: #6b2f22;
+  --ms-av5-bg: #e8e1ef;
+  --ms-av5-fg: #4a2f63;
+  --ms-av6-bg: #dfe4ea;
+  --ms-av6-fg: #334155;
+
+  /* elevation — flat cards; shadow only for things that float */
+  --ms-sh-1: 0 0 0 1px rgba(0,0,0,.04);
+  --ms-sh-2: 0 4px 12px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06);
+  --ms-sh-3: 0 16px 48px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08);
+
+  /* shape + size — Admin temperature by default: pill buttons, soft cards */
+  --ms-r-btn: 999px;
+  --ms-r-ctl: 12px;
+  --ms-r-chip: 10px;
+  --ms-r-card: 20px;
+  --ms-r-pop: 16px;
+  --ms-r-dlg: 24px;
+  --ms-h-ctl: 44px;
+  --ms-h-row: 52px;
+  --ms-fs-row: 15px;
+
+  /* motion */
+  --ms-dur-instant: 0ms;
+  --ms-dur-fast: 100ms;
+  --ms-dur-base: 160ms;
+  --ms-dur-slow: 240ms;
+  --ms-dur-exit: 120ms;
+  --ms-ease-out: cubic-bezier(.2,.8,.2,1);
+  --ms-ease-in: cubic-bezier(.4,0,1,1);
+
+  /* layout frames */
+  --ms-sidebar: 248px;
+  --ms-rail: 64px;
+  --ms-topbar: 56px;
+  --ms-filter-col: 264px;
+  --ms-sheet: 480px;
+  --ms-sheet-wide: 640px;
+  --ms-content-max: 1600px;
+}
+
+.dark {
+  --ms-bg: #0f0f10;
+  --ms-surface: #161719;
+  --ms-surface-2: #26272b;
+  --ms-surface-3: #34363b;
+  --ms-card: #1b1c1f;
+  --ms-fg: #f2f2f3;
+  --ms-fg-2: #c4c6cc;
+  --ms-fg-3: #9a9ea6;
+  --ms-fg-disabled: #62666e;
+  --ms-border: rgba(255,255,255,.08);
+  --ms-border-strong: rgba(255,255,255,.16);
+  --ms-line: rgba(255,255,255,.07);
+  --ms-border-input: #6b7079;
+  --ms-scrim: rgba(0,0,0,.66);
+  --ms-inverse-bg: #f2f2f3;
+  --ms-inverse-fg: #0f0f10;
+  --ms-inverse-link: #1c4785;
+  --ms-chip-on-bg: #f2f2f3;
+  --ms-chip-on-fg: #0f0f10;
+
+  --ms-primary: #3170d6;
+  --ms-primary-hover: #2a62bd;
+  --ms-primary-press: #22539f;
+  --ms-primary-text: #7ea6f2;
+  --ms-primary-soft: rgba(49,112,214,.18);
+  --ms-primary-soft-2: rgba(49,112,214,.28);
+  --ms-ring: #7ea6f2;
+  --ms-danger-btn: #dc2626;
+  --ms-danger-btn-hover: #b91c1c;
+
+  --ms-positive: #34d399;
+  --ms-positive-soft: rgba(52,211,153,.14);
+  --ms-positive-fg: #6ee7b7;
+  --ms-positive-line: rgba(52,211,153,.30);
+  --ms-attention: #fbbf24;
+  --ms-attention-soft: rgba(251,191,36,.14);
+  --ms-attention-fg: #fcd34d;
+  --ms-attention-line: rgba(251,191,36,.30);
+  --ms-critical: #f87171;
+  --ms-critical-soft: rgba(248,113,113,.14);
+  --ms-critical-fg: #fca5a5;
+  --ms-critical-line: rgba(248,113,113,.32);
+  --ms-info: #7ea6f2;
+  --ms-info-soft: rgba(49,112,214,.18);
+  --ms-info-fg: #a9c4f6;
+  --ms-info-line: rgba(126,166,242,.32);
+  --ms-frozen: #22d3ee;
+  --ms-frozen-soft: rgba(34,211,238,.13);
+  --ms-frozen-fg: #67e8f9;
+  --ms-frozen-line: rgba(34,211,238,.30);
+  --ms-neutral: #94a3b8;
+  --ms-neutral-soft: rgba(148,163,184,.14);
+  --ms-neutral-fg: #cbd5e1;
+  --ms-neutral-line: rgba(148,163,184,.28);
+
+  --ms-rw: #f472b6;
+  --ms-rw-soft: rgba(244,114,182,.14);
+  --ms-rw-fg: #f9a8d4;
+  --ms-math: #a78bfa;
+  --ms-math-soft: rgba(167,139,250,.16);
+  --ms-math-fg: #c4b5fd;
+
+  --ms-band1-bg: #1c2c4a;
+  --ms-band1-fg: #a9c4f6;
+  --ms-band2-bg: #24427a;
+  --ms-band2-fg: #d6e3fa;
+  --ms-band3-bg: #3170d6;
+  --ms-band3-fg: #ffffff;
+  --ms-band4-bg: #9dbcf5;
+  --ms-band4-fg: #0b1120;
+
+  --ms-av1-bg: #1f3357;
+  --ms-av1-fg: #bcd0f2;
+  --ms-av2-bg: #1d3a2e;
+  --ms-av2-fg: #b6e0c9;
+  --ms-av3-bg: #3d3220;
+  --ms-av3-fg: #ecd9b5;
+  --ms-av4-bg: #42261f;
+  --ms-av4-fg: #f0c4b6;
+  --ms-av5-bg: #33264a;
+  --ms-av5-fg: #d9c8f0;
+  --ms-av6-bg: #263243;
+  --ms-av6-fg: #cbd5e1;
+
+  --ms-sh-1: 0 0 0 1px rgba(255,255,255,.04);
+  --ms-sh-2: 0 4px 16px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06);
+  --ms-sh-3: 0 20px 56px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.08);
+}
+
+/* Builder temperature: rounder, roomier. Put on the Builder's shell (and later on <html> there). */
+[data-ms-temp="builder"] {
+  --ms-r-ctl: 14px;
+  --ms-r-chip: 12px;
+  --ms-r-card: 24px;
+  --ms-r-pop: 18px;
+  --ms-r-dlg: 28px;
+}
+
+/* Compact density: a per-person toggle for desktop lists and editors. */
+[data-ms-density="compact"] {
+  --ms-h-ctl: 36px;
+  --ms-h-row: 40px;
+  --ms-fs-row: 14px;
+}
+
+@theme inline {
+  --color-ms-bg: var(--ms-bg);
+  --color-ms-surface: var(--ms-surface);
+  --color-ms-surface-2: var(--ms-surface-2);
+  --color-ms-surface-3: var(--ms-surface-3);
+  --color-ms-card: var(--ms-card);
+  --color-ms-fg: var(--ms-fg);
+  --color-ms-fg-2: var(--ms-fg-2);
+  --color-ms-fg-3: var(--ms-fg-3);
+  --color-ms-fg-disabled: var(--ms-fg-disabled);
+  --color-ms-border: var(--ms-border);
+  --color-ms-border-strong: var(--ms-border-strong);
+  --color-ms-line: var(--ms-line);
+  --color-ms-border-input: var(--ms-border-input);
+  --color-ms-scrim: var(--ms-scrim);
+  --color-ms-inverse-bg: var(--ms-inverse-bg);
+  --color-ms-inverse-fg: var(--ms-inverse-fg);
+  --color-ms-inverse-link: var(--ms-inverse-link);
+  --color-ms-chip-on-bg: var(--ms-chip-on-bg);
+  --color-ms-chip-on-fg: var(--ms-chip-on-fg);
+  --color-ms-primary: var(--ms-primary);
+  --color-ms-primary-hover: var(--ms-primary-hover);
+  --color-ms-primary-press: var(--ms-primary-press);
+  --color-ms-primary-text: var(--ms-primary-text);
+  --color-ms-primary-soft: var(--ms-primary-soft);
+  --color-ms-primary-soft-2: var(--ms-primary-soft-2);
+  --color-ms-ring: var(--ms-ring);
+  --color-ms-danger-btn: var(--ms-danger-btn);
+  --color-ms-danger-btn-hover: var(--ms-danger-btn-hover);
+  --color-ms-positive: var(--ms-positive);
+  --color-ms-positive-soft: var(--ms-positive-soft);
+  --color-ms-positive-fg: var(--ms-positive-fg);
+  --color-ms-positive-line: var(--ms-positive-line);
+  --color-ms-attention: var(--ms-attention);
+  --color-ms-attention-soft: var(--ms-attention-soft);
+  --color-ms-attention-fg: var(--ms-attention-fg);
+  --color-ms-attention-line: var(--ms-attention-line);
+  --color-ms-critical: var(--ms-critical);
+  --color-ms-critical-soft: var(--ms-critical-soft);
+  --color-ms-critical-fg: var(--ms-critical-fg);
+  --color-ms-critical-line: var(--ms-critical-line);
+  --color-ms-info: var(--ms-info);
+  --color-ms-info-soft: var(--ms-info-soft);
+  --color-ms-info-fg: var(--ms-info-fg);
+  --color-ms-info-line: var(--ms-info-line);
+  --color-ms-frozen: var(--ms-frozen);
+  --color-ms-frozen-soft: var(--ms-frozen-soft);
+  --color-ms-frozen-fg: var(--ms-frozen-fg);
+  --color-ms-frozen-line: var(--ms-frozen-line);
+  --color-ms-neutral: var(--ms-neutral);
+  --color-ms-neutral-soft: var(--ms-neutral-soft);
+  --color-ms-neutral-fg: var(--ms-neutral-fg);
+  --color-ms-neutral-line: var(--ms-neutral-line);
+  --color-ms-rw: var(--ms-rw);
+  --color-ms-rw-soft: var(--ms-rw-soft);
+  --color-ms-rw-fg: var(--ms-rw-fg);
+  --color-ms-math: var(--ms-math);
+  --color-ms-math-soft: var(--ms-math-soft);
+  --color-ms-math-fg: var(--ms-math-fg);
+  --color-ms-band1-bg: var(--ms-band1-bg);
+  --color-ms-band1-fg: var(--ms-band1-fg);
+  --color-ms-band2-bg: var(--ms-band2-bg);
+  --color-ms-band2-fg: var(--ms-band2-fg);
+  --color-ms-band3-bg: var(--ms-band3-bg);
+  --color-ms-band3-fg: var(--ms-band3-fg);
+  --color-ms-band4-bg: var(--ms-band4-bg);
+  --color-ms-band4-fg: var(--ms-band4-fg);
+  --color-ms-av1-bg: var(--ms-av1-bg);
+  --color-ms-av1-fg: var(--ms-av1-fg);
+  --color-ms-av2-bg: var(--ms-av2-bg);
+  --color-ms-av2-fg: var(--ms-av2-fg);
+  --color-ms-av3-bg: var(--ms-av3-bg);
+  --color-ms-av3-fg: var(--ms-av3-fg);
+  --color-ms-av4-bg: var(--ms-av4-bg);
+  --color-ms-av4-fg: var(--ms-av4-fg);
+  --color-ms-av5-bg: var(--ms-av5-bg);
+  --color-ms-av5-fg: var(--ms-av5-fg);
+  --color-ms-av6-bg: var(--ms-av6-bg);
+  --color-ms-av6-fg: var(--ms-av6-fg);
+
+  --radius-ms-btn: var(--ms-r-btn);
+  --radius-ms-ctl: var(--ms-r-ctl);
+  --radius-ms-chip: var(--ms-r-chip);
+  --radius-ms-card: var(--ms-r-card);
+  --radius-ms-pop: var(--ms-r-pop);
+  --radius-ms-dlg: var(--ms-r-dlg);
+
+  --shadow-ms-1: var(--ms-sh-1);
+  --shadow-ms-2: var(--ms-sh-2);
+  --shadow-ms-3: var(--ms-sh-3);
+
+  --font-ms-sans: var(--ms-font-sans);
+  --font-ms-display: var(--ms-font-display);
+  --font-ms-serif: var(--ms-font-serif);
+  --font-ms-mono: var(--ms-font-mono);
+
+  --ease-ms-out: var(--ms-ease-out);
+  --ease-ms-in: var(--ms-ease-in);
+
+  /* type scale (console.css .t-* / .b-*) — colour is set separately, e.g. `text-ms-title text-ms-fg` */
+  --text-ms-over: 12px;
+  --text-ms-over--line-height: 16px;
+  --text-ms-over--font-weight: 600;
+  --text-ms-over--letter-spacing: .06em;
+  --text-ms-display: 30px;
+  --text-ms-display--line-height: 36px;
+  --text-ms-display--font-weight: 700;
+  --text-ms-display--letter-spacing: -.025em;
+  --text-ms-title: 22px;
+  --text-ms-title--line-height: 28px;
+  --text-ms-title--font-weight: 700;
+  --text-ms-title--letter-spacing: -.02em;
+  --text-ms-h: 17px;
+  --text-ms-h--line-height: 24px;
+  --text-ms-h--font-weight: 600;
+  --text-ms-body: 15px;
+  --text-ms-body--line-height: 22px;
+  --text-ms-body--font-weight: 400;
+  --text-ms-small: 13px;
+  --text-ms-small--line-height: 18px;
+  --text-ms-small--font-weight: 500;
+  --text-ms-num: 24px;
+  --text-ms-num--line-height: 28px;
+  --text-ms-num--font-weight: 600;
+  --text-ms-num--letter-spacing: -.01em;
+  --text-ms-b-display: 30px;
+  --text-ms-b-display--line-height: 36px;
+  --text-ms-b-display--font-weight: 700;
+  --text-ms-b-display--letter-spacing: -.025em;
+  --text-ms-b-title: 22px;
+  --text-ms-b-title--line-height: 28px;
+  --text-ms-b-title--font-weight: 700;
+  --text-ms-b-title--letter-spacing: -.015em;
+  --text-ms-reading: 17px;
+  --text-ms-reading--line-height: 28px;
+  --text-ms-reading--font-weight: 400;
+
+  /* motion (Motion board): one-shot product versions of the board's looping tiles. Entrances hold
+     only their opening frame (backwards): a held closing frame would override every :hover
+     transform on the element for good. Only exits (-out) hold their end, until unmounted. */
+  --animate-ms-fade-in: ms-fade-in var(--ms-dur-base) var(--ms-ease-out) backwards;
+  --animate-ms-fade-out: ms-fade-out var(--ms-dur-exit) var(--ms-ease-in) forwards;
+  --animate-ms-pop: ms-pop 200ms var(--ms-ease-out);
+  --animate-ms-check-pop: ms-check-pop 200ms var(--ms-ease-out) backwards;
+  --animate-ms-shake: ms-shake 280ms ease;
+  --animate-ms-burst: ms-burst 600ms var(--ms-ease-out) forwards;
+  --animate-ms-rise-in: ms-rise-in var(--ms-dur-slow) var(--ms-ease-out) backwards;
+  --animate-ms-sink-out: ms-sink-out var(--ms-dur-exit) var(--ms-ease-in) forwards;
+  --animate-ms-sheet-in-bottom: ms-sheet-in-bottom 280ms var(--ms-ease-out) backwards;
+  --animate-ms-sheet-out-bottom: ms-sheet-out-bottom 160ms var(--ms-ease-in) forwards;
+  --animate-ms-sheet-in-right: ms-sheet-in-right 280ms var(--ms-ease-out) backwards;
+  --animate-ms-sheet-out-right: ms-sheet-out-right 160ms var(--ms-ease-in) forwards;
+  --animate-ms-dialog-in: ms-dialog-in var(--ms-dur-slow) var(--ms-ease-out) backwards;
+  --animate-ms-dialog-out: ms-dialog-out var(--ms-dur-exit) var(--ms-ease-in) forwards;
+  --animate-ms-scrim-in: ms-scrim-in var(--ms-dur-slow) var(--ms-ease-out) backwards;
+  --animate-ms-scrim-out: ms-scrim-out var(--ms-dur-exit) var(--ms-ease-in) forwards;
+  --animate-ms-roll-in: ms-roll-in var(--ms-dur-slow) var(--ms-ease-out) backwards;
+  --animate-ms-roll-out: ms-roll-out var(--ms-dur-slow) var(--ms-ease-out) forwards;
+  --animate-ms-snow-in: ms-snow-in 320ms var(--ms-ease-out) backwards;
+  --animate-ms-tick-in: ms-tick-in var(--ms-dur-base) var(--ms-ease-out) backwards;
+  --animate-ms-flash: ms-flash 1200ms ease-out;
+  --animate-ms-spin: ms-spin 1.1s linear infinite;
+  --animate-ms-pulse: ms-pulse 1.8s ease-out infinite;
+  --animate-ms-ring-turn: ms-ring-turn 9s linear infinite;
+  /* Page cards arrive in reading order; a lesson block fills across its own hours. */
+  --animate-ms-card-in: ms-card-in 320ms var(--ms-ease-out) backwards;
+  --animate-ms-wipe-in: ms-wipe-in 420ms var(--ms-ease-out) backwards;
+  /* Drag lift (Motion board): the picked-up row grows to its own scale and shadow (1.02, shadow 2). */
+  --animate-ms-lift: ms-lift var(--ms-dur-base) var(--ms-ease-out) backwards;
+
+  @keyframes ms-fade-in { from { opacity: 0; translate: 0 4px; } }
+  @keyframes ms-fade-out { to { opacity: 0; } }
+  @keyframes ms-pop { 40% { scale: 1.12; } }
+  @keyframes ms-check-pop { 0% { scale: .6; opacity: 0; } 60% { scale: 1.12; opacity: 1; } }
+  @keyframes ms-shake { 20% { translate: -7px 0; } 40% { translate: 6px 0; } 60% { translate: -4px 0; } 80% { translate: 3px 0; } }
+  /* The celebration's dots fly out along an angle: put each dot in a wrapper rotated to its angle
+     (individual `rotate` applies after `translate`, so one element cannot do both radially). */
+  @keyframes ms-burst { 0% { translate: 0 0; scale: 0; opacity: 1; } 55% { translate: 0 -40px; scale: 1; opacity: 1; } 100% { translate: 0 -50px; scale: .4; opacity: 0; } }
+  @keyframes ms-rise-in { from { translate: 0 140%; opacity: 0; } }
+  @keyframes ms-sink-out { to { translate: 0 140%; opacity: 0; } }
+  @keyframes ms-sheet-in-bottom { from { translate: 0 100%; } }
+  @keyframes ms-sheet-out-bottom { to { translate: 0 100%; } }
+  @keyframes ms-sheet-in-right { from { translate: 100% 0; } }
+  @keyframes ms-sheet-out-right { to { translate: 100% 0; } }
+  @keyframes ms-dialog-in { from { opacity: 0; scale: .96; } }
+  @keyframes ms-dialog-out { to { opacity: 0; scale: .96; } }
+  @keyframes ms-scrim-in { from { opacity: 0; } }
+  @keyframes ms-scrim-out { to { opacity: 0; } }
+  @keyframes ms-roll-in { from { translate: 0 110%; opacity: 0; } }
+  @keyframes ms-roll-out { to { translate: 0 -110%; opacity: 0; } }
+  @keyframes ms-snow-in { from { rotate: -120deg; scale: 0; opacity: 0; } }
+  @keyframes ms-tick-in { from { opacity: 0; translate: -5px 0; } }
+  @keyframes ms-flash { from { background-color: var(--ms-attention-soft); } }
+  @keyframes ms-spin { to { rotate: 360deg; } }
+  @keyframes ms-pulse { from { scale: 1; opacity: .55; } to { scale: 2.6; opacity: 0; } }
+  @keyframes ms-ring-turn { to { rotate: 360deg; } }
+  @keyframes ms-card-in { from { opacity: 0; translate: 0 10px; } }
+  @keyframes ms-wipe-in { from { clip-path: inset(0 100% 0 0); } }
+  @keyframes ms-lift { from { scale: 1; box-shadow: var(--ms-sh-1); } }
+}
+
+/* The console surface root. Opt-in: a console shell puts `ms` on its outermost element. In a layer
+   so a utility on the same element still wins (unlayered CSS beats every Tailwind utility). */
+@layer components {
+  .ms {
+    font-family: var(--ms-font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ms-fg);
+    background: var(--ms-bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .ms :focus-visible {
+    outline: 2px solid var(--ms-ring);
+    outline-offset: 2px;
+  }
+}
+/* Animations that also set what they draw on: the tick's dash, the skeleton's gradient, the Undo
+   ring's dash. Their duration is the design's spec line for each tile. */
+@keyframes ms-check-draw { from { stroke-dashoffset: 48; } }
+@keyframes ms-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes ms-countdown { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 57; } }
+
+@utility animate-ms-check-draw {
+  stroke-dasharray: 48;
+  animation: ms-check-draw 320ms var(--ms-ease-out) backwards;
+}
+@utility animate-ms-shimmer {
+  background-image: linear-gradient(90deg, var(--ms-surface-2) 0%, var(--ms-surface-3) 50%, var(--ms-surface-2) 100%);
+  background-size: 200% 100%;
+  animation: ms-shimmer 1.4s ease-in-out infinite;
+}
+/* A real clock: how long Undo is still possible. Set --ms-undo on the ring to the toast's time. */
+@utility animate-ms-countdown {
+  stroke-dasharray: 57;
+  animation: ms-countdown var(--ms-undo, 8s) linear forwards;
+}
+
+/* Every button gives under the finger, so a tap is felt before the server answers. */
+@utility ms-press {
+  transition: scale var(--ms-dur-fast) var(--ms-ease-out), background-color var(--ms-dur-base) var(--ms-ease-out),
+    color var(--ms-dur-base) var(--ms-ease-out), box-shadow var(--ms-dur-base) var(--ms-ease-out);
+  &:active:not(:disabled):not([aria-disabled="true"]) {
+    scale: .97;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:active { scale: none; }
+  }
+}
+/* Only on cards that open something. Rows and buttons do not lift. */
+@utility ms-hover-lift {
+  transition: translate var(--ms-dur-base) var(--ms-ease-out), box-shadow var(--ms-dur-base) var(--ms-ease-out);
+  &:hover {
+    translate: 0 -3px;
+    box-shadow: var(--ms-sh-2);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:hover { translate: none; }
+  }
+}
+/* Colour, focus, tab and chip changes. */
+@utility ms-transition {
+  transition-property: color, background-color, border-color, box-shadow, opacity, fill, stroke;
+  transition-duration: var(--ms-dur-base);
+  transition-timing-function: var(--ms-ease-out);
+}
+
+/* Reduced motion: no slide, scale or shimmer — every animation jumps to its end state, loops stop
+   (a spinner is never shown without words, so the words remain). The Undo ring keeps running:
+   it is a clock, not decoration, and an empty ring would say Undo had already expired. */
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-ms-"]:not(.animate-ms-countdown) {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+  }
+  /* The app-wide reduced-motion rule above (`*`, !important) would stop this clock too. */
+  .animate-ms-countdown {
+    animation-duration: var(--ms-undo, 8s) !important;
+  }
+}
+/* ── end console tokens ── */

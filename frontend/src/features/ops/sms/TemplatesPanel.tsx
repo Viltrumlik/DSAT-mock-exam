@@ -16,7 +16,7 @@ import { useRef, useState } from "react";
 import { FileText, RefreshCw } from "lucide-react";
 
 import { useToast } from "@/components/ToastProvider";
-import { Badge, Button, Input } from "@/components/ui";
+import { Badge, Button, Input } from "./consoleKit";
 import { dateTime, roleLabel, slotLabel, templateBadge } from "./format";
 import { BOX, LoadError, Loading, TABLE, TD, TEXT_BUTTON, TH, TR, errorText } from "./panelKit";
 import type { EskizTemplate } from "./smsApi";
@@ -114,7 +114,7 @@ export function TemplatesPanel() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-[13px] text-ms-fg-3">
           {syncedAt ? `Last synced ${dateTime(syncedAt)}.` : "Never synced."} Only service and ad-price templates can be
           sent.
         </p>
@@ -136,9 +136,9 @@ export function TemplatesPanel() {
         <LoadError what="templates" onRetry={() => void templates.refetch()} />
       ) : rows.length === 0 ? (
         <div className={`${BOX} px-3 py-10 text-center`}>
-          <FileText className="mx-auto mb-2 h-7 w-7 text-muted-foreground" aria-hidden />
-          <p className="text-[13px] font-semibold text-foreground">No templates yet</p>
-          <p className="mt-1 text-[13px] text-muted-foreground">Refresh from eskiz to load the account&apos;s templates.</p>
+          <FileText className="mx-auto mb-2 h-7 w-7 text-ms-fg-3" aria-hidden />
+          <p className="text-[13px] font-semibold text-ms-fg">No templates yet</p>
+          <p className="mt-1 text-[13px] text-ms-fg-3">Refresh from eskiz to load the account&apos;s templates.</p>
         </div>
       ) : (
         <div className={`${BOX} overflow-x-auto`}>
@@ -173,7 +173,7 @@ export function TemplatesPanel() {
                       <span className={WIDE}>{t.pattern}</span>
                     </td>
                     <td className={TD}>
-                      <span className={`${WIDE} text-muted-foreground`}>{t.original || "—"}</span>
+                      <span className={`${WIDE} text-ms-fg-3`}>{t.original || "—"}</span>
                     </td>
                     <td className={`${TD} text-[12px]`}>{slotsSummary(t)}</td>
                     <td className={`${TD} text-right tabular-nums`}>{t.parts}</td>
@@ -189,7 +189,7 @@ export function TemplatesPanel() {
                         </span>
                       )}
                       {t.submitted_by_name ? (
-                        <span className="block text-muted-foreground">
+                        <span className="block text-ms-fg-3">
                           Submitted by {t.submitted_by_name}
                           {t.submitted_at ? `, ${dateTime(t.submitted_at)}` : ""}
                         </span>

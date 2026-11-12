@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { ImagePlus, X } from "lucide-react";
-import { STUDIO_FIELD_LABEL } from "@/components/studio/primitives";
 
-const LABEL = STUDIO_FIELD_LABEL;
+import { Icon } from "@/components/ui/Icon";
+import { buttonClass } from "@/features/console/ui";
+import { FIELD_LABEL } from "@/features/questionsAdmin/questionLook";
+import { cn } from "@/lib/cn";
 
-// ─── Inline image upload widget ───────────────────────────────────────────────
-
+/**
+ * An image on a question or a choice (design handoff v0.3, PR 17c), as the module editor draws it: the picture,
+ * Remove (a saved one) or Cancel (a picked one), and Upload / Replace / Change. Nothing is sent until the
+ * question is saved — the parent keeps the file.
+ */
 export function ImageUpload({
   label,
   existingUrl,
@@ -17,6 +21,9 @@ export function ImageUpload({
   onClear,
   onCancel,
   disabled,
+  size = "lg",
+  showLabel = true,
+  words = { add: "Upload image", change: "Change", replace: "Replace" },
 }: {
   label: string;
   existingUrl?: string | null;
@@ -26,9 +33,13 @@ export function ImageUpload({
   onClear: () => void;
   onCancel: () => void;
   disabled?: boolean;
+  /** "lg" for the question's image, "sm" under a choice. */
+  size?: "lg" | "sm";
+  /** The label above it; a choice's image goes without one (its name is the alt text). */
+  showLabel?: boolean;
+  words?: { add: string; change: string; replace: string };
 }) {
   const showExisting = existingUrl && !cleared && !file;
-  const showPreview = !!file;
 
   // Memoize + revoke the object URL so the local preview doesn't leak a blob URL
   // on every render (createObjectURL allocates each call).
@@ -39,45 +50,53 @@ export function ImageUpload({
     };
   }, [previewUrl]);
 
+  const thumb = cn(size === "lg" ? "max-h-32 rounded-[12px]" : "max-h-16 rounded-[10px]", "border border-ms-border bg-ms-card object-contain");
+
   return (
-    <div className="space-y-1.5">
-      <p className={LABEL}>{label}</p>
+    <div className="flex flex-col">
+      {showLabel ? <p className={FIELD_LABEL}>{label}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
         {showExisting && (
           <>
-            <img src={existingUrl} alt={label} className="max-h-24 rounded-xl border border-border object-contain" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={existingUrl} alt={label} className={thumb} />
             <button
               type="button"
               disabled={disabled}
               onClick={onClear}
-              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+              className={buttonClass({ variant: "ghost", size: "sm", className: "text-ms-critical-fg hover:text-ms-critical-fg" })}
             >
-              <X className="h-3 w-3" /> Remove
+              <Icon name="x" size="sm" /> Remove
             </button>
           </>
         )}
-        {showPreview && (
+        {file && (
           <>
-            {previewUrl && <img src={previewUrl} alt="Preview" className="max-h-24 rounded-xl border border-border object-contain" />}
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={onCancel}
-              className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
-            >
-              <X className="h-3 w-3" /> Cancel
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {previewUrl && <img src={previewUrl} alt="Preview" className={thumb} />}
+            <button type="button" disabled={disabled} onClick={onCancel} className={buttonClass({ variant: "ghost", size: "sm" })}>
+              <Icon name="x" size="sm" /> Cancel
             </button>
           </>
         )}
-        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-dashed border-border bg-surface-2/30 px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
-          <ImagePlus className="h-3.5 w-3.5" />
-          {file ? "Change" : existingUrl && !cleared ? "Replace" : "Upload image"}
+        <label
+          className={buttonClass({
+            variant: size === "lg" ? "secondary" : "ghost",
+            size: "sm",
+            className: cn("cursor-pointer", disabled && "pointer-events-none opacity-50"),
+          })}
+        >
+          <Icon name="image" size="sm" />
+          {file ? words.change : existingUrl && !cleared ? words.replace : words.add}
           <input
             type="file"
             accept="image/*"
             className="sr-only"
             disabled={disabled}
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) onSet(f); }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onSet(f);
+            }}
           />
         </label>
       </div>

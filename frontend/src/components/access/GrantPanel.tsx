@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  ArrowLeft, ArrowRight, BookMarked, Check, Loader2, School, Sparkles, Users, X,
-} from "lucide-react";
+import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
+
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { Button, Segmented } from "@/features/console/ui";
+import { CONTROL, FIELD_LABEL, HINT } from "@/features/questionsAdmin/questionLook";
 import {
   accessApi,
   SUBJECT_SCOPED_TYPES,
@@ -15,22 +17,22 @@ import { fromLocalInput } from "@/lib/datetimeLocal";
 import { cn } from "@/lib/cn";
 import { StudentMultiSelect, type StudentRow } from "./StudentMultiSelect";
 import { ResourcePicker, type SelectedResource } from "./ResourcePicker";
-import { accClass, Avatar, Pill } from "./accessUi";
+import { AccessAvatar, CARD, EYEBROW, LINE } from "./accessConsole";
 
 // Resource-centric only: access is always granted through a resource, to students
 // or to a whole classroom. (Subject-only and module-choice assignment were removed.)
 type Mode = "resource_students" | "resource_classroom";
 type StepKey = "recipients" | "tests" | "confirm";
 
-const MODES: { key: Mode; label: string; icon: React.ElementType; hint: string }[] = [
-  { key: "resource_students", label: "Tests → students", icon: BookMarked, hint: "Grant one or many tests to one or many students." },
-  { key: "resource_classroom", label: "Tests → classroom", icon: School, hint: "Grant one or many tests to every enrolled student (transactional)." },
+const MODES: { key: Mode; label: string; icon: IconName; hint: string }[] = [
+  { key: "resource_students", label: "Tests → students", icon: "bookmark", hint: "Grant one or many tests to one or many students." },
+  { key: "resource_classroom", label: "Tests → classroom", icon: "cap", hint: "Grant one or many tests to every enrolled student (transactional)." },
 ];
 
-const SCOPES: { key: SubjectScope; label: string }[] = [
-  { key: "math", label: "Math" },
-  { key: "reading", label: "Reading" },
-  { key: "both", label: "Both" },
+const SCOPES: { value: SubjectScope; label: string }[] = [
+  { value: "math", label: "Math" },
+  { value: "reading", label: "Reading" },
+  { value: "both", label: "Both" },
 ];
 
 const STEP_LABELS: Record<StepKey, string> = {
@@ -38,6 +40,29 @@ const STEP_LABELS: Record<StepKey, string> = {
   tests: "Tests",
   confirm: "Confirm",
 };
+
+// A mode card: a pickable row drawn as a card, its words stacked.
+const MODE_CARD = "ms-transition ms-press flex flex-col gap-1.5 rounded-ms-card border p-4 text-left";
+const MODE_OFF = "border-ms-border bg-ms-card hover:border-ms-border-strong hover:bg-ms-surface";
+const MODE_ON = "border-ms-primary bg-ms-primary-soft";
+
+/** The recipients bar on the Tests step: a quiet band above the picker. */
+const BAND = "rounded-ms-ctl border border-ms-line bg-ms-surface px-4 py-3";
+/** A recipient as a small chip in that band. */
+const RECIPIENT_CHIP =
+  "inline-flex h-7 items-center gap-1.5 rounded-full border border-ms-border bg-ms-card pl-1 pr-2 text-[13px] font-medium leading-none text-ms-fg";
+
+// `StudentMultiSelect` (shared with the teacher's midterm screens) still draws with the student app's tokens
+// (bg-card, border-border, text-foreground…) and the old access tint. Point those, here only, at the console's —
+// in dark mode its rows were the student app's navy cards inside a console page.
+const STUDENT_PICKER_TINT = {
+  "--acc-card-sel": "var(--ms-primary-soft)",
+  "--color-card": "var(--ms-card)",
+  "--color-border": "var(--ms-border)",
+  "--color-foreground": "var(--ms-fg)",
+  "--color-muted-foreground": "var(--ms-fg-3)",
+  "--primary": "var(--ms-primary)",
+} as CSSProperties;
 
 type ClassroomRow = { id: number; name: string; subject?: string };
 
@@ -57,6 +82,9 @@ export function GrantPanel({
   /** Pre-scope to fixed students (By-user → Grant access): hides the recipients step. */
   lockUserIds?: number[];
 }) {
+  const uid = useId();
+  const classroomFieldId = `${uid}-classroom`;
+  const expiresFieldId = `${uid}-expires`;
   const locked = Boolean(lockResource) || Boolean(lockUserIds);
   const [mode, setMode] = useState<Mode>("resource_students");
   const [userIds, setUserIds] = useState<number[]>(lockUserIds ?? []);
@@ -178,51 +206,50 @@ export function GrantPanel({
   // ── Success screen ──────────────────────────────────────────────────────────
   if (result) {
     return (
-      <div className={cn(accClass.card, "relative overflow-hidden p-8 text-center", accClass.rise)}>
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
-          <Check className="h-7 w-7" strokeWidth={3} />
-        </div>
-        <h2 className={cn(accClass.serif, "mt-4 text-2xl font-extrabold")}>Access granted</h2>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          <span className="font-bold text-foreground">{result.created}</span> created,{" "}
+      <div className={cn(CARD, "animate-ms-card-in flex flex-col items-center p-8 text-center")}>
+        <span className="grid size-14 place-items-center rounded-full bg-ms-positive-soft text-ms-positive-fg">
+          <Icon name="check" size="xl" />
+        </span>
+        <h2 className="mt-4 text-[20px] font-bold leading-7 text-ms-fg">Access granted</h2>
+        <p className="mt-1.5 text-[14px] text-ms-fg-2">
+          <span className="font-semibold text-ms-fg">{result.created}</span> created,{" "}
           {result.skipped} already had access ({result.requested} requested).
         </p>
-        <button type="button" onClick={reset} className={cn(accClass.primaryBtn, "mx-auto mt-6")}>
+        <Button variant="primary" onClick={reset} className="mt-6">
           Grant more access
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-4">
       {/* Stepper */}
       {steps.length > 1 && <Stepper steps={steps} current={stepIdx} />}
 
-      <div className={cn(accClass.card, "p-6", accClass.rise)} key={step}>
+      <div className={cn(CARD, "animate-ms-fade-in p-5 sm:p-6")} key={step}>
         {/* ── Step: Recipients ─────────────────────────────────────────────── */}
         {step === "recipients" && (
-          <div className="space-y-5">
+          <div className="flex flex-col gap-5">
             {!locked && (
               <div className="grid gap-3 sm:grid-cols-2">
                 {MODES.map((m) => {
                   const active = mode === m.key;
-                  const Icon = m.icon;
                   return (
                     <button
                       key={m.key}
                       type="button"
+                      aria-pressed={active}
                       onClick={() => { setMode(m.key); setError(null); }}
-                      className={cn(
-                        "flex flex-col gap-1.5 p-4 text-left",
-                        active ? accClass.selectableOn : accClass.selectable,
-                      )}
+                      className={cn(MODE_CARD, active ? MODE_ON : MODE_OFF)}
                     >
-                      <span className="flex items-center gap-2 text-[15px] font-bold text-foreground">
-                        <Icon className={cn("h-5 w-5", active ? "text-primary" : "text-muted-foreground")} />
+                      <span className="flex items-center gap-2 text-[15px] font-semibold text-ms-fg">
+                        <span className={active ? "text-ms-primary-text" : "text-ms-fg-3"}>
+                          <Icon name={m.icon} />
+                        </span>
                         {m.label}
                       </span>
-                      <span className="text-xs text-muted-foreground">{m.hint}</span>
+                      <span className="text-[13px] text-ms-fg-3">{m.hint}</span>
                     </button>
                   );
                 })}
@@ -231,11 +258,14 @@ export function GrantPanel({
 
             {mode === "resource_classroom" ? (
               <div>
-                <p className={cn(accClass.eyebrow, "mb-2")}><School className="h-3.5 w-3.5" /> Classroom</p>
+                <label htmlFor={classroomFieldId} className={cn(FIELD_LABEL, "flex items-center gap-1.5")}>
+                  <Icon name="cap" size="sm" className="text-ms-fg-3" /> Classroom
+                </label>
                 <select
+                  id={classroomFieldId}
                   value={classroomId}
                   onChange={(e) => setClassroomId(e.target.value ? Number(e.target.value) : "")}
-                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground outline-none transition-shadow focus:ring-2 focus:ring-[color:var(--primary)]/25"
+                  className={CONTROL}
                 >
                   <option value="">Select a classroom…</option>
                   {classrooms.map((c) => (
@@ -244,8 +274,10 @@ export function GrantPanel({
                 </select>
               </div>
             ) : (
-              <div>
-                <p className={cn(accClass.eyebrow, "mb-2")}><Users className="h-3.5 w-3.5" /> Students</p>
+              <div style={STUDENT_PICKER_TINT}>
+                <p className={cn(FIELD_LABEL, "flex items-center gap-1.5")}>
+                  <Icon name="users" size="sm" className="text-ms-fg-3" /> Students
+                </p>
                 <StudentMultiSelect value={userIds} onChange={setUserIds} onRowsChange={setStudentRows} />
               </div>
             )}
@@ -254,7 +286,7 @@ export function GrantPanel({
 
         {/* ── Step: Tests ──────────────────────────────────────────────────── */}
         {step === "tests" && (
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4">
             {/* Keep the chosen recipients in view (compact) while picking tests. */}
             <SelectedRecipientsBar
               mode={mode}
@@ -269,37 +301,37 @@ export function GrantPanel({
 
         {/* ── Step: Confirm ────────────────────────────────────────────────── */}
         {step === "confirm" && (
-          <div className="space-y-5">
+          <div className="flex flex-col gap-5">
             <div>
-              <h2 className={cn(accClass.serif, "text-2xl font-extrabold")}>Review this grant</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h2 className="text-[20px] font-bold leading-7 text-ms-fg">Review this grant</h2>
+              <p className="mt-1 text-[14px] text-ms-fg-2">
                 Confirm the details below. {mode === "resource_students" ? "Students" : "The classroom"} are notified immediately.
               </p>
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               {/* Recipients */}
-              <div>
-                <p className={cn(accClass.eyebrow, "mb-2")}>
+              <div className="min-w-0">
+                <p className={cn(EYEBROW, "mb-2")}>
                   Recipients{recipientCount !== undefined ? ` · ${recipientCount}` : ""}
                 </p>
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   {lockUserIds ? (
-                    <div className={cn(accClass.card, "px-3.5 py-3 text-sm font-bold text-foreground")}>
+                    <div className={cn(LINE, "py-3 text-[14px] font-semibold text-ms-fg")}>
                       {lockUserIds.length} selected student{lockUserIds.length === 1 ? "" : "s"}
                     </div>
                   ) : mode === "resource_classroom" ? (
-                    <div className={cn(accClass.card, "flex items-center gap-3 px-3.5 py-3")}>
-                      <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary"><School className="h-5 w-5" /></span>
-                      <span className="text-sm font-bold text-foreground">{chosenClassroom?.name ?? "Classroom"}</span>
+                    <div className={LINE}>
+                      <span className="grid size-10 shrink-0 place-items-center rounded-ms-ctl bg-ms-primary-soft text-ms-primary-text"><Icon name="cap" /></span>
+                      <span className="truncate text-[14px] font-semibold text-ms-fg">{chosenClassroom?.name ?? "Classroom"}</span>
                     </div>
                   ) : studentRows.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No recipients selected.</p>
+                    <p className="text-[14px] text-ms-fg-3">No recipients selected.</p>
                   ) : (
                     studentRows.map((u) => (
-                      <div key={u.id} className={cn(accClass.card, "flex items-center gap-3 px-3.5 py-2.5")}>
-                        <Avatar name={studentLabel(u)} seed={u.id} size={32} src={u.profile_image_url} />
-                        <span className="truncate text-sm font-bold text-foreground">{studentLabel(u)}</span>
+                      <div key={u.id} className={LINE}>
+                        <AccessAvatar name={studentLabel(u)} seed={u.id} size="sm" src={u.profile_image_url} />
+                        <span className="truncate text-[14px] font-semibold text-ms-fg">{studentLabel(u)}</span>
                       </div>
                     ))
                   )}
@@ -307,13 +339,13 @@ export function GrantPanel({
               </div>
 
               {/* Tests */}
-              <div>
-                <p className={cn(accClass.eyebrow, "mb-2")}>Tests · {resources.length}</p>
-                <div className="space-y-2">
+              <div className="min-w-0">
+                <p className={cn(EYEBROW, "mb-2")}>Tests · {resources.length}</p>
+                <div className="flex flex-col gap-2">
                   {resources.map((r) => (
-                    <div key={`${r.resource_type}:${r.resource_id}`} className={cn(accClass.card, "flex items-center gap-3 px-3.5 py-2.5")}>
-                      <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary"><BookMarked className="h-4 w-4" /></span>
-                      <span className="truncate text-sm font-bold text-foreground">{r.label}</span>
+                    <div key={`${r.resource_type}:${r.resource_id}`} className={LINE}>
+                      <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-ms-primary-soft text-ms-primary-text"><Icon name="bookmark" size="sm" /></span>
+                      <span className="truncate text-[14px] font-semibold text-ms-fg">{r.label}</span>
                     </div>
                   ))}
                 </div>
@@ -322,81 +354,73 @@ export function GrantPanel({
 
             {showScope && (
               <div>
-                <p className={cn(accClass.eyebrow, "mb-2")}>Sections</p>
-                <div className="flex gap-2">
-                  {SCOPES.map((s) => (
-                    <Pill key={s.key} active={subjectScope === s.key} onClick={() => setSubjectScope(s.key)}>
-                      {s.label}
-                    </Pill>
-                  ))}
-                </div>
-                <p className="mt-1.5 text-xs text-muted-foreground">
+                <p className={cn(EYEBROW, "mb-2")}>Sections</p>
+                <Segmented<SubjectScope> label="Sections" options={SCOPES} value={subjectScope} onChange={setSubjectScope} />
+                <p className={HINT}>
                   Math grants only the Math section, Reading only the Reading &amp; Writing section.
                 </p>
               </div>
             )}
 
             <div className="grid items-end gap-4 sm:grid-cols-2">
-              <div>
-                <p className={cn(accClass.eyebrow, "mb-2")}>Expires at (optional)</p>
+              <div className="min-w-0">
+                <label htmlFor={expiresFieldId} className={FIELD_LABEL}>Expires at (optional)</label>
                 <input
+                  id={expiresFieldId}
                   type="datetime-local"
                   value={expiresAt}
                   onChange={(e) => setExpiresAt(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none transition-shadow focus:ring-2 focus:ring-[color:var(--primary)]/25"
+                  className={CONTROL}
                 />
-                <p className="mt-1 text-xs text-muted-foreground">Leave empty for permanent access.</p>
+                <p className={HINT}>Leave empty for permanent access.</p>
               </div>
-              <div className="rounded-xl border border-[var(--acc-chip-border)] bg-[var(--acc-card-sel)] p-4 text-sm">
-                <p className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <Sparkles className="h-4 w-4 text-primary" />
+              <div className="rounded-ms-ctl border border-ms-primary-soft-2 bg-ms-primary-soft p-4 text-[14px]">
+                <p className="flex flex-wrap items-center gap-1.5 font-medium text-ms-fg">
+                  <span className="text-ms-primary-text"><Icon name="info" size="sm" /></span>
                   {mode === "resource_classroom"
-                    ? <><span className="font-extrabold">{chosenClassroom?.name ?? "The classroom"}</span> will get <span className="font-extrabold">{resources.length}</span> test(s)</>
-                    : <><span className="font-extrabold">{recipientCount}</span> student{recipientCount === 1 ? "" : "s"} will get <span className="font-extrabold">{resources.length}</span> test(s)</>}
+                    ? <><span className="font-bold">{chosenClassroom?.name ?? "The classroom"}</span> will get <span className="font-bold">{resources.length}</span> test(s)</>
+                    : <><span className="font-bold">{recipientCount}</span> student{recipientCount === 1 ? "" : "s"} will get <span className="font-bold">{resources.length}</span> test(s)</>}
                 </p>
-                <p className="mt-0.5 text-muted-foreground">
-                  with {expiresAt ? "temporary" : <span className="font-semibold text-foreground">permanent</span>} access
+                <p className="mt-0.5 text-ms-fg-2">
+                  with {expiresAt ? "temporary" : <span className="font-semibold text-ms-fg">permanent</span>} access
                   {expiresAt ? ` until ${new Date(expiresAt).toLocaleDateString()}` : ""}.
                 </p>
               </div>
             </div>
 
-            {error && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div>
-            )}
+            {error && <LibraryError>{error}</LibraryError>}
           </div>
         )}
       </div>
 
       {/* Footer nav */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         {stepIdx > 0 ? (
-          <button type="button" onClick={goBack} className={accClass.ghostBtn}>
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
+          <Button variant="secondary" icon="left" onClick={goBack}>
+            Back
+          </Button>
         ) : <span />}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-end gap-4">
           {step === "recipients" && mode === "resource_students" && (
-            <span className="text-sm font-semibold text-muted-foreground">
-              <span className="text-foreground">{userIds.length}</span> selected
+            <span className="text-[14px] font-medium text-ms-fg-3">
+              <span className="font-semibold text-ms-fg">{userIds.length}</span> selected
             </span>
           )}
           {step === "tests" && (
-            <span className="text-sm font-semibold text-muted-foreground">
-              <span className="text-foreground">{resources.length}</span> selected
+            <span className="text-[14px] font-medium text-ms-fg-3">
+              <span className="font-semibold text-ms-fg">{resources.length}</span> selected
             </span>
           )}
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={goNext}
             disabled={!stepValid(step)}
-            className={accClass.primaryBtn}
+            state={submitting ? "busy" : "idle"}
+            busyLabel="Grant access"
           >
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {isLast ? "Grant access" : step === "recipients" ? "Continue to tests" : "Review grant"}
-            {!isLast && <ArrowRight className="h-4 w-4" />}
-            {isLast && !submitting && <Check className="h-4 w-4" />}
-          </button>
+            <Icon name={isLast ? "check" : "arrow"} />
+          </Button>
         </div>
       </div>
     </div>
@@ -422,10 +446,10 @@ function SelectedRecipientsBar({
   if (mode === "resource_classroom") {
     if (!chosenClassroom) return null;
     return (
-      <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
-        <p className={cn(accClass.eyebrow, "mb-2")}><School className="h-3.5 w-3.5" /> Recipient</p>
-        <span className="inline-flex items-center gap-2 rounded-full border border-[var(--acc-chip-border)] bg-card py-1 pl-1.5 pr-3 text-[13px] font-semibold text-foreground">
-          <span className="grid h-5 w-5 place-items-center rounded-md bg-primary/10 text-primary"><School className="h-3 w-3" /></span>
+      <div className={BAND}>
+        <p className={cn(EYEBROW, "mb-2")}><Icon name="cap" size="sm" /> Recipient</p>
+        <span className={cn(RECIPIENT_CHIP, "pl-1.5 pr-3")}>
+          <span className="grid size-5 place-items-center rounded-[6px] bg-ms-primary-soft text-ms-primary-text"><Icon name="cap" size="sm" className="size-3" /></span>
           <span className="max-w-[220px] truncate">{chosenClassroom.name}</span>
         </span>
       </div>
@@ -435,33 +459,30 @@ function SelectedRecipientsBar({
   if (studentRows.length === 0) {
     if (userCount <= 0) return null;
     return (
-      <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
-        <p className={cn(accClass.eyebrow, "mb-1.5")}><Users className="h-3.5 w-3.5" /> Recipients</p>
-        <span className="text-sm font-bold text-foreground">{userCount} student{userCount === 1 ? "" : "s"} selected</span>
+      <div className={BAND}>
+        <p className={cn(EYEBROW, "mb-1.5")}><Icon name="users" size="sm" /> Recipients</p>
+        <span className="text-[14px] font-semibold text-ms-fg">{userCount} student{userCount === 1 ? "" : "s"} selected</span>
       </div>
     );
   }
   return (
-    <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
-      <p className={cn(accClass.eyebrow, "mb-2")}>
-        <Users className="h-3.5 w-3.5" /> {studentRows.length} recipient{studentRows.length === 1 ? "" : "s"} selected
+    <div className={BAND}>
+      <p className={cn(EYEBROW, "mb-2")}>
+        <Icon name="users" size="sm" /> {studentRows.length} recipient{studentRows.length === 1 ? "" : "s"} selected
       </p>
       <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
         {studentRows.map((u) => (
-          <span
-            key={u.id}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--acc-chip-border)] bg-card py-1 pl-1 pr-2 text-[12px] font-semibold text-foreground"
-          >
-            <Avatar name={studentLabel(u)} seed={u.id} size={18} src={u.profile_image_url} />
+          <span key={u.id} className={RECIPIENT_CHIP}>
+            <AccessAvatar name={studentLabel(u)} seed={u.id} size="xs" src={u.profile_image_url} />
             <span className="max-w-[130px] truncate">{studentLabel(u)}</span>
             {onRemove && (
               <button
                 type="button"
                 aria-label={`Remove ${studentLabel(u)}`}
                 onClick={() => onRemove(u.id)}
-                className="-my-1 grid h-6 w-6 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                className="ms-press -my-1 -mr-1 grid size-6 place-items-center rounded-full text-ms-fg-3 hover:bg-ms-surface-2 hover:text-ms-fg"
               >
-                <X className="h-3 w-3" />
+                <Icon name="x" size="sm" className="size-3" />
               </button>
             )}
           </span>
@@ -474,39 +495,39 @@ function SelectedRecipientsBar({
 // ── Stepper ───────────────────────────────────────────────────────────────────
 function Stepper({ steps, current }: { steps: StepKey[]; current: number }) {
   return (
-    <div className={cn(accClass.card, "flex items-center gap-3 px-5 py-4")}>
+    <ol className={cn(CARD, "flex items-center gap-3 px-5 py-4")}>
       {steps.map((s, i) => {
         const done = i < current;
         const active = i === current;
         return (
-          <div key={s} className="flex flex-1 items-center gap-3 last:flex-none">
+          <li key={s} aria-current={active ? "step" : undefined} className="flex flex-1 items-center gap-3 last:flex-none">
             <div className="flex items-center gap-2.5">
               <span
                 className={cn(
-                  "grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold transition-colors",
-                  done ? "bg-primary text-white" : active ? "bg-primary text-white" : "bg-surface-2 text-muted-foreground",
+                  "grid size-8 shrink-0 place-items-center rounded-full text-[14px] font-semibold transition-colors",
+                  done || active ? "bg-ms-primary text-white" : "bg-ms-surface-2 text-ms-fg-3",
                 )}
               >
-                {done ? <Check className="h-4 w-4" strokeWidth={3} /> : i + 1}
+                {done ? <Icon name="check" size="sm" /> : i + 1}
               </span>
               <div className="hidden sm:block">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Step {i + 1}</p>
-                <p className={cn("text-sm font-bold", active || done ? "text-foreground" : "text-muted-foreground")}>
+                <p className="text-[12px] font-medium text-ms-fg-3">Step {i + 1}</p>
+                <p className={cn("text-[14px] font-semibold", active || done ? "text-ms-fg" : "text-ms-fg-3")}>
                   {STEP_LABELS[s]}
                 </p>
               </div>
             </div>
             {i < steps.length - 1 && (
-              <div className="h-0.5 flex-1 overflow-hidden rounded-full bg-border">
+              <div className="h-0.5 flex-1 overflow-hidden rounded-full bg-ms-border">
                 <div
-                  className="h-full origin-left rounded-full bg-primary transition-transform duration-500"
+                  className="h-full origin-left rounded-full bg-ms-primary transition-transform duration-500"
                   style={{ transform: `scaleX(${done ? 1 : 0})` }}
                 />
               </div>
             )}
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -31,15 +31,7 @@ import type {
   ReviewStatus,
 } from "@/features/assessments/types";
 import { REVIEW_STATUS_LABELS } from "@/features/assessments/types";
-
-const REVIEW_STATUS_STYLES: Record<ReviewStatus, string> = {
-  draft: "bg-slate-100 text-slate-700",
-  needs_review: "bg-amber-100 text-amber-800",
-  approved: "bg-emerald-100 text-emerald-800",
-};
-const REVIEW_STATUS_ORDER: ReviewStatus[] = ["draft", "needs_review", "approved"];
 import { normalizeApiError, formatApiErrorForToast } from "@/lib/apiError";
-import ErrorPanel from "@/components/ErrorPanel";
 import { useToast } from "@/components/ToastProvider";
 import { normalizeQuestionList } from "@/features/assessments/builder/normalize";
 import {
@@ -47,49 +39,76 @@ import {
   useBuilderViewSet,
 } from "@/features/assessments/builder/store";
 import { SATQuestionPreview } from "@/features/assessments/builder/SATQuestionPreview";
-import { QuestionRow } from "@/features/assessments/builder/QuestionRow";
+import { QuestionGhost, QuestionRow } from "@/features/assessments/builder/QuestionRow";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
 import { writeStudioSession } from "@/lib/studioSession";
+import { recordRecent } from "@/features/console/recent";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   closestCenter,
+  defaultDropAnimationSideEffects,
   useSensor,
   useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+  type DropAnimation,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import {
-  ArrowLeft,
-  CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  Eye,
-  Database,
-  Lock,
-  Monitor,
-  Plus,
-  Rocket,
-  RotateCcw,
-  Save,
-  Smartphone,
-  Upload,
-  XCircle,
-} from "lucide-react";
+  Badge,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  Kbd,
+  Menu,
+  Segmented,
+  Select,
+  buttonClass,
+  inputShell,
+  prefersReducedMotion,
+  useModKey,
+  type BadgeTone,
+} from "@/features/console/ui";
 import { cn } from "@/lib/cn";
-import { StateTag } from "@/components/governance";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const INPUT =
-  "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:border-primary/50 transition-colors";
+const REVIEW_STATUS_TONE: Record<ReviewStatus, BadgeTone> = {
+  draft: "neutral",
+  needs_review: "attention",
+  approved: "positive",
+};
+const REVIEW_STATUS_ORDER: ReviewStatus[] = ["draft", "needs_review", "approved"];
 
-const LABEL = "text-[11px] font-bold text-muted-foreground uppercase tracking-widest";
+/** The console field shell (design handoff v0.3, PR 17b), on the set metadata's inputs and selects. */
+const INPUT = inputShell({
+  className:
+    "w-full outline-none placeholder:text-ms-fg-3 disabled:cursor-not-allowed disabled:bg-ms-surface-2 disabled:text-ms-fg-disabled",
+});
+const AREA = inputShell({ area: true, className: "w-full outline-none placeholder:text-ms-fg-3" });
+
+const LABEL = "mb-1.5 block text-[14px] font-medium leading-5 text-ms-fg";
+const EYEBROW = "text-ms-over uppercase text-ms-fg-3";
+
+/** The lifted question settles into its slot on the console's curve (Motion board). */
+const DROP: DropAnimation = {
+  duration: 200,
+  easing: "cubic-bezier(.2,.8,.2,1)",
+  sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: "0" } } }),
+};
+
+const NOTICE = {
+  attention: { box: "border-ms-attention-line bg-ms-attention-soft text-ms-attention-fg", icon: "lock" },
+  critical: { box: "border-ms-critical-line bg-ms-critical-soft text-ms-critical-fg", icon: "alert" },
+} satisfies Record<string, { box: string; icon: IconName }>;
+const NOTICE_BOX = "animate-ms-fade-in flex items-start gap-2.5 rounded-ms-ctl border px-3.5 py-2.5 text-[14px] leading-5";
 
 // Reject oversized images client-side with a friendly message before they hit
 // nginx's 60M hard cap (which returns an opaque 413). 10 MB is generous for a
@@ -208,6 +227,13 @@ export default function BuilderSetEditorContainer() {
     [setId, detail, toast],
   );
 
+  // Studio home's "Continue where you left off" (BuilderHome board).
+  const savedTitle = (detail.data as { title?: string } | undefined)?.title;
+  useEffect(() => {
+    if (!Number.isFinite(setId) || setId <= 0 || !detail.data) return;
+    recordRecent({ kind: "set", id: setId, name: savedTitle || `Set ${setId}`, href: `/builder/sets/${setId}` });
+  }, [setId, detail.data, savedTitle]);
+
   // ── Session continuity: persist last-edited set + question to localStorage ──
   useEffect(() => {
     if (!Number.isFinite(setId) || setId <= 0) return;
@@ -310,20 +336,8 @@ export default function BuilderSetEditorContainer() {
 
   // ── Viewport toggle ──────────────────────────────────────
   const [viewportMode, setViewportMode] = useState<"desktop" | "mobile">("desktop");
+  // Save only / Save & next / Save & new — picked from the menu beside Save (a console Menu closes itself).
   const [saveMode, setSaveMode] = useState<"save" | "save-next" | "save-new">("save");
-  const [saveModeOpen, setSaveModeOpen] = useState(false);
-  const saveModeRef = useRef<HTMLDivElement>(null);
-
-  // Close save-mode dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (saveModeRef.current && !saveModeRef.current.contains(e.target as Node)) {
-        setSaveModeOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
 
   const [editing, setEditing] = useState<{
     questionId: number | null;
@@ -659,24 +673,106 @@ export default function BuilderSetEditorContainer() {
     }
   }, [editing, questions, upsertQuestion, selectQuestion, toast]);
 
-  const onDragEnd = async (event: any) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const ids = questions.map((q) => q.id);
-    const oldIndex = ids.indexOf(active.id);
-    const newIndex = ids.indexOf(over.id);
-    const next = normalizeQuestionList(arrayMove(questions, oldIndex, newIndex));
+  // ── Reorder: a drag or ⌥↑ / ⌥↓ ─────────────────────────────────────────────
+  // The outline shows the new order at once (`pendingOrder`) and goes back to the server's if it refuses.
+  const [pendingOrder, setPendingOrder] = useState<number[] | null>(null);
+  const [activeDragId, setActiveDragId] = useState<number | null>(null);
+  const [reduceMotion] = useState(prefersReducedMotion);
+  const rowRefs = useRef(new Map<number, HTMLButtonElement>());
+  const focusAfterMove = useRef<number | null>(null);
+  const [moveNote, setMoveNote] = useState("");
+
+  const shownQuestions = useMemo(() => {
+    if (!pendingOrder) return questions;
+    const byId = new Map(questions.map((q) => [q.id, q]));
+    const ordered = pendingOrder.map((id) => byId.get(id)).filter((q): q is AssessmentQuestion => Boolean(q));
+    return ordered.length === questions.length ? ordered : questions;
+  }, [questions, pendingOrder]);
+
+  useEffect(() => {
+    const id = focusAfterMove.current;
+    if (id == null) return;
+    focusAfterMove.current = null;
+    rowRefs.current.get(id)?.focus();
+  }, [shownQuestions]);
+
+  const saveOrder = async (nextIds: number[]) => {
     pushUndoPoint();
+    setPendingOrder(nextIds);
     try {
       // Single atomic reorder: the backend reindexes ALL questions to a dense,
       // unique 0..n-1 under a set row-lock. Replaces the old N-PATCH loop, which
       // left duplicate/gapped orders if a request failed midway.
-      await assessmentAuthoringApi.reorderQuestions(setId, next.map((q) => q.id));
+      // The moved ids go as they are: `normalizeQuestionList` re-sorts by the OLD `order`, so running the
+      // moved list through it (as this did until PR 17b) sent the unchanged order and a drag never stuck.
+      await assessmentAuthoringApi.reorderQuestions(setId, nextIds);
       await detail.refetch();
       toast.push({ tone: "success", message: "Order saved." });
     } catch (e) {
       toast.push({ tone: "error", message: formatApiErrorForToast(e) });
+    } finally {
+      setPendingOrder(null);
     }
+  };
+
+  const onDragStart = (event: DragStartEvent) => setActiveDragId(Number(event.active.id));
+
+  const onDragEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id || pendingOrder) return;
+    const ids = shownQuestions.map((q) => q.id);
+    const oldIndex = ids.indexOf(Number(active.id));
+    const newIndex = ids.indexOf(Number(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    await saveOrder(arrayMove(ids, oldIndex, newIndex));
+  };
+
+  // ⌥↑ / ⌥↓: the drag without a mouse. The moved row keeps the keyboard focus and a polite line says where.
+  const moveQuestion = (id: number, delta: -1 | 1) => {
+    if (pendingOrder) return;
+    const ids = shownQuestions.map((q) => q.id);
+    const from = ids.indexOf(id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    focusAfterMove.current = id;
+    setMoveNote(`Q${from + 1} moved to position ${to + 1} of ${ids.length}.`);
+    void saveOrder(arrayMove(ids, from, to));
+  };
+
+  // ── Delete a question: Yes on the row; a 409 (student answers) asks again in the console dialog ──
+  const [forceDeleteQ, setForceDeleteQ] = useState<{ id: number; n: number } | null>(null);
+  const [forceDeleteOpen, setForceDeleteOpen] = useState(false);
+  const applyDeleted = (qId: number) => {
+    removeQuestionPatch(qId);
+    if (selectedQuestionId === qId) selectQuestion(null);
+    toast.push({ tone: "success", message: "Deleted." });
+  };
+  const deleteQuestion = async (qId: number, n: number) => {
+    pushUndoPoint();
+    try {
+      await delQuestion.mutateAsync(qId);
+      applyDeleted(qId);
+    } catch (e) {
+      const err = normalizeApiError(e);
+      // 409 = the question has student answers (PROTECT). Offer to
+      // force-delete it along with those answers; scores are kept.
+      if (err.status === 409) {
+        setForceDeleteQ({ id: qId, n });
+        setForceDeleteOpen(true);
+      } else {
+        toast.push({ tone: "error", message: err.message });
+      }
+    }
+  };
+  const forceDelete = async () => {
+    if (!forceDeleteQ) return;
+    try {
+      await delQuestion.mutateAsync({ questionId: forceDeleteQ.id, force: true });
+    } catch (e2) {
+      throw new Error(normalizeApiError(e2).message);
+    }
+    applyDeleted(forceDeleteQ.id);
   };
 
   const saveSetMeta = async () => {
@@ -744,175 +840,178 @@ export default function BuilderSetEditorContainer() {
 
   // ── Collapse state for left panel sections ─────────────────────────────────
   const [metaOpen, setMetaOpen] = useState(false);
+  const metaId = useId();
+  const mod = useModKey();
 
   if (isLoading && !view) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div className="ms flex min-h-dvh items-center justify-center" data-ms-temp="builder" aria-busy="true" aria-label="Loading">
+        <Icon name="loader" className="size-8 animate-ms-spin text-ms-fg-3" />
       </div>
     );
   }
   if (error) {
-    return <ErrorPanel title="Failed to load" message={String((error as any)?.message || error)} actionLabel="Retry" onAction={() => void refetch()} />;
+    return (
+      <div className="ms flex min-h-dvh items-center justify-center p-6" data-ms-temp="builder">
+        <div role="alert" className="animate-ms-card-in flex max-w-md flex-col items-start gap-3 rounded-ms-card bg-ms-card p-6 shadow-ms-1">
+          <span className="grid size-10 place-items-center rounded-[12px] bg-ms-critical-soft text-ms-critical-fg">
+            <Icon name="alert" />
+          </span>
+          <h1 className="text-[20px] font-bold leading-7 text-ms-fg">Failed to load</h1>
+          <p className="text-[14px] text-ms-fg-2">{String((error as any)?.message || error)}</p>
+          <Button variant="secondary" icon="refresh" onClick={() => void refetch()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
   }
   if (!view) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground font-semibold">Set not found.</p>
+      <div className="ms flex min-h-dvh flex-col items-center justify-center gap-3 p-6" data-ms-temp="builder">
+        <p className="text-[16px] font-semibold text-ms-fg-2">Set not found.</p>
+        <Link href="/builder/sets" className={buttonClass({ variant: "secondary" })}>
+          <Icon name="left" size="sm" />
+          Sets
+        </Link>
       </div>
     );
   }
 
   const isPublished = Boolean((view as any)?.is_active);
+  const reviewStatus = (((detail.data as any)?.review_status ?? "draft") as ReviewStatus);
+  const activeDragQ = activeDragId != null ? shownQuestions.find((q) => q.id === activeDragId) ?? null : null;
+  const activeDragIndex = activeDragQ ? shownQuestions.indexOf(activeDragQ) : -1;
+  const saveLabel = upsertQuestion.isPending
+    ? "Saving…"
+    : saveMode === "save-next"
+      ? "Save & Next"
+      : saveMode === "save-new"
+        ? "Save & New"
+        : editing.questionId
+          ? "Save changes"
+          : "Create";
+  const saveDisabled = upsertQuestion.isPending || versionOutdated;
+  const metaDisabled = upsertSet.isPending || versionOutdated;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
-      {/* ── Top header bar ──────────────────────────────────────────────────── */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-border bg-card px-5 py-3 shadow-sm">
-        <Link
-          href="/builder/sets"
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-sm font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors shrink-0"
-        >
-          <ArrowLeft className="h-4 w-4" />
+    <div className="ms flex min-h-dvh flex-col lg:h-dvh" data-ms-temp="builder">
+      {/* ── Top bar: the way back, the set, its review status, Undo / Redo (Shell board, "Builder editor") ── */}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-ms-border bg-ms-card px-3 py-2.5 sm:px-4 lg:min-h-16 lg:px-5">
+        <Link href="/builder/sets" className={buttonClass({ variant: "ghost", size: "sm", className: "-ml-1" })}>
+          <Icon name="left" size="sm" />
           Sets
         </Link>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">
-              #{view.id}
+        <span aria-hidden className="h-6 w-px shrink-0 bg-ms-border-strong max-sm:hidden" />
+        {/* On a phone the set takes its own line under the way back, and the actions the next. */}
+        <div className="min-w-0 flex-1 max-sm:basis-full">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+            <span className="text-[13px] font-semibold tabular-nums text-ms-fg-3">#{view.id}</span>
+            <h1 className="min-w-0 truncate font-ms-display text-[17px] font-bold leading-6 tracking-[-0.01em] text-ms-fg">
+              {view.title || "Untitled set"}
+            </h1>
+            <Badge tone={REVIEW_STATUS_TONE[reviewStatus]}>{REVIEW_STATUS_LABELS[reviewStatus]}</Badge>
+            {/* The select is w-full; its width comes from this wrapper (cn does not merge a w-[…] over it). */}
+            <span className="w-[150px] shrink-0">
+              <Select<ReviewStatus>
+                aria-label="Review status"
+                value={reviewStatus}
+                disabled={setReviewStatus.isPending}
+                onChange={(rs) => {
+                  if (rs !== reviewStatus) changeReviewStatus(rs);
+                }}
+                options={REVIEW_STATUS_ORDER.map((opt) => ({
+                  value: opt,
+                  label: REVIEW_STATUS_LABELS[opt],
+                  disabledReason: opt === "approved" && !canApprove ? "Only an admin can approve" : undefined,
+                }))}
+              />
             </span>
-            <p className="font-extrabold text-foreground truncate">{view.title || "Untitled set"}</p>
-            {(() => {
-              const rs = (((detail.data as any)?.review_status ?? "draft") as ReviewStatus);
-              return (
-                <>
-                  <span
-                    className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${REVIEW_STATUS_STYLES[rs]}`}
-                    title="Review status"
-                  >
-                    {REVIEW_STATUS_LABELS[rs]}
-                  </span>
-                  <select
-                    value={rs}
-                    disabled={setReviewStatus.isPending}
-                    onChange={(e) => changeReviewStatus(e.target.value as ReviewStatus)}
-                    title={canApprove ? "Change review status" : "Only an admin can approve"}
-                    className="rounded-lg border border-border bg-card px-2 py-0.5 text-[11px] font-bold text-foreground disabled:opacity-50"
-                  >
-                    {REVIEW_STATUS_ORDER.map((opt) => (
-                      <option key={opt} value={opt} disabled={opt === "approved" && !canApprove}>
-                        {REVIEW_STATUS_LABELS[opt]}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              );
-            })()}
-            <StateTag state={isPublished ? "PUBLISHED" : "DRAFT"} size="xs" />
-            {dirty && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-700">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                Unsaved
-              </span>
+            {isPublished ? (
+              <Badge tone="positive" dot>
+                Published
+              </Badge>
+            ) : (
+              <Badge tone="line">Draft</Badge>
             )}
+            {dirty ? (
+              <Badge tone="attention" dot>
+                Unsaved
+              </Badge>
+            ) : null}
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="mt-0.5 text-[13px] text-ms-fg-2">
             {view.subject} · {view.category || "No category"} · {questions.length} question{questions.length !== 1 ? "s" : ""}
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            disabled={!pastLen || versionOutdated}
-            onClick={() => undo()}
-            title="Undo (⌘Z)"
-            className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold hover:bg-surface-2 disabled:opacity-40 transition-colors"
-          >
-            ↩ Undo
-          </button>
-          <button
-            type="button"
-            disabled={!futureLen || versionOutdated}
-            onClick={() => redo()}
-            title="Redo (⇧⌘Z)"
-            className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold hover:bg-surface-2 disabled:opacity-40 transition-colors"
-          >
-            ↪ Redo
-          </button>
-          {validation.length > 0 && (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700"
-              title="Fix these before this set can be approved"
-            >
-              <Rocket className="h-3.5 w-3.5" />
-              {validation.length} issue{validation.length !== 1 ? "s" : ""} to fix
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" icon="undo" disabled={!pastLen || versionOutdated} onClick={() => undo()} title="Undo (⌘Z)">
+            Undo
+          </Button>
+          <Button variant="secondary" size="sm" disabled={!futureLen || versionOutdated} onClick={() => redo()} title="Redo (⇧⌘Z)">
+            <Icon name="undo" size="sm" className="-scale-x-100" />
+            Redo
+          </Button>
+          {validation.length > 0 ? (
+            <span title="Fix these before this set can be approved">
+              <Badge tone="attention" icon="warn">
+                {validation.length} issue{validation.length !== 1 ? "s" : ""} to fix
+              </Badge>
             </span>
-          )}
+          ) : null}
         </div>
       </header>
 
-      {/* ── Immutable published warning ──────────────────────────────────────── */}
-      {isPublished && (
-        <div className="shrink-0 flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-5 py-2.5">
-          <Lock className="h-4 w-4 text-amber-700 shrink-0" />
-          <p className="text-sm text-amber-800">
-            <strong className="font-bold text-amber-900">Published set.</strong>{" "}
-            Any edits you save will create a new revision automatically. Existing student attempts are not affected.
-          </p>
+      {/* ── Notices: published (edits make a new revision), and an outdated copy ── */}
+      {isPublished || versionOutdated ? (
+        <div className="flex shrink-0 flex-col gap-2 px-3 pt-3 sm:px-4 lg:px-5">
+          {isPublished ? (
+            <div role="status" className={cn(NOTICE_BOX, NOTICE.attention.box)}>
+              <Icon name={NOTICE.attention.icon} size="sm" className="mt-0.5 shrink-0" />
+              <p>
+                <strong className="font-semibold">Published set.</strong> Any edits you save will create a new revision
+                automatically. Existing student attempts are not affected.
+              </p>
+            </div>
+          ) : null}
+          {versionOutdated ? (
+            <div role="alert" className={cn(NOTICE_BOX, "items-center", NOTICE.critical.box)}>
+              <Icon name={NOTICE.critical.icon} size="sm" className="shrink-0" />
+              <p className="flex-1 font-semibold">This set was updated elsewhere while you had unsaved edits.</p>
+              <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>
+                Reload
+              </Button>
+            </div>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
-      {/* ── Outdated version warning ─────────────────────────────────────────── */}
-      {versionOutdated && (
-        <div className="shrink-0 flex items-center gap-3 border-b border-red-200 bg-red-50 px-5 py-2.5">
-          <p className="text-sm text-red-800 font-semibold flex-1">
-            This set was updated elsewhere while you had unsaved edits.
-          </p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="rounded-xl border border-red-300 bg-red-100 px-3 py-1.5 text-xs font-bold text-red-800 hover:bg-red-200 shrink-0"
-          >
-            Reload
-          </button>
-        </div>
-      )}
-
-      {/* ── 3-pane content ───────────────────────────────────────────────────── */}
-      <div className="flex min-h-0 flex-1">
-
-        {/* LEFT PANEL: Question list + set metadata */}
-        <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-card">
-          {/* Add question buttons */}
-          <div className="shrink-0 space-y-2 border-b border-border p-3">
-            <button
-              type="button"
-              onClick={newQuestion}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
+      {/* ── Three panes; on a phone they stack ── */}
+      <div className="flex flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
+        {/* LEFT: the outline — add questions, the questions in order, the set's issues and metadata */}
+        <aside
+          aria-label="Questions in this set"
+          className="flex shrink-0 flex-col border-ms-border bg-ms-card max-lg:border-b lg:w-[300px] lg:border-r"
+        >
+          <div className="flex shrink-0 flex-col gap-2 border-b border-ms-line p-3">
+            <Button variant="primary" icon="plus" className="w-full" onClick={newQuestion}>
               New question
-            </button>
-            <button
-              type="button"
-              onClick={() => setPickerOpen(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
-            >
-              <Database className="h-4 w-4" />
+            </Button>
+            <Button variant="secondary" icon="library" className="w-full" onClick={() => setPickerOpen(true)}>
               Add from Question Bank
-            </button>
-            <button
-              type="button"
-              disabled={csvBusy}
+            </Button>
+            <Button
+              variant="secondary"
+              icon="upload"
+              className="w-full"
+              state={csvBusy ? "busy" : "idle"}
+              busyLabel="Importing…"
               onClick={() => csvInputRef.current?.click()}
               title="Append questions from a CSV file (columns: question_type, prompt, option_a–d, correct_answer, points, explanation)"
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-50"
             >
-              <Upload className="h-4 w-4" />
-              {csvBusy ? "Importing…" : "Import CSV"}
-            </button>
+              Import CSV
+            </Button>
             <input
               ref={csvInputRef}
               type="file"
@@ -927,6 +1026,7 @@ export default function BuilderSetEditorContainer() {
             {/* Renders only for super_admin; the endpoint 403s for anyone else. Same
                 columns as the importer above, so a downloaded file goes back in. */}
             <DownloadQuestionsCsvButton
+              look="console"
               fetchCsv={() => assessmentAuthoringApi.exportQuestionsCsv(setId)}
               fallbackName={`assessment-${setId}-questions`}
               title="Download every question in this set, with its answer key"
@@ -941,79 +1041,73 @@ export default function BuilderSetEditorContainer() {
             onAdd={(bankQuestionId) => void addFromBank(bankQuestionId)}
           />
 
-          {/* Question list */}
-          <div className="flex-1 overflow-y-auto p-3">
-            {questions.length === 0 ? (
-              <div className="py-8 text-center">
-                <p className="text-sm font-semibold text-muted-foreground">No questions yet</p>
-                <p className="mt-1 text-xs text-muted-foreground/60">
-                  Click "New question" to add the first one
-                </p>
-              </div>
+          {/* The questions, in order: dragged (lifted) or ⌥↑ / ⌥↓ to reorder */}
+          <div className="flex flex-col gap-1 p-2 max-lg:max-h-[50vh] max-lg:overflow-y-auto lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            {shownQuestions.length === 0 ? (
+              <EmptyState icon="ms-question" title="No questions yet" detail={`Click "New question" to add the first one`} />
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                <SortableContext items={questions.map((q) => q.id)} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-1.5">
-                    {questions.map((q, idx) => (
-                      <QuestionRow
-                        key={q.id}
-                        q={q}
-                        index={idx}
-                        active={q.id === selectedQuestionId}
-                        onSelect={() => selectQuestion(q.id)}
-                        onDelete={() =>
-                          void (async () => {
-                            pushUndoPoint();
-                            const applyLocal = () => {
-                              removeQuestionPatch(q.id);
-                              if (selectedQuestionId === q.id) selectQuestion(null);
-                              toast.push({ tone: "success", message: "Deleted." });
-                            };
-                            try {
-                              await delQuestion.mutateAsync(q.id);
-                              applyLocal();
-                            } catch (e) {
-                              const err = normalizeApiError(e);
-                              // 409 = the question has student answers (PROTECT). Offer to
-                              // force-delete it along with those answers; scores are kept.
-                              if (
-                                err.status === 409 &&
-                                window.confirm(
-                                  "This question already has student answers.\n\n" +
-                                    "Delete it anyway? This also removes those answer records " +
-                                    "(existing scores are not changed). This cannot be undone.",
-                                )
-                              ) {
-                                try {
-                                  await delQuestion.mutateAsync({ questionId: q.id, force: true });
-                                  applyLocal();
-                                } catch (e2) {
-                                  toast.push({ tone: "error", message: normalizeApiError(e2).message });
-                                }
-                              } else {
-                                toast.push({ tone: "error", message: err.message });
-                              }
-                            }
-                          })()
-                        }
-                      />
-                    ))}
-                  </div>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={onDragStart}
+                onDragCancel={() => setActiveDragId(null)}
+                onDragEnd={(e) => void onDragEnd(e)}
+              >
+                <SortableContext items={shownQuestions.map((q) => q.id)} strategy={verticalListSortingStrategy}>
+                  {shownQuestions.map((q, idx) => (
+                    <QuestionRow
+                      key={q.id}
+                      q={q}
+                      index={idx}
+                      active={q.id === selectedQuestionId}
+                      reordering={Boolean(pendingOrder)}
+                      reduceMotion={reduceMotion}
+                      onSelect={() => selectQuestion(q.id)}
+                      onDelete={() => void deleteQuestion(q.id, idx + 1)}
+                      onMove={(delta) => moveQuestion(q.id, delta)}
+                      rowRef={(el) => {
+                        if (el) rowRefs.current.set(q.id, el);
+                        else rowRefs.current.delete(q.id);
+                      }}
+                    />
+                  ))}
                 </SortableContext>
+                {/* The lifted question, under the pointer. */}
+                <DragOverlay dropAnimation={reduceMotion ? null : DROP}>
+                  {activeDragQ ? <QuestionGhost q={activeDragQ} index={activeDragIndex} /> : null}
+                </DragOverlay>
               </DndContext>
             )}
+            {pendingOrder ? (
+              <div className="animate-ms-fade-in mt-1 flex items-center gap-1.5 rounded-[10px] bg-ms-surface-2 px-3 py-2 text-[13px] font-medium text-ms-fg-2">
+                <Icon name="loader" size="sm" className="size-3.5 animate-ms-spin" />
+                Saving order…
+              </div>
+            ) : null}
+            <p aria-live="polite" className="sr-only">
+              {moveNote}
+            </p>
           </div>
+
+          {shownQuestions.length > 1 ? (
+            <p className="flex shrink-0 items-center gap-1 border-t border-ms-line px-4 py-2.5 text-[13px] text-ms-fg-3">
+              <Kbd>{mod === "⌘" ? "⌥" : "Alt"}</Kbd>
+              <Kbd>↑</Kbd>
+              <Kbd>↓</Kbd>
+              <span className="ml-1">move a question</span>
+            </p>
+          ) : null}
 
           {/* Validation summary */}
           {validation.length > 0 && (
-            <div className="shrink-0 border-t border-border p-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-red-600 mb-2">
+            <div className="shrink-0 border-t border-ms-line px-4 py-3">
+              <p className="mb-2 text-ms-over uppercase text-ms-critical-fg">
                 {validation.length} validation issue{validation.length !== 1 ? "s" : ""}
               </p>
-              <ul className="space-y-1">
+              <ul className="flex flex-col gap-1">
                 {validation.slice(0, 5).map((e, i) => (
-                  <li key={i} className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">{e.scope}</span>: {e.message}
+                  <li key={i} className="text-[13px] leading-[18px] text-ms-fg-2">
+                    <span className="font-semibold text-ms-fg">{e.scope}</span>: {e.message}
                   </li>
                 ))}
               </ul>
@@ -1021,20 +1115,25 @@ export default function BuilderSetEditorContainer() {
           )}
 
           {/* Set metadata (collapsible) */}
-          <div className="shrink-0 border-t border-border">
+          <div className="shrink-0 border-t border-ms-line">
             <button
               type="button"
+              aria-expanded={metaOpen}
+              aria-controls={`${metaId}-meta`}
               onClick={() => setMetaOpen((v) => !v)}
-              className="flex w-full items-center justify-between px-4 py-3 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
+              className="ms-transition flex w-full items-center justify-between px-4 py-3 text-[14px] font-semibold text-ms-fg hover:bg-ms-surface"
             >
               Set metadata
-              <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", metaOpen && "rotate-180")} />
+              <Icon name="down" size="sm" className={cn("text-ms-fg-3 transition-transform duration-200", metaOpen && "rotate-180")} />
             </button>
             {metaOpen && (
-              <div className="border-t border-border px-3 pb-3 pt-3 space-y-3">
+              <div id={`${metaId}-meta`} className="animate-ms-fade-in flex flex-col gap-3 border-t border-ms-line p-3 lg:max-h-[40vh] lg:overflow-y-auto">
                 <div>
-                  <p className={cn(LABEL, "mb-1.5")}>Title</p>
+                  <label htmlFor={`${metaId}-title`} className={LABEL}>
+                    Title
+                  </label>
                   <input
+                    id={`${metaId}-title`}
                     className={INPUT}
                     value={String(view.title || "")}
                     onChange={(e) => patchSetTracked({ title: e.target.value })}
@@ -1042,22 +1141,28 @@ export default function BuilderSetEditorContainer() {
                   />
                 </div>
                 <div>
-                  <p className={cn(LABEL, "mb-1.5")}>Category</p>
+                  <label htmlFor={`${metaId}-category`} className={LABEL}>
+                    Category
+                  </label>
                   <AssessmentCategorySelect
+                    id={`${metaId}-category`}
                     subject={view.subject === "math" ? "math" : "english"}
                     value={String(view.category || "")}
                     onChange={(v) => patchSetTracked({ category: v })}
                     className={INPUT}
-                    disabled={upsertSet.isPending || versionOutdated}
+                    disabled={metaDisabled}
                   />
                 </div>
                 <div>
-                  <p className={cn(LABEL, "mb-1.5")}>Source</p>
+                  <label htmlFor={`${metaId}-source`} className={LABEL}>
+                    Source
+                  </label>
                   <select
+                    id={`${metaId}-source`}
                     className={INPUT}
                     value={String(view.source || "")}
                     onChange={(e) => patchSetTracked({ source: e.target.value })}
-                    disabled={upsertSet.isPending || versionOutdated}
+                    disabled={metaDisabled}
                   >
                     <option value="">None</option>
                     {allowedSourcesForSubject(view.subject, [view.level, view.secondary_level]).map((s) => (
@@ -1066,8 +1171,11 @@ export default function BuilderSetEditorContainer() {
                   </select>
                 </div>
                 <div>
-                  <p className={cn(LABEL, "mb-1.5")}>Level</p>
+                  <label htmlFor={`${metaId}-level`} className={LABEL}>
+                    Level
+                  </label>
                   <select
+                    id={`${metaId}-level`}
                     className={INPUT}
                     value={String(view.level || "")}
                     onChange={(e) => {
@@ -1083,7 +1191,7 @@ export default function BuilderSetEditorContainer() {
                         source: reconcileSource(view.subject, view.source, [level, secondary_level]),
                       });
                     }}
-                    disabled={upsertSet.isPending || versionOutdated}
+                    disabled={metaDisabled}
                   >
                     <option value="">None</option>
                     {levelsForSubject(view.subject).map((l) => (
@@ -1094,9 +1202,12 @@ export default function BuilderSetEditorContainer() {
                 <div>
                   {/* Optional second level (2026-10-11, the school's request): the set is
                       also shown to this cohort. Needs a primary first. */}
-                  <p className={cn(LABEL, "mb-1.5")}>Second level (optional)</p>
+                  <label htmlFor={`${metaId}-second`} className={LABEL}>
+                    Second level (optional)
+                  </label>
                   <select
-                    className={cn(INPUT, "disabled:cursor-not-allowed disabled:opacity-50")}
+                    id={`${metaId}-second`}
+                    className={INPUT}
                     value={String(view.secondary_level || "")}
                     onChange={(e) =>
                       patchSetTracked({
@@ -1104,7 +1215,7 @@ export default function BuilderSetEditorContainer() {
                         source: reconcileSource(view.subject, view.source, [view.level, e.target.value]),
                       })
                     }
-                    disabled={upsertSet.isPending || versionOutdated || !view.level}
+                    disabled={metaDisabled || !view.level}
                   >
                     <option value="">None</option>
                     {secondaryLevelOptions(view.subject, view.level).map((l) => (
@@ -1113,253 +1224,199 @@ export default function BuilderSetEditorContainer() {
                   </select>
                 </div>
                 <div>
-                  <p className={cn(LABEL, "mb-1.5")}>Description</p>
+                  <label htmlFor={`${metaId}-description`} className={LABEL}>
+                    Description
+                  </label>
                   <textarea
-                    className={`${INPUT} min-h-[80px]`}
+                    id={`${metaId}-description`}
+                    className={cn(AREA, "min-h-[80px]")}
                     value={String(view.description || "")}
                     onChange={(e) => patchSetTracked({ description: e.target.value })}
                     placeholder="Optional description"
                   />
                 </div>
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  icon="check"
+                  className="w-full"
+                  state={upsertSet.isPending ? "busy" : "idle"}
+                  busyLabel="Saving…"
+                  disabled={metaDisabled}
                   onClick={() => void saveSetMeta()}
-                  disabled={upsertSet.isPending || versionOutdated}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-2 text-sm font-bold hover:bg-surface-2 disabled:opacity-50 transition-colors"
                 >
-                  <Save className="h-3.5 w-3.5" />
-                  {upsertSet.isPending ? "Saving…" : "Save metadata"}
-                </button>
+                  Save metadata
+                </Button>
               </div>
             )}
           </div>
         </aside>
 
-        {/* CENTER PANEL: Question editor */}
-        <main className="flex min-w-0 flex-1 flex-col">
-
+        {/* CENTRE: the question being edited */}
+        <main className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
           {/* ── Formula toolbar — sticky, never scrolls away ─────────────── */}
-          <div className="shrink-0 border-b border-border bg-card">
-            <div className="px-3 pt-2 pb-0">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
-                Formula insert — click a symbol, then type in a field below
-              </p>
-            </div>
-            <FormulaToolbar onInsert={(snippet, cursorOffset) => formulaInsertRef.current?.(snippet, cursorOffset)} />
+          <div className="shrink-0 border-b border-ms-border bg-ms-card">
+            <p className={cn(EYEBROW, "px-3 pt-2")}>Formula insert — click a symbol, then type in a field below</p>
+            <FormulaToolbar look="console" onInsert={(snippet, cursorOffset) => formulaInsertRef.current?.(snippet, cursorOffset)} />
           </div>
 
           {/* ── Scrollable form body ─────────────────────────────────────── */}
-          <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl px-8 py-8">
-            {/* Panel heading — Q{n}/{total} nav + save controls */}
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                {/* Prev / Next navigation */}
-                <div className="mb-2 flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={currentIndex <= 0 || upsertQuestion.isPending}
-                    onClick={() => navigateTo(currentIndex - 1)}
-                    title="Previous question (⌘[)"
-                    className="rounded-lg border border-border bg-card p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground disabled:opacity-30 transition-colors"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="text-xs font-bold tabular-nums text-muted-foreground">
-                    {currentIndex >= 0 ? `Q${currentIndex + 1} / ${questions.length}` : questions.length > 0 ? `New · ${questions.length} total` : "New question"}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={currentIndex < 0 || currentIndex >= questions.length - 1 || upsertQuestion.isPending}
-                    onClick={() => navigateTo(currentIndex + 1)}
-                    title="Next question (⌘])"
-                    className="rounded-lg border border-border bg-card p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground disabled:opacity-30 transition-colors"
-                  >
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                  {/* Duplicate */}
-                  {editing.questionId && (
-                    <button
-                      type="button"
-                      disabled={upsertQuestion.isPending}
-                      onClick={() => void duplicateQuestion()}
-                      title="Duplicate this question"
-                      className="ml-1 inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground disabled:opacity-40 transition-colors"
-                    >
-                      <Copy className="h-3 w-3" />
-                      Duplicate
-                    </button>
-                  )}
+          <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
+              {/* Heading — Q{n}/{total} nav, Duplicate, and Save with its modes */}
+              <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon="left"
+                      aria-label="Previous question"
+                      shortcut="⌘["
+                      disabled={currentIndex <= 0 || upsertQuestion.isPending}
+                      onClick={() => navigateTo(currentIndex - 1)}
+                    />
+                    <span className="min-w-[88px] text-center text-[13px] font-semibold tabular-nums text-ms-fg-2">
+                      {currentIndex >= 0
+                        ? `Q${currentIndex + 1} / ${questions.length}`
+                        : questions.length > 0
+                          ? `New · ${questions.length} total`
+                          : "New question"}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon="right"
+                      aria-label="Next question"
+                      shortcut="⌘]"
+                      disabled={currentIndex < 0 || currentIndex >= questions.length - 1 || upsertQuestion.isPending}
+                      onClick={() => navigateTo(currentIndex + 1)}
+                    />
+                    {editing.questionId ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon="clipboard"
+                        disabled={upsertQuestion.isPending}
+                        onClick={() => void duplicateQuestion()}
+                        title="Duplicate this question"
+                        className="ml-1"
+                      >
+                        Duplicate
+                      </Button>
+                    ) : null}
+                  </div>
+                  <p className="text-ms-over uppercase text-ms-primary-text">
+                    {editing.questionId ? `Question #${editing.questionId}` : "New question"}
+                  </p>
+                  <h2 className="mt-0.5 font-ms-display text-[22px] font-bold leading-7 tracking-[-0.01em] text-ms-fg">
+                    {editing.questionId ? "Edit question" : "Create question"}
+                  </h2>
                 </div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">
-                  {editing.questionId ? `Question #${editing.questionId}` : "New question"}
-                </p>
-                <h2 className="text-lg font-extrabold text-foreground mt-0.5">
-                  {editing.questionId ? "Edit question" : "Create question"}
-                </h2>
-              </div>
 
-              {/* Save button with Save & Next / Save & New split */}
-              <div ref={saveModeRef} className="relative shrink-0 flex">
-                <button
-                  type="button"
-                  onClick={() => void saveQuestion()}
-                  disabled={upsertQuestion.isPending || versionOutdated}
-                  className="inline-flex items-center gap-2 rounded-l-xl bg-primary px-4 py-2.5 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
-                >
-                  {upsertQuestion.isPending ? (
-                    <RotateCcw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4" />
-                  )}
-                  {upsertQuestion.isPending
-                    ? "Saving…"
-                    : saveMode === "save-next"
-                      ? "Save & Next"
-                      : saveMode === "save-new"
-                        ? "Save & New"
-                        : editing.questionId
-                          ? "Save changes"
-                          : "Create"}
-                </button>
-                {/* Split chevron */}
-                <button
-                  type="button"
-                  disabled={upsertQuestion.isPending || versionOutdated}
-                  onClick={() => setSaveModeOpen((v) => !v)}
-                  className="inline-flex items-center justify-center rounded-r-xl border-l border-primary/30 bg-primary px-2 py-2.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
-                  aria-label="Save options"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-                {/* Dropdown */}
-                {saveModeOpen && (
-                  <div className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-                    {(
+                {/* Save, and beside it the menu that picks what happens after a save */}
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="primary"
+                    icon="check"
+                    state={upsertQuestion.isPending ? "busy" : "idle"}
+                    busyLabel="Saving…"
+                    disabled={saveDisabled}
+                    onClick={() => void saveQuestion()}
+                  >
+                    {saveLabel}
+                  </Button>
+                  <Menu
+                    label="Save options"
+                    icon="down"
+                    variant="primary"
+                    disabled={saveDisabled}
+                    items={(
                       [
                         { mode: "save", label: "Save only" },
                         { mode: "save-next", label: "Save & next →" },
                         { mode: "save-new", label: "Save & new question" },
                       ] as const
-                    ).map(({ mode, label }) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => { setSaveMode(mode); setSaveModeOpen(false); }}
-                        className={cn(
-                          "flex w-full items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors",
-                          saveMode === mode
-                            ? "bg-primary/10 text-primary"
-                            : "text-foreground hover:bg-surface-2",
-                        )}
-                      >
-                        {saveMode === mode && <CheckCircle2 className="h-3.5 w-3.5" />}
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                    ).map(({ mode, label }) => ({
+                      label,
+                      icon: saveMode === mode ? ("check" as const) : undefined,
+                      onSelect: () => setSaveMode(mode),
+                    }))}
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* Empty state when nothing selected */}
-            {!selectedQuestionId && !editing.prompt && (
-              <div className="mb-8 rounded-2xl border border-dashed border-border bg-surface-2/20 p-6 text-center">
-                <p className="text-sm font-semibold text-muted-foreground">
+              {/* Empty state when nothing selected */}
+              {!selectedQuestionId && !editing.prompt && (
+                <div className="animate-ms-fade-in mb-8 rounded-ms-card border border-dashed border-ms-border-strong p-6 text-center text-[14px] text-ms-fg-2">
                   Select a question from the left to edit it, or click{" "}
-                  <button
-                    type="button"
-                    onClick={newQuestion}
-                    className="font-extrabold text-primary hover:underline"
-                  >
+                  <button type="button" onClick={newQuestion} className="font-semibold text-ms-primary-text hover:underline">
                     New question
                   </button>{" "}
                   to create one.
-                </p>
-              </div>
-            )}
+                </div>
+              )}
 
-            {/* Editor form */}
-            <AssessmentQuestionEditorFields
-              draft={{
-                prompt: editing.prompt,
-                question_prompt: editing.question_prompt,
-                question_type: editing.question_type as AssessmentQuestionType,
-                order: editing.order,
-                points: editing.points,
-                is_active: editing.is_active,
-                explanation: editing.explanation,
-                choicesText: editing.choicesText,
-                correctAnswerText: editing.correctAnswerText,
-                gradingConfigText: editing.gradingConfigText,
-              }}
-              onPatch={(p) => setEditing((e) => ({ ...e, ...p }))}
-              disabled={upsertQuestion.isPending || versionOutdated}
-              insertHandlerRef={formulaInsertRef}
-              savedQuestion={selected ?? null}
-              imageState={{ files: imageFiles, clears: imageClears }}
-              onSetImage={handleSetImage}
-            />
-
-            {/* Save button repeated at bottom for long forms */}
-            <div className="mt-8 flex justify-end border-t border-border pt-6">
-              <button
-                type="button"
-                onClick={() => void saveQuestion()}
+              {/* Editor form */}
+              <AssessmentQuestionEditorFields
+                draft={{
+                  prompt: editing.prompt,
+                  question_prompt: editing.question_prompt,
+                  question_type: editing.question_type as AssessmentQuestionType,
+                  order: editing.order,
+                  points: editing.points,
+                  is_active: editing.is_active,
+                  explanation: editing.explanation,
+                  choicesText: editing.choicesText,
+                  correctAnswerText: editing.correctAnswerText,
+                  gradingConfigText: editing.gradingConfigText,
+                }}
+                onPatch={(p) => setEditing((e) => ({ ...e, ...p }))}
                 disabled={upsertQuestion.isPending || versionOutdated}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
-              >
-                {upsertQuestion.isPending ? "Saving…" : editing.questionId ? "Save changes" : "Create question"}
-              </button>
+                insertHandlerRef={formulaInsertRef}
+                savedQuestion={selected ?? null}
+                imageState={{ files: imageFiles, clears: imageClears }}
+                onSetImage={handleSetImage}
+              />
+
+              {/* Save button repeated at bottom for long forms */}
+              <div className="mt-8 flex justify-end border-t border-ms-line pt-6">
+                <Button
+                  variant="primary"
+                  state={upsertQuestion.isPending ? "busy" : "idle"}
+                  busyLabel="Saving…"
+                  disabled={saveDisabled}
+                  onClick={() => void saveQuestion()}
+                >
+                  {editing.questionId ? "Save changes" : "Create question"}
+                </Button>
+              </div>
             </div>
-          </div>
           </div>
         </main>
 
-        {/* RIGHT PANEL: Student preview */}
-        <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-surface-2/20 overflow-y-auto">
-          {/* Preview header with viewport toggle */}
-          <div className="shrink-0 border-b border-border px-4 py-2.5 flex items-center justify-between gap-2">
-            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-              <Eye className="h-3.5 w-3.5" />
+        {/* RIGHT: what the student sees */}
+        <aside
+          aria-label="Student preview"
+          className="flex shrink-0 flex-col border-ms-border bg-ms-surface max-lg:border-t lg:w-80 lg:overflow-y-auto lg:border-l"
+        >
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-ms-line px-4 py-2.5">
+            <p className={cn(EYEBROW, "flex items-center gap-1.5")}>
+              <Icon name="eye" size="sm" className="size-3.5" />
               Student preview
             </p>
-            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
-              <button
-                type="button"
-                onClick={() => setViewportMode("desktop")}
-                title="Desktop view"
-                className={cn(
-                  "rounded p-1 transition-colors",
-                  viewportMode === "desktop"
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Monitor className="h-3 w-3" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewportMode("mobile")}
-                title="Mobile view"
-                className={cn(
-                  "rounded p-1 transition-colors",
-                  viewportMode === "mobile"
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Smartphone className="h-3 w-3" />
-              </button>
-            </div>
+            <Segmented<"desktop" | "mobile">
+              label="Preview size"
+              size="sm"
+              value={viewportMode}
+              onChange={setViewportMode}
+              options={[
+                { value: "desktop", icon: "monitor", label: <span className="sr-only">Desktop view</span> },
+                { value: "mobile", icon: "mobile", label: <span className="sr-only">Mobile view</span> },
+              ]}
+            />
           </div>
-
-          {/* Preview content */}
-          <div className={cn(
-            "flex-1 p-4",
-            viewportMode === "mobile" ? "flex justify-center" : "",
-          )}>
-            <div className={cn(viewportMode === "mobile" ? "w-[320px]" : "w-full")}>
+          <div className={cn("flex-1 p-4", viewportMode === "mobile" && "flex justify-center")}>
+            <div className={cn(viewportMode === "mobile" ? "w-[320px] max-w-full" : "w-full")}>
               <SATQuestionPreview
                 prompt={editing.prompt}
                 question_type={editing.question_type}
@@ -1372,6 +1429,21 @@ export default function BuilderSetEditorContainer() {
           </div>
         </aside>
       </div>
+
+      {/* A question with student answers: delete it anyway? (was the browser's confirm) */}
+      <ConfirmDialog
+        open={forceDeleteOpen}
+        onClose={() => setForceDeleteOpen(false)}
+        tone="critical"
+        icon="trash"
+        title={forceDeleteQ ? `Delete Q${forceDeleteQ.n} anyway?` : "Delete it anyway?"}
+        confirmLabel="Delete anyway"
+        busyLabel="Deleting…"
+        onConfirm={forceDelete}
+      >
+        <p>This question already has student answers.</p>
+        <p>This also removes those answer records (existing scores are not changed). This cannot be undone.</p>
+      </ConfirmDialog>
     </div>
   );
 }

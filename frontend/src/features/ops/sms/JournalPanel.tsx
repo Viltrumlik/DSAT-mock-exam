@@ -16,17 +16,17 @@ import { useState, type ReactNode } from "react";
 
 import { useToast } from "@/components/ui";
 import { ChangeList, type ChangeListColumn } from "@/features/ops/changelist/ChangeList";
+import { buttonClass } from "@/features/console/ui";
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import { downloadBlob } from "@/lib/download";
 import { DateRangeFilter } from "./DateRangeFilter";
 import { dayLabel, firstLine, todayInTashkent } from "./format";
 import { OperatorDot, StatusPill } from "./look";
 import { MessageDrawer } from "./MessageDrawer";
-import { TEXT_BUTTON } from "./panelKit";
 import { MESSAGE_FILTER_KEYS, smsApi, type SmsMessage } from "./smsApi";
 import { useSmsMessages, useSmsOverview } from "./smsHooks";
 
-const Muted = ({ children }: { children: ReactNode }) => <span className="text-muted-foreground">{children}</span>;
+const Muted = ({ children }: { children: ReactNode }) => <span className="text-ms-fg-3">{children}</span>;
 
 const time = (iso: string) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
@@ -49,14 +49,14 @@ function Recipient({ m }: { m: SmsMessage }) {
         <Link
           href={`/ops/students/${m.user.id}?tab=sms`}
           onClick={(e) => e.stopPropagation()}
-          className="truncate font-medium text-foreground hover:underline"
+          className="truncate font-medium text-ms-fg hover:underline"
         >
           {m.user.name}
         </Link>
       ) : (
         <Muted>—</Muted>
       )}
-      {m.groups.length ? <span className="truncate text-[12px] text-muted-foreground">{m.groups.join(", ")}</span> : null}
+      {m.groups.length ? <span className="truncate text-[12px] text-ms-fg-3">{m.groups.join(", ")}</span> : null}
     </span>
   );
 }
@@ -80,7 +80,7 @@ const COLUMNS: ChangeListColumn<SmsMessage>[] = [
     key: "text",
     label: "Text",
     render: (m) => (
-      <span title={m.text} className="block max-w-[22rem] truncate text-muted-foreground">
+      <span title={m.text} className="block max-w-[14rem] truncate text-ms-fg-3">
         {m.text}
       </span>
     ),
@@ -99,41 +99,8 @@ function Card({ m }: { m: SmsMessage }) {
         <OperatorDot operator={m.operator} />
         <Muted>{m.source.label}</Muted>
       </span>
-      <span className="block truncate text-muted-foreground">{firstLine(m.text, 80)}</span>
+      <span className="block truncate text-ms-fg-3">{firstLine(m.text, 80)}</span>
     </span>
-  );
-}
-
-/** The chosen filters, each with ✕, and "Clear all". */
-function FilterChips({
-  chips,
-  onRemove,
-  onClear,
-}: {
-  chips: { key: string; label: string }[];
-  onRemove: (key: string) => void;
-  onClear: () => void;
-}) {
-  if (!chips.length) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {chips.map((c) => (
-        <span key={c.key} className="inline-flex items-center gap-1 rounded-full bg-primary-soft py-0.5 pl-2.5 pr-1 text-[12px] text-foreground">
-          <span data-filter-chip>{c.label}</span>
-          <button
-            type="button"
-            aria-label={`Remove ${c.label}`}
-            onClick={() => onRemove(c.key)}
-            className="rounded-full px-1 text-muted-foreground hover:text-foreground"
-          >
-            ✕
-          </button>
-        </span>
-      ))}
-      <button type="button" className={TEXT_BUTTON} onClick={onClear}>
-        Clear all
-      </button>
-    </div>
   );
 }
 
@@ -174,13 +141,10 @@ export function JournalPanel() {
   }
 
   return (
-    <div className="space-y-2">
-      <FilterChips
-        chips={chips}
-        onRemove={(key) => update({ [key]: null })}
-        onClear={() => update(Object.fromEntries(chips.map((c) => [c.key, null])))}
-      />
+    <div>
       <ChangeList<SmsMessage>
+        // The dates are no facet, so the journal names its own chips; the list removes and clears them.
+        filterChips={chips}
         title="Journal"
         noun={{ singular: "SMS", plural: "SMS" }}
         columns={COLUMNS}
@@ -199,7 +163,7 @@ export function JournalPanel() {
         headerAction={
           <span className="flex flex-wrap items-center gap-2">
             <DateRangeFilter from={from} to={to} onChange={(range) => update(range)} />
-            <button type="button" className={TEXT_BUTTON} disabled={exporting} onClick={() => void exportCsv()}>
+            <button type="button" className={buttonClass({ variant: "secondary" })} disabled={exporting} onClick={() => void exportCsv()}>
               {exporting ? "Exporting…" : "Export"}
             </button>
           </span>
