@@ -112,6 +112,7 @@ export function ConfirmDialog({
   confirmIcon,
   typeToConfirm,
   onConfirm,
+  afterError,
 }: {
   open: boolean;
   onClose: () => void;
@@ -126,6 +127,8 @@ export function ConfirmDialog({
   typeToConfirm?: string;
   /** Resolve when it went through; throw an Error whose message says what went wrong. */
   onConfirm: () => Promise<void>;
+  /** Under the error: the stronger way out a refusal opens (an assessment set's force delete after a 409). */
+  afterError?: ReactNode;
 }) {
   const id = useId();
   const [phase, setPhase] = useState<Phase>("idle");
@@ -204,6 +207,7 @@ export function ConfirmDialog({
             {error}
           </p>
         ) : null}
+        {afterError}
       </div>
       <div className="mt-3 flex items-center justify-end gap-2 border-t border-ms-border bg-ms-surface px-5 py-3.5">
         <Button variant="ghost" onClick={onClose} disabled={phase !== "idle"} data-autofocus={typeToConfirm ? undefined : true}>
