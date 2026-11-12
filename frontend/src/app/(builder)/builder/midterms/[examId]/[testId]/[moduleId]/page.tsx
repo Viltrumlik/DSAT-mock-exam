@@ -88,10 +88,10 @@ export default function BuilderMidtermModulePage() {
     return (
       <div className="flex min-h-[40vh] items-center justify-center p-8">
         <div className="text-center">
-          <p className="font-semibold text-foreground">Invalid route parameters.</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="font-semibold text-ms-fg">Invalid route parameters.</p>
+          <p className="mt-1 text-[14px] text-ms-fg-2">
             Expected{" "}
-            <code className="rounded bg-muted px-1">/builder/midterms/[examId]/[testId]/[moduleId]</code>
+            <code className="rounded-[6px] bg-ms-surface-2 px-1 font-ms-mono text-[13px]">/builder/midterms/[examId]/[testId]/[moduleId]</code>
           </p>
         </div>
       </div>

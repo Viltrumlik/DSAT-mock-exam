@@ -1,10 +1,21 @@
 "use client";
 
+/**
+ * /builder/categories — the categories the assessment sets carry, with how many sets and questions each holds.
+ *
+ * In the console's look (design handoff v0.3, PR 20). The words and the call are the page's own.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+
+import { Icon } from "@/components/ui/Icon";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import type { AssessmentSet } from "@/features/assessments/types";
-import { Tag, LayoutGrid, AlertTriangle } from "lucide-react";
+import { PageNotice, SetSubjectPill } from "@/features/builderLibrary/assessmentParts";
+import { LibraryError, LibraryHeader } from "@/features/builderLibrary/sectionParts";
+import { EmptyState, buttonClass } from "@/features/console/ui";
+import { cn } from "@/lib/cn";
 
 type CategoryRow = {
   name: string;
@@ -13,6 +24,8 @@ type CategoryRow = {
   mathCount: number;
   englishCount: number;
 };
+
+const UNCATEGORISED = "(Uncategorised)";
 
 export default function CategoriesPage() {
   const [sets, setSets] = useState<AssessmentSet[]>([]);
@@ -33,152 +46,119 @@ export default function CategoriesPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const categories = useMemo<CategoryRow[]>(() => {
     const map = new Map<string, CategoryRow>();
-
-    // Uncategorised bucket
-    map.set("(Uncategorised)", {
-      name: "(Uncategorised)",
-      setCount: 0,
-      questionCount: 0,
-      mathCount: 0,
-      englishCount: 0,
-    });
-
     for (const s of sets) {
-      const key = s.category?.trim() || "(Uncategorised)";
+      const key = s.category?.trim() || UNCATEGORISED;
       if (!map.has(key)) {
         map.set(key, { name: key, setCount: 0, questionCount: 0, mathCount: 0, englishCount: 0 });
       }
       const row = map.get(key)!;
+      const n = s.questions?.length ?? 0;
       row.setCount++;
-      for (const q of s.questions ?? []) {
-        row.questionCount++;
-        if (s.subject === "math") row.mathCount++;
-        else row.englishCount++;
-      }
+      row.questionCount += n;
+      if (s.subject === "math") row.mathCount += n;
+      else row.englishCount += n;
     }
-
-    return Array.from(map.values())
-      .filter((r) => r.setCount > 0)
-      .sort((a, b) => {
-        if (a.name === "(Uncategorised)") return 1;
-        if (b.name === "(Uncategorised)") return -1;
-        return a.name.localeCompare(b.name);
-      });
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.name === UNCATEGORISED) return 1;
+      if (b.name === UNCATEGORISED) return -1;
+      return a.name.localeCompare(b.name);
+    });
   }, [sets]);
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Categories</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Taxonomy organising questions and assessment sets. Categories are set on each
-            assessment; questions inherit their set&apos;s category.
-          </p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-5">
+      <LibraryHeader
+        eyebrow="Learning"
+        title="Categories"
+        description="Taxonomy organising questions and assessment sets. Categories are set on each assessment; questions inherit their set’s category."
+        actions={null}
+      />
 
-      {/* Architecture note — category management is set-level */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-        <div className="flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-bold text-amber-900">Category management is set-level</p>
-            <p className="text-sm text-amber-800 mt-0.5">
-              Categories are assigned when creating or editing an assessment set. To change a
-              category, edit the set in{" "}
-              <Link href="/builder/sets" className="font-bold underline hover:text-amber-900">
-                Assessments
-              </Link>
-              . A dedicated category management surface (with rename, merge, and SAT skill
-              taxonomy mapping) is planned for a future release.
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* Category management is set-level */}
+      <PageNotice title="Category management is set-level">
+        Categories are assigned when creating or editing an assessment set. To change a category, edit the set in{" "}
+        <Link href="/builder/sets" className="font-semibold underline underline-offset-2">
+          Assessments
+        </Link>
+        . A dedicated category management surface (with rename, merge, and SAT skill taxonomy mapping) is planned for a
+        future release.
+      </PageNotice>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-          {error}
-        </div>
-      )}
+      {error ? <LibraryError>{error}</LibraryError> : null}
 
-      {/* Categories table */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-5 py-4 font-bold text-foreground">
+      <section aria-label="Categories" className="animate-ms-card-in overflow-hidden rounded-ms-card bg-ms-card shadow-ms-1">
+        <div className="border-b border-ms-line px-5 py-3.5 text-[15px] font-semibold text-ms-fg">
           {loading ? "Loading…" : `${categories.length} categor${categories.length === 1 ? "y" : "ies"}`}
         </div>
 
         {loading ? (
-          <div className="flex justify-center p-10">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          </div>
-        ) : categories.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
-            <Tag className="h-8 w-8 mx-auto mb-3 opacity-30" />
-            <p className="font-semibold">No categories found.</p>
-            <p className="text-sm mt-1">
-              Add categories when creating assessment sets in{" "}
-              <Link href="/builder/sets" className="font-bold text-primary hover:underline">
-                Assessments
-              </Link>
-              .
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {categories.map((cat) => (
-              <div
-                key={cat.name}
-                className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 hover:bg-surface-2/50 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="rounded-xl bg-surface-2 p-2">
-                    <Tag className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0">
-                    <p
-                      className={`font-extrabold ${cat.name === "(Uncategorised)" ? "text-muted-foreground italic" : "text-foreground"}`}
-                    >
-                      {cat.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {cat.setCount} set{cat.setCount === 1 ? "" : "s"} ·{" "}
-                      {cat.questionCount} question{cat.questionCount === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  {cat.mathCount > 0 && (
-                    <span className="inline-flex items-center rounded-lg bg-purple-100 px-2 py-0.5 text-[10px] font-black text-purple-800 uppercase tracking-wide">
-                      Math · {cat.mathCount}
-                    </span>
-                  )}
-                  {cat.englishCount > 0 && (
-                    <span className="inline-flex items-center rounded-lg bg-teal-100 px-2 py-0.5 text-[10px] font-black text-teal-800 uppercase tracking-wide">
-                      English · {cat.englishCount}
-                    </span>
-                  )}
-                  <Link
-                    href={`/builder/bank?category=${encodeURIComponent(cat.name)}`}
-                    className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
-                  >
-                    <LayoutGrid className="h-3 w-3" />
-                    View questions
-                  </Link>
-                </div>
-              </div>
+          <div aria-busy="true" aria-label="Loading" className="flex flex-col gap-2 p-4">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-14 animate-ms-shimmer rounded-ms-ctl bg-ms-surface-2" />
             ))}
           </div>
+        ) : categories.length === 0 ? (
+          <div className="p-4">
+            <EmptyState
+              icon="tag"
+              title="No categories found."
+              detail="Add categories when creating assessment sets in Assessments."
+              action={
+                <Link href="/builder/sets" className={buttonClass({ variant: "secondary" })}>
+                  Assessments
+                  <Icon name="right" size="sm" />
+                </Link>
+              }
+            />
+          </div>
+        ) : (
+          <ul className="divide-y divide-ms-line">
+            {categories.map((cat) => {
+              const none = cat.name === UNCATEGORISED;
+              return (
+                <li
+                  key={cat.name}
+                  data-category={cat.name}
+                  className="ms-transition flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4 hover:bg-ms-surface"
+                >
+                  <div className="flex min-w-0 flex-1 basis-[16rem] items-center gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-ms-surface-2 text-ms-fg-3">
+                      <Icon name="tag" size="sm" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className={cn("break-words text-[16px] font-semibold leading-[22px]", none ? "italic text-ms-fg-3" : "text-ms-fg")}>
+                        {cat.name}
+                      </p>
+                      <p className="mt-0.5 text-[13px] text-ms-fg-2">
+                        {cat.setCount} set{cat.setCount === 1 ? "" : "s"} · {cat.questionCount} question
+                        {cat.questionCount === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {cat.mathCount > 0 ? <SetSubjectPill subject="math">Math · {cat.mathCount}</SetSubjectPill> : null}
+                    {cat.englishCount > 0 ? <SetSubjectPill subject="english">English · {cat.englishCount}</SetSubjectPill> : null}
+                    <Link
+                      href={`/builder/bank?category=${encodeURIComponent(cat.name)}`}
+                      className={buttonClass({ variant: "secondary", size: "sm" })}
+                    >
+                      <Icon name="grid" size="sm" />
+                      View questions
+                    </Link>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
-      </div>
+      </section>
     </div>
   );
 }

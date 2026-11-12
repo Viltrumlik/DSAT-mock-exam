@@ -7,28 +7,23 @@
  * modules (grouped by section) in the shared question editor
  * (ModuleQuestionsPanel — the SAME editor pastpapers use, with the SAT 27/22
  * per-module question limit and score caps).
+ *
+ * In the console's look (design handoff v0.3, PR 20). The words and the calls are the page's own.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  BookOpen,
-  Calculator,
-  ChevronRight,
-  Clock,
-  Eye,
-  EyeOff,
-  Loader2,
-  Save,
-} from "lucide-react";
-import { mocksAdminApi } from "@/features/mocksAdmin/api";
-import { recordRecent } from "@/features/console/recent";
-import { StateTag } from "@/components/governance";
+
+import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ToastProvider";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { recordRecent } from "@/features/console/recent";
+import { Badge, Button } from "@/features/console/ui";
+import { mocksAdminApi } from "@/features/mocksAdmin/api";
+import { CONTROL, FIELD_LABEL } from "@/features/questionsAdmin/questionLook";
+import { cn } from "@/lib/cn";
 
 function parseError(e: unknown): string {
   const data = (e as { response?: { data?: unknown } })?.response?.data;
@@ -48,6 +43,18 @@ function subjectLabel(subject: string): string {
 }
 
 const mockKey = (id: number) => ["mocks", "admin", "detail", id] as const;
+
+function BackLink() {
+  return (
+    <Link
+      href="/builder/full-mocks"
+      className="ms-transition inline-flex w-fit items-center gap-1 rounded-[8px] px-2 py-1 text-[14px] font-semibold text-ms-primary-text hover:bg-ms-surface-2"
+    >
+      <Icon name="left" size="sm" className="size-3.5" />
+      Back to full mocks
+    </Link>
+  );
+}
 
 export default function FullMockOverviewPage() {
   const params = useParams<{ mockId: string }>();
@@ -111,158 +118,191 @@ export default function FullMockOverviewPage() {
   );
 
   if (!Number.isFinite(mockId) || mockId <= 0) {
-    return <div className="p-8 text-sm text-red-700">Invalid mock id.</div>;
+    return <LibraryError>Invalid mock id.</LibraryError>;
   }
 
   if (isLoading) {
     return (
-      <div className="flex justify-center py-24">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div aria-busy="true" aria-label="Loading" className="flex flex-col gap-4">
+        <div className="h-[220px] animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-[72px] animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+          ))}
+        </div>
       </div>
     );
   }
 
   if (error || !mock) {
     return (
-      <div className="space-y-4">
-        <Link href="/builder/full-mocks" className="inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to full mocks
-        </Link>
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error ? parseError(error) : "Mock not found."}
-        </div>
+      <div className="flex flex-col gap-4">
+        <BackLink />
+        <LibraryError>{error ? parseError(error) : "Mock not found."}</LibraryError>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-5">
-      <Link
-        href="/builder/full-mocks"
-        className="inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to full mocks
-      </Link>
+  const busy = publishMut.isPending || unpublishMut.isPending;
 
-      {/* Header card */}
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <StateTag state={mock.is_published ? "PUBLISHED" : "DRAFT"} size="sm" />
-            <span className="text-xs text-muted-foreground">
+  return (
+    <div className="flex flex-col gap-5">
+      <BackLink />
+
+      {/* Header */}
+      <header data-header className="animate-ms-fade-in flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 basis-[18rem]">
+          <p className="text-ms-over mb-1.5 uppercase text-ms-primary-text">Full mock</p>
+          <h1 className="break-words font-ms-display text-ms-b-display text-ms-fg">{mock.title || `Full mock ${mockId}`}</h1>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[14px] text-ms-fg-2">
+            {mock.is_published ? (
+              <Badge tone="positive" dot>
+                Published
+              </Badge>
+            ) : (
+              <Badge tone="line">Draft</Badge>
+            )}
+            <span>
               {totalQuestions} question{totalQuestions !== 1 ? "s" : ""}
             </span>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-            {mock.is_published ? (
-              <button
-                type="button"
-                onClick={() => unpublishMut.mutate()}
-                disabled={unpublishMut.isPending}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
-              >
-                {unpublishMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />}
-                Unpublish
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => publishMut.mutate()}
-                disabled={publishMut.isPending || !mock.publish_ready}
-                title={!mock.publish_ready ? mock.publish_block_reason : "Publish this mock"}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
-              >
-                {publishMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
-                Publish
-              </button>
-            )}
-          </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {mock.is_published ? (
+            <Button variant="secondary" icon="eye" state={unpublishMut.isPending ? "busy" : "idle"} disabled={busy} onClick={() => unpublishMut.mutate()}>
+              Unpublish
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              icon="eye"
+              state={publishMut.isPending ? "busy" : "idle"}
+              disabled={busy || !mock.publish_ready}
+              title={!mock.publish_ready ? mock.publish_block_reason : "Publish this mock"}
+              onClick={() => publishMut.mutate()}
+            >
+              Publish
+            </Button>
+          )}
+        </div>
+      </header>
 
-        <div className="mt-4 flex flex-wrap items-end gap-3">
+      {/* Details */}
+      <form
+        aria-label="Mock details"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty && title.trim() && !saveMeta.isPending) saveMeta.mutate();
+        }}
+        className="animate-ms-card-in flex flex-col gap-3 rounded-ms-card bg-ms-card p-4 shadow-ms-1 sm:p-5"
+      >
+        <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[240px] flex-1">
-            <label className={STUDIO_FIELD_LABEL}>Title</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className={STUDIO_INPUT} />
+            <label htmlFor="mock-title" className={FIELD_LABEL}>
+              Title
+            </label>
+            <input id="mock-title" value={title} onChange={(e) => setTitle(e.target.value)} className={CONTROL} />
           </div>
           <div className="w-32">
-            <label className={STUDIO_FIELD_LABEL}>Break (min)</label>
+            <label htmlFor="mock-break" className={FIELD_LABEL}>
+              Break (min)
+            </label>
             <input
+              id="mock-break"
               type="number"
               min={0}
               value={breakMinutes}
               onChange={(e) => setBreakMinutes(Math.max(0, Number(e.target.value) || 0))}
-              className={STUDIO_INPUT}
+              className={CONTROL}
             />
           </div>
-          <button
-            type="button"
-            onClick={() => saveMeta.mutate()}
+          <Button
+            type="submit"
+            variant="primary"
+            icon="check"
+            state={saveMeta.isPending ? "busy" : "idle"}
             disabled={!dirty || !title.trim() || saveMeta.isPending}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            {saveMeta.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save details
-          </button>
+          </Button>
         </div>
 
-        {!mock.is_published && !mock.publish_ready && mock.publish_block_reason && (
-          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        {!mock.is_published && !mock.publish_ready && mock.publish_block_reason ? (
+          <p className="flex items-start gap-2 rounded-[12px] bg-ms-attention-soft px-3 py-2 text-[13px] leading-[18px] text-ms-attention-fg">
+            <Icon name="warn" size="sm" className="mt-px size-3.5 shrink-0" />
             {mock.publish_block_reason}
-          </div>
-        )}
+          </p>
+        ) : null}
 
         {/* Short of the official SAT shape. Publishing is still allowed (the scorer is
             proportional), but a "full mock" that hands out 12 Reading questions instead of
             27 should say so out loud rather than look finished. */}
-        {(mock.publish_warnings?.length ?? 0) > 0 && (
-          <div className="mt-3 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            <p className="font-bold text-foreground">Shorter than a real SAT</p>
+        {(mock.publish_warnings?.length ?? 0) > 0 ? (
+          <div className="rounded-[12px] bg-ms-surface px-3.5 py-2.5 text-[13px] leading-[18px] text-ms-fg-2">
+            <p className="font-semibold text-ms-fg">Shorter than a real SAT</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
               {mock.publish_warnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}
             </ul>
           </div>
-        )}
-      </div>
+        ) : null}
+      </form>
 
       {/* Modules — each opens the shared question editor */}
-      <div className="space-y-3">
-        {mock.sections.map((section) => (
-          <div key={section.subject}>
-            <div className="mb-1.5 flex items-center gap-2 px-1">
-              <div
-                className={`rounded-md p-1 ${section.subject === "MATH" ? "bg-emerald-100 text-emerald-700" : "bg-primary/10 text-primary"}`}
-              >
-                {section.subject === "MATH" ? <Calculator className="h-3.5 w-3.5" /> : <BookOpen className="h-3.5 w-3.5" />}
-              </div>
-              <span className="text-xs font-bold text-foreground">{subjectLabel(section.subject)}</span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {section.modules.map((m) => (
-                <Link
-                  key={m.id}
-                  href={`/builder/full-mocks/${mockId}/${m.id}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+      <div className="flex flex-col gap-4">
+        {mock.sections.map((section) => {
+          const math = section.subject === "MATH";
+          return (
+            <section key={section.subject} aria-label={subjectLabel(section.subject)} className="animate-ms-fade-in">
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <span
+                  className={cn(
+                    "grid size-6 place-items-center rounded-[7px]",
+                    math ? "bg-ms-math-soft text-ms-math-fg" : "bg-ms-rw-soft text-ms-rw-fg",
+                  )}
                 >
-                  <div className="min-w-0">
-                    <p className="text-xs font-extrabold text-foreground">Module {m.module_order}</p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <Clock className="h-2.5 w-2.5" />
-                      {m.time_limit_minutes} min ·{" "}
-                      {m.question_target
-                        ? `${m.question_count} / ${m.question_target} questions`
-                        : `${m.question_count} question${m.question_count !== 1 ? "s" : ""}`}
-                    </p>
-                  </div>
-                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-primary">
-                    Edit questions <ChevronRight className="h-3.5 w-3.5" />
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        ))}
+                  <Icon name={math ? "sigma" : "book"} size="sm" className="size-3.5" />
+                </span>
+                <h2 className="text-[15px] font-semibold text-ms-fg">{subjectLabel(section.subject)}</h2>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {section.modules.map((m) => (
+                  <Link
+                    key={m.id}
+                    data-module={m.id}
+                    href={`/builder/full-mocks/${mockId}/${m.id}`}
+                    className="ms-transition ms-press group flex items-center justify-between gap-3 rounded-ms-card bg-ms-card px-4 py-3.5 shadow-ms-1 hover:bg-ms-surface"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span
+                        className={cn(
+                          "grid size-9 shrink-0 place-items-center rounded-[10px]",
+                          math ? "bg-ms-math-soft text-ms-math-fg" : "bg-ms-rw-soft text-ms-rw-fg",
+                        )}
+                      >
+                        <Icon name="ms-module" size="sm" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[15px] font-semibold text-ms-fg">Module {m.module_order}</p>
+                        <p className="mt-0.5 flex items-center gap-1 text-[13px] tabular-nums text-ms-fg-2">
+                          <Icon name="clock" size="sm" className="size-3.5 text-ms-fg-3" />
+                          {m.time_limit_minutes} min ·{" "}
+                          {m.question_target
+                            ? `${m.question_count} / ${m.question_target} questions`
+                            : `${m.question_count} question${m.question_count !== 1 ? "s" : ""}`}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[14px] font-semibold text-ms-primary-text">
+                      Edit questions <Icon name="right" size="sm" />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
