@@ -38,7 +38,23 @@ import {
 } from "@/features/questionsAdmin/skillTaxonomy";
 import { normalizeApiError } from "@/lib/apiError";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { Badge, Button, EmptyState, buttonClass, inputShell, prefersReducedMotion } from "@/features/console/ui";
+import { Badge, Button, EmptyState, buttonClass, prefersReducedMotion } from "@/features/console/ui";
+import {
+  CHOICE,
+  CHOICE_IDLE,
+  CHOICE_KEY,
+  CONTROL,
+  FIELD_LABEL,
+  HINT,
+  LETTER,
+  LETTER_IDLE,
+  LETTER_KEY,
+  PICK,
+  PICK_OFF,
+  PICK_ON,
+  SERIF_AREA,
+  hasMarkup,
+} from "@/features/questionsAdmin/questionLook";
 import { cn } from "@/lib/cn";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
 import { MathText } from "@/components/MathText";
@@ -99,31 +115,7 @@ function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string, examKi
   };
 }
 
-// ─── The question pane's look (design handoff v0.3, PR 14b) ──────────────────
-
-/** A field's words above it, as the console's Field labels them. */
-const FIELD_LABEL = "mb-1.5 block text-[14px] font-medium leading-5 text-ms-fg";
-/** Help under a field. */
-const HINT = "mt-1.5 text-[13px] leading-[18px] text-ms-fg-3";
-/** The console field shell on a native select or input; it draws its own focus, so no outline on top. */
-const CONTROL = inputShell({ className: "w-full outline-none placeholder:text-ms-fg-3" });
-/**
- * A long field in the student's Georgia: the stem, the passage, the explanation. The face sits on a wrapper
- * (`font-ms-serif`): globals.css sets `font-family: inherit` on every control, unlayered, so a font utility
- * on the textarea itself never applies.
- */
-const SERIF_AREA = inputShell({ area: true, className: "w-full resize-y outline-none placeholder:text-ms-fg-3" });
-/** A choice as the student sees it: a card with its letter in a circle; the answer key's card in green. */
-const CHOICE = "ms-transition flex rounded-[14px] border-[1.5px] p-3";
-const CHOICE_IDLE = "border-ms-border-strong bg-ms-card";
-const CHOICE_KEY = "border-ms-positive bg-ms-positive-soft";
-const LETTER = "mt-px grid size-7 shrink-0 place-items-center rounded-full border-[1.5px] text-[13px] font-semibold";
-const LETTER_IDLE = "border-ms-border-input text-ms-fg-2";
-const LETTER_KEY = "border-ms-positive bg-ms-positive text-white";
-/** The midterm's letter and True / False buttons: choice-shaped, the picked one green. */
-const PICK = "ms-transition ms-press inline-flex items-center justify-center rounded-[12px] border-[1.5px] font-semibold";
-const PICK_OFF = "border-ms-border-strong bg-ms-card text-ms-fg hover:bg-ms-surface";
-const PICK_ON = "border-ms-positive bg-ms-positive-soft text-ms-positive-fg";
+// The question pane's look (PR 14b) lives in ./questionLook, shared with the question bank's editor (PR 16a).
 
 // ─── Question editor pane ────────────────────────────────────────────────────
 
@@ -689,7 +681,7 @@ function QuestionEditor({
                       </div>
                       {/* The preview only when the choice carries math or markup (\\( … \\), $, **, <u>): a plain
                           choice already reads as itself in the card. */}
-                      {/[\\$*<]/.test(val) && (
+                      {hasMarkup(val) && (
                         <div className="ml-10 mt-2 rounded-[10px] bg-ms-surface px-3 py-2">
                           <MathText text={val} className="font-ms-serif text-[15px] leading-6 text-ms-fg" />
                         </div>
