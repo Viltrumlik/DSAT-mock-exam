@@ -1,19 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Package, PackagePlus, Pencil, Trash2, Check } from "lucide-react";
-import {
-  Alert,
-  Badge,
-  Button,
-  Field,
-  IconButton,
-  Input,
-  Modal,
-  Select,
-  Textarea,
-} from "@/components/ui";
+
+import { Icon } from "@/components/ui/Icon";
+import { Badge, Button, EmptyState } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import {
+  AREA,
+  CaptionCount,
+  CheckRow,
+  FILE_INPUT,
+  FormDialog,
+  FormField,
+  LoadFailed,
+  Notice,
+  Panel,
+  SkeletonRows,
+} from "@/features/ops/settings/settingsParts";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import {
   useAdminItems,
   useAdminOrders,
@@ -22,6 +26,18 @@ import {
   useSettleOrder,
 } from "@/features/shop/shopHooks";
 import type { ShopItem } from "@/features/shop/shopApi";
+import { cn } from "@/lib/cn";
+
+/**
+ * /ops/shop — the reward shop's stock, prices and collection queue.
+ *
+ * In the console's look (design handoff v0.3): cards with a caption row, the console's buttons,
+ * badges and form dialog. The words and the calls are the page's own.
+ */
+
+/** Refunding is the exception, so it is quiet words that turn red under the pointer, not a button. */
+const REFUND_BUTTON =
+  "ms-transition rounded-[6px] px-1 py-1 text-[14px] font-semibold text-ms-fg-2 hover:text-ms-critical-fg hover:underline disabled:cursor-not-allowed disabled:text-ms-fg-disabled disabled:hover:no-underline";
 
 const EMPTY = {
   name: "",
@@ -82,80 +98,110 @@ function ItemForm({
   };
 
   return (
-    <Modal open onClose={onClose} title={item ? "Edit item" : "Add an item"}>
-      <div className="space-y-3">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Field label="Name">
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        </Field>
-        <Field label="Description">
-          <Textarea
+    <FormDialog
+      open
+      onClose={onClose}
+      title={item ? "Edit item" : "Add an item"}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            state={save.isPending ? "busy" : "idle"}
+            disabled={save.isPending}
+            onClick={submit}
+          >
+            Save
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+        <FormField label="Name" htmlFor="shop-item-name">
+          <input
+            id="shop-item-name"
+            className={CONTROL}
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </FormField>
+        <FormField label="Description" htmlFor="shop-item-description">
+          <textarea
+            id="shop-item-description"
+            className={AREA}
             rows={3}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
-        </Field>
-        <Field label="Picture" hint={item?.image_url ? "Leave empty to keep the current one." : undefined}>
+        </FormField>
+        <FormField
+          label="Picture"
+          htmlFor="shop-item-image"
+          hint={item?.image_url ? "Leave empty to keep the current one." : undefined}
+        >
           <input
+            id="shop-item-image"
             type="file"
             accept="image/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-sm"
+            className={FILE_INPUT}
           />
-        </Field>
+        </FormField>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Currency" hint="An item is priced in one currency, never both.">
-            <Select
+          <FormField label="Currency" htmlFor="shop-item-currency" hint="An item is priced in one currency, never both.">
+            <select
+              id="shop-item-currency"
+              className={CONTROL}
               value={form.currency}
               onChange={(e) => setForm({ ...form, currency: e.target.value })}
             >
               <option value="COIN">Coins</option>
               <option value="STRIKE">Strikes</option>
-            </Select>
-          </Field>
-          <Field label="Price">
-            <Input
+            </select>
+          </FormField>
+          <FormField label="Price" htmlFor="shop-item-price">
+            <input
+              id="shop-item-price"
               type="number"
               min={1}
+              className={cn(CONTROL, "tabular-nums")}
               value={form.price}
               onChange={(e) => setForm({ ...form, price: e.target.value })}
             />
-          </Field>
+          </FormField>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="In stock" hint="Drops by one on each purchase.">
-            <Input
+          <FormField label="In stock" htmlFor="shop-item-stock" hint="Drops by one on each purchase.">
+            <input
+              id="shop-item-stock"
               type="number"
+              className={cn(CONTROL, "tabular-nums")}
               value={form.stock}
               onChange={(e) => setForm({ ...form, stock: e.target.value })}
             />
-          </Field>
-          <Field label="Sort order" hint="Lower shows first.">
-            <Input
+          </FormField>
+          <FormField label="Sort order" htmlFor="shop-item-sort" hint="Lower shows first.">
+            <input
+              id="shop-item-sort"
               type="number"
+              className={cn(CONTROL, "tabular-nums")}
               value={form.sort_order}
               onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
             />
-          </Field>
+          </FormField>
         </div>
-        <label className="flex items-center gap-2 text-sm font-semibold">
-          <input
-            type="checkbox"
-            checked={form.is_active}
-            onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-          />
+        <CheckRow
+          id="shop-item-active"
+          checked={form.is_active}
+          onChange={(checked) => setForm({ ...form, is_active: checked })}
+        >
           Show in the shop
-        </label>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={submit} loading={save.isPending}>
-            Save
-          </Button>
-        </div>
+        </CheckRow>
       </div>
-    </Modal>
+    </FormDialog>
   );
 }
 
@@ -167,189 +213,130 @@ export default function OpsShopPage() {
   const [editing, setEditing] = useState<ShopItem | null | undefined>(undefined);
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <OpsPageHeader
         section="Shop"
         title="Reward shop"
         description="Stock, prices and the collection queue."
         actions={
-          <Button onClick={() => setEditing(null)}>
-            <PackagePlus className="mr-1.5 h-4 w-4" aria-hidden />
+          <Button variant="primary" icon="plus" onClick={() => setEditing(null)}>
             Add an item
           </Button>
         }
       />
 
-      {/* Flat bordered panel with an uppercase header strip — the idiom Users, Classrooms and
-          Exam dates use. These were shadowed `Card`s with bold headings inside, which is what
-          made this page read as belonging to a different console. */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Waiting to be handed over
-          </p>
-          {orders.data && orders.data.length > 0 ? (
-            <span className="ml-auto text-[10px] font-bold text-primary">
-              {orders.data.length}
-            </span>
-          ) : null}
-        </div>
+      <Panel
+        title="Waiting to be handed over"
+        icon="gift"
+        aside={orders.data && orders.data.length > 0 ? <CaptionCount tone="primary">{orders.data.length}</CaptionCount> : null}
+      >
         {/* Four branches: loading, error, empty, data. An error rendered as an empty queue
             tells an administrator there is nothing to do, which is the worst possible lie
             for this particular screen. */}
         {orders.isPending ? (
-          <div className="divide-y divide-border">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="h-4 w-48 rounded bg-muted" />
-                  <div className="h-3 w-28 rounded bg-muted" />
-                </div>
-              </div>
-            ))}
-          </div>
+          <SkeletonRows count={2} />
         ) : orders.isError ? (
-          <div className="px-5 py-8 text-center">
-            <p className="text-sm font-semibold text-foreground">The queue didn&apos;t load.</p>
-            <button
-              type="button"
-              onClick={() => void orders.refetch()}
-              className="mt-1 text-sm font-bold text-primary underline"
-            >
-              Try again
-            </button>
-          </div>
+          <LoadFailed onRetry={() => void orders.refetch()}>The queue didn&apos;t load.</LoadFailed>
         ) : orders.data.length === 0 ? (
-          <div className="px-5 py-10 text-center">
-            <Check className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="font-semibold text-foreground">Nothing waiting</p>
-            <p className="mt-1 text-sm text-muted-foreground">Every order has been collected.</p>
-          </div>
+          <EmptyState icon="check" title="Nothing waiting" detail="Every order has been collected." />
         ) : (
           // Two equally-weighted buttons on every row made a wall of blue down the card and
           // gave the destructive option the same pull as the routine one. Handing the prize
           // over is what happens; refunding is the exception, so it is a quiet text control.
-          <ul className="divide-y divide-border">
-            {orders.data.map((order) => (
-              <li
-                key={order.id}
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-3.5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold">
-                    {order.student_name} <span className="text-muted-foreground">·</span>{" "}
-                    {order.item_name}
-                  </p>
-                  <p className="text-xs font-semibold text-muted-foreground">
-                    {order.price} {order.currency === "COIN" ? "coins" : "strikes"} ·{" "}
-                    {new Date(order.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    loading={settle.isPending}
-                    onClick={() => settle.mutate({ id: order.id, action: "fulfil" })}
-                  >
-                    <Check className="mr-1.5 h-4 w-4" aria-hidden />
-                    Handed over
-                  </Button>
-                  <button
-                    type="button"
-                    disabled={settle.isPending}
-                    onClick={() => settle.mutate({ id: order.id, action: "cancel" })}
-                    className="ds-ring rounded-lg px-2 py-1 text-xs font-bold text-muted-foreground hover:text-danger disabled:opacity-60"
-                  >
-                    Refund
-                  </button>
-                </div>
-              </li>
-            ))}
+          <ul className="divide-y divide-ms-line">
+            {orders.data.map((order) => {
+              // Every row waits while one settles; only the row being handed over shows it.
+              const handing = settle.isPending && settle.variables?.id === order.id && settle.variables?.action === "fulfil";
+              return (
+                <li
+                  key={order.id}
+                  data-order={order.id}
+                  className="ms-transition flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3.5 hover:bg-ms-surface"
+                >
+                  <div className="min-w-0 flex-1 basis-[16rem]">
+                    <p className="truncate text-[15px] font-semibold leading-[22px] text-ms-fg">
+                      {order.student_name} <span className="text-ms-fg-3">·</span>{" "}
+                      {order.item_name}
+                    </p>
+                    <p className="text-[13px] tabular-nums text-ms-fg-2">
+                      {order.price} {order.currency === "COIN" ? "coins" : "strikes"} ·{" "}
+                      {new Date(order.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      icon="check"
+                      state={handing ? "busy" : "idle"}
+                      disabled={settle.isPending && !handing}
+                      onClick={() => settle.mutate({ id: order.id, action: "fulfil" })}
+                    >
+                      Handed over
+                    </Button>
+                    <button
+                      type="button"
+                      disabled={settle.isPending}
+                      onClick={() => settle.mutate({ id: order.id, action: "cancel" })}
+                      className={REFUND_BUTTON}
+                    >
+                      Refund
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
-      </div>
+      </Panel>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Stock
-          </p>
-          {items.data && items.data.length > 0 ? (
-            <span className="ml-auto text-[10px] font-bold text-muted-foreground">
-              {items.data.length}
-            </span>
-          ) : null}
-        </div>
+      <Panel
+        title="Stock"
+        icon="layers"
+        aside={items.data && items.data.length > 0 ? <CaptionCount>{items.data.length}</CaptionCount> : null}
+      >
         {items.isPending ? (
-          <div className="divide-y divide-border">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
-                <div className="h-12 w-12 shrink-0 rounded-lg bg-muted" />
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="h-4 w-40 rounded bg-muted" />
-                  <div className="h-3 w-24 rounded bg-muted" />
-                </div>
-              </div>
-            ))}
-          </div>
+          <SkeletonRows count={4} thumb="square" />
         ) : items.isError ? (
-          <div className="px-5 py-8 text-center">
-            <p className="text-sm font-semibold text-foreground">
-              The item list didn&apos;t load.
-            </p>
-            <button
-              type="button"
-              onClick={() => void items.refetch()}
-              className="mt-1 text-sm font-bold text-primary underline"
-            >
-              Try again
-            </button>
-          </div>
+          <LoadFailed onRetry={() => void items.refetch()}>The item list didn&apos;t load.</LoadFailed>
         ) : items.data.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="font-semibold text-foreground">Nothing stocked yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Add an item and it appears in the students&apos; shop.
-            </p>
-          </div>
+          <EmptyState icon="gift" title="Nothing stocked yet" detail="Add an item and it appears in the students' shop." />
         ) : (
           // A grid, not a row of flex children: fixed columns keep price, stock and the
           // controls in the same place on every line. As flex with a `flex-1` name, the
           // actions were pinned to the far right of a very wide card with a thousand pixels
           // of nothing in between, and no two rows lined up.
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-ms-line">
             {items.data.map((item) => (
               <li
                 key={item.id}
-                className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-3.5 sm:grid-cols-[3rem_minmax(0,1fr)_7rem_6rem_auto]"
+                data-item={item.id}
+                className="ms-transition grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-3 hover:bg-ms-surface sm:grid-cols-[3rem_minmax(0,1fr)_7rem_7.5rem_auto]"
               >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-2 text-muted-foreground">
+                <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-ms-surface-2 text-ms-fg-3">
                   {item.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element -- signed R2 URL
                     <img src={item.image_url} alt="" className="h-full w-full object-cover" />
                   ) : (
                     // An empty grey square reads as a broken image. An icon reads as "no
                     // picture yet", which is what it is.
-                    <Package className="h-5 w-5" aria-hidden />
+                    <Icon name="gift" />
                   )}
                 </div>
 
                 <div className="min-w-0">
-                  <p className="flex items-center gap-2 text-sm font-bold">
-                    <span className="truncate">{item.name}</span>
-                    {!item.is_active ? <Badge variant="neutral">Hidden</Badge> : null}
+                  <p className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-[15px] font-semibold leading-[22px] text-ms-fg">{item.name}</span>
+                    {!item.is_active ? <Badge tone="neutral">Hidden</Badge> : null}
                   </p>
                   {item.description ? (
-                    <p className="truncate text-xs font-medium text-muted-foreground">
-                      {item.description}
-                    </p>
+                    <p className="truncate text-[13px] text-ms-fg-2">{item.description}</p>
                   ) : null}
                 </div>
 
-                <p className="hidden text-sm font-bold tabular-nums text-foreground sm:block">
+                <p className="hidden text-[15px] font-semibold tabular-nums text-ms-fg sm:block">
                   {item.price}{" "}
-                  <span className="text-xs font-semibold text-muted-foreground">
+                  <span className="text-[13px] font-medium text-ms-fg-3">
                     {item.currency === "COIN" ? "coins" : "strikes"}
                   </span>
                 </p>
@@ -357,43 +344,41 @@ export default function OpsShopPage() {
                 {/* Spotting what has run out is the main reason to open this page, so stock
                     is a toned badge rather than another grey line of text. */}
                 <p className="hidden sm:block">
-                  <span
-                    className={`inline-flex rounded-md px-2 py-0.5 text-xs font-extrabold tabular-nums ${
-                      item.stock === 0
-                        ? "bg-danger-soft text-danger-foreground"
-                        : item.stock <= 5
-                          ? "bg-warning-soft text-warning-foreground"
-                          : "bg-surface-2 text-muted-foreground"
-                    }`}
+                  <Badge
+                    tone={item.stock === 0 ? "critical" : item.stock <= 5 ? "attention" : "neutral"}
+                    dot={item.stock <= 5}
+                    className="tabular-nums"
                   >
                     {item.stock === 0 ? "Out of stock" : `${item.stock} left`}
-                  </span>
+                  </Badge>
                 </p>
 
                 <div className="flex items-center gap-1">
-                  <IconButton
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="pencil"
                     aria-label={`Edit ${item.name}`}
                     title="Edit"
-                    variant="ghost"
+                    tooltip={false}
                     onClick={() => setEditing(item)}
-                  >
-                    <Pencil className="h-4 w-4" aria-hidden />
-                  </IconButton>
-                  <IconButton
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="trash"
                     aria-label={`Delete ${item.name}`}
                     title="Delete"
-                    variant="ghost"
+                    tooltip={false}
                     disabled={remove.isPending}
                     onClick={() => remove.mutate(item.id)}
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden />
-                  </IconButton>
+                  />
                 </div>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </Panel>
 
       {editing !== undefined ? (
         <ItemForm item={editing} onClose={() => setEditing(undefined)} />

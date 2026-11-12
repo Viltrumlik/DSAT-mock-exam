@@ -17,7 +17,7 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { ArrowLeft } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 
 import { Alert, Badge, Button } from "./consoleKit";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
@@ -47,7 +47,7 @@ const BACK = (
     href={smsTabHref("campaigns")}
     className="inline-flex items-center gap-1 text-[13px] font-medium text-ms-fg-3 hover:text-ms-fg"
   >
-    <ArrowLeft className="h-4 w-4" aria-hidden />
+    <Icon name="left" size="sm" className="size-4" />
     Campaigns
   </Link>
 );

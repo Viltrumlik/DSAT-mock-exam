@@ -7,13 +7,18 @@
  *
  * super_admin only, like the endpoint: a broadcast cannot be recalled once phones have buzzed,
  * so the page asks for a review that names the audience before anything goes out.
+ *
+ * In the console's look (design handoff v0.3): a card, the console's fields and buttons, the
+ * review as a soft primary panel. The words, the review step and the call are the page's own.
  */
 
 import { useState } from "react";
-import { Megaphone } from "lucide-react";
 
-import { Alert, Button, Checkbox, Field, Input, Select, Textarea } from "@/components/ui";
+import { Icon } from "@/components/ui/Icon";
+import { Button } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { AREA, CheckRow, FormField, Notice, Panel } from "@/features/ops/settings/settingsParts";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import {
   notificationsApi,
   type BroadcastAudience,
@@ -55,9 +60,9 @@ export default function BroadcastPage() {
 
   if (!isSuperAdmin) {
     return (
-      <div className="space-y-5">
+      <div className="flex flex-col gap-5">
         <OpsPageHeader section="Broadcast" title="Broadcast" />
-        <Alert tone="info">Only a super admin can send a broadcast.</Alert>
+        <Notice tone="info">Only a super admin can send a broadcast.</Notice>
       </div>
     );
   }
@@ -96,22 +101,19 @@ export default function BroadcastPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <OpsPageHeader
         section="Broadcast"
         title="Broadcast"
         description="One announcement to a whole audience. It lands in every inbox it reaches and cannot be recalled."
       />
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
-          <Megaphone className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">New announcement</p>
-        </div>
-        <div className="space-y-4 p-5">
-          <Field label="Audience" htmlFor="broadcast-audience">
-            <Select
+      <Panel title="New announcement" icon="ms-broadcast" className="max-w-3xl">
+        <div className="flex flex-col gap-4 p-4 sm:p-5">
+          <FormField label="Audience" htmlFor="broadcast-audience">
+            <select
               id="broadcast-audience"
+              className={CONTROL}
               value={audience}
               disabled={reviewing}
               onChange={(e) => setAudience(e.target.value as BroadcastAudience)}
@@ -121,75 +123,86 @@ export default function BroadcastPage() {
                   {a.label}
                 </option>
               ))}
-            </Select>
-          </Field>
-          <Field label="Title" htmlFor="broadcast-title" required error={titleError ?? undefined} hint={`Up to ${TITLE_MAX} characters.`}>
-            <Input
+            </select>
+          </FormField>
+          <FormField
+            label="Title"
+            htmlFor="broadcast-title"
+            required
+            error={titleError ?? undefined}
+            hint={`Up to ${TITLE_MAX} characters.`}
+          >
+            <input
               id="broadcast-title"
+              className={CONTROL}
               value={title}
               maxLength={TITLE_MAX}
               disabled={reviewing}
+              aria-invalid={titleError ? true : undefined}
               onChange={(e) => setTitle(e.target.value)}
             />
-          </Field>
-          <Field label="Message" htmlFor="broadcast-body" hint={`Optional. Up to ${BODY_MAX} characters.`}>
-            <Textarea
+          </FormField>
+          <FormField label="Message" htmlFor="broadcast-body" hint={`Optional. Up to ${BODY_MAX} characters.`}>
+            <textarea
               id="broadcast-body"
+              className={AREA}
               rows={3}
               value={body}
               maxLength={BODY_MAX}
               disabled={reviewing}
               onChange={(e) => setBody(e.target.value)}
             />
-          </Field>
-          <Field label="Link" htmlFor="broadcast-link" hint="Optional. A page on the site, such as /events.">
-            <Input
+          </FormField>
+          <FormField label="Link" htmlFor="broadcast-link" hint="Optional. A page on the site, such as /events.">
+            <input
               id="broadcast-link"
+              className={CONTROL}
               value={link}
               placeholder="/events"
               disabled={reviewing}
               onChange={(e) => setLink(e.target.value)}
             />
-          </Field>
-          <Checkbox
-            id="broadcast-push"
-            label="Also send it as a push notification to phones and browsers"
-            checked={push}
-            disabled={reviewing}
-            onChange={(e) => setPush(e.target.checked)}
-          />
+          </FormField>
+          <CheckRow id="broadcast-push" checked={push} disabled={reviewing} onChange={setPush}>
+            Also send it as a push notification to phones and browsers
+          </CheckRow>
 
-          {failure ? <Alert tone="danger">{failure}</Alert> : null}
+          {failure ? <Notice tone="danger">{failure}</Notice> : null}
           {sent ? (
-            <Alert tone="success">
+            <Notice tone="success">
               Sent to {sent.recipients} {sent.recipients === 1 ? "person" : "people"}
               {sent.notified !== sent.recipients ? ` (${sent.notified} have notifications on)` : ""}.
-            </Alert>
+            </Notice>
           ) : null}
 
           {reviewing ? (
-            <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
-              <p className="text-sm text-foreground">
-                Send <span className="font-bold">“{title.trim()}”</span> to{" "}
-                <span className="font-bold">{audienceLabel(audience)}</span>
-                {push ? ", with a push notification" : ""}? It cannot be recalled.
+            <div className="animate-ms-fade-in flex flex-col gap-3 rounded-ms-ctl border border-ms-primary-soft-2 bg-ms-primary-soft p-4">
+              <p className="flex items-start gap-2.5 text-[15px] leading-[22px] text-ms-fg">
+                <Icon name="send" size="sm" className="mt-[3px] text-ms-primary-text" />
+                <span className="min-w-0">
+                  Send <span className="font-semibold">“{title.trim()}”</span> to{" "}
+                  <span className="font-semibold">{audienceLabel(audience)}</span>
+                  {push ? ", with a push notification" : ""}? It cannot be recalled.
+                </span>
               </p>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="ghost" disabled={sending} onClick={() => setReviewing(false)}>
                   Back
                 </Button>
-                <Button loading={sending} onClick={() => void send()}>
+                <Button variant="primary" icon="send" state={sending ? "busy" : "idle"} onClick={() => void send()}>
                   Send
                 </Button>
               </div>
             </div>
           ) : (
             <div className="flex justify-end">
-              <Button onClick={review}>Review</Button>
+              <Button variant="primary" onClick={review}>
+                Review
+              </Button>
             </div>
           )}
         </div>
-      </div>
+      </Panel>
     </div>
   );
 }

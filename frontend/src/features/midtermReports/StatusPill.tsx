@@ -1,7 +1,7 @@
 "use client";
 
-import { CheckCircle2, CircleDashed, Clock, MinusCircle, XCircle } from "lucide-react";
-import { cn } from "@/lib/cn";
+import type { IconName } from "@/components/ui/Icon";
+import { Badge, type BadgeTone } from "@/features/console/ui";
 import type { Outcome, OutcomeTone } from "./status";
 
 /**
@@ -9,33 +9,24 @@ import type { Outcome, OutcomeTone } from "./status";
  * scanning this table has to tell apart (passed / failed / nobody sat it) must survive a
  * monochrome print-out and colour-blind eyes alike.
  *
- * The colours are the design system's semantic tokens, not raw palette classes: this console
- * is used in dark mode, and `bg-emerald-50` is the same near-white in both themes.
+ * Drawn as the console's verdict pill (design handoff v0.3): the console's own tokens, so dark
+ * mode keeps its contrast, and a distinct icon per tone.
  */
-const TONES: Record<OutcomeTone, { cls: string; icon: React.ElementType }> = {
-  pass: {
-    cls: "border-success/25 bg-success-soft text-success-foreground",
-    icon: CheckCircle2,
-  },
-  fail: { cls: "border-danger/25 bg-danger-soft text-danger-foreground", icon: XCircle },
-  absent: { cls: "border-border bg-surface-2 text-muted-foreground", icon: MinusCircle },
-  waiting: { cls: "border-border bg-surface-2 text-muted-foreground", icon: Clock },
-  ungraded: { cls: "border-border bg-surface-2 text-muted-foreground", icon: CircleDashed },
+const TONES: Record<OutcomeTone, { badge: BadgeTone; icon: IconName }> = {
+  pass: { badge: "positive", icon: "ok" },
+  fail: { badge: "critical", icon: "x" },
+  absent: { badge: "neutral", icon: "minus" },
+  waiting: { badge: "neutral", icon: "clock" },
+  ungraded: { badge: "neutral", icon: "circle" },
 };
 
 export function StatusPill({ outcome, className }: { outcome: Outcome; className?: string }) {
-  const { cls, icon: Icon } = TONES[outcome.tone];
+  const { badge, icon } = TONES[outcome.tone];
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-bold whitespace-nowrap",
-        cls,
-        className,
-      )}
-      title={outcome.meaning}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-      {outcome.label}
+    <span title={outcome.meaning} className="inline-flex">
+      <Badge tone={badge} icon={icon} className={className}>
+        {outcome.label}
+      </Badge>
     </span>
   );
 }
@@ -50,15 +41,13 @@ export function StatusPill({ outcome, className }: { outcome: Outcome; className
 export function OutcomeLegend({ outcomes }: { outcomes: Outcome[] }) {
   if (outcomes.length === 0) return null;
   return (
-    <dl className="flex flex-wrap gap-x-5 gap-y-1.5 rounded-xl border border-border bg-surface-2 px-3 py-2.5">
+    <dl className="flex flex-wrap gap-x-5 gap-y-2 rounded-ms-ctl bg-ms-surface px-3.5 py-3">
       {outcomes.map((o) => (
         <div key={o.label} className="flex min-w-0 items-start gap-2">
           <dt className="shrink-0">
             <StatusPill outcome={o} />
           </dt>
-          <dd className="min-w-0 max-w-[38ch] text-[12px] leading-snug text-muted-foreground">
-            {o.meaning}
-          </dd>
+          <dd className="min-w-0 max-w-[38ch] text-[13px] leading-[18px] text-ms-fg-2">{o.meaning}</dd>
         </div>
       ))}
     </dl>
@@ -77,19 +66,15 @@ export function CountChip({
   label: string;
   title?: string;
 }) {
-  const { cls, icon: Icon } = TONES[tone];
+  const { badge, icon } = TONES[tone];
+  // A zero is drawn as an outline: present, so the row keeps its shape, but quiet.
   const muted = count === 0;
   return (
-    <span
-      title={title}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold whitespace-nowrap",
-        muted ? "border-border bg-card text-muted-foreground" : cls,
-      )}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-      <span className="tabular-nums">{count}</span>
-      {label}
+    <span title={title} className="inline-flex">
+      <Badge tone={muted ? "line" : badge} icon={icon}>
+        <span className="tabular-nums">{count}</span>
+        {label}
+      </Badge>
     </span>
   );
 }

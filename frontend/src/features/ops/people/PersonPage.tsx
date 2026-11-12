@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { recordRecent } from "@/features/console/recent";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronLeft } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { peopleKeys, type PeopleSection } from "@/features/ops/changelist/peopleApi";
@@ -48,7 +48,7 @@ function SameNameNotice({ person }: { person: PersonCore }) {
       data-testid="same-name"
       className="flex gap-3 rounded-[16px] border border-ms-attention-line bg-ms-attention-soft px-4 py-3.5 text-[14px] text-ms-attention-fg"
     >
-      <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+      <Icon name="warn" size="sm" className="mt-0.5 size-4" />
       <div className="min-w-0 space-y-1">
         <p className="font-semibold">
           Same name as {n} other account{n === 1 ? "" : "s"} — check which one is theirs
@@ -200,7 +200,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         href={backHref}
         className="inline-flex items-center gap-1 text-sm font-medium text-ms-fg-3 hover:text-ms-fg"
       >
-        <ChevronLeft aria-hidden className="h-4 w-4" />
+        <Icon name="left" size="sm" className="size-4" />
         {LIST_LABEL[section]}
       </Link>
 

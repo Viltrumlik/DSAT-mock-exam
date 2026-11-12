@@ -7,19 +7,36 @@
  * list with a picture that students see. The difference is that publishing is not just a
  * visibility flag here — it emails every student in the learning center and cannot be undone,
  * so it is the one action on this page that asks first.
+ *
+ * In the console's look (design handoff v0.3): a card of events, the console dialog for the form
+ * and for who came. The words, the checks and the calls are the page's own.
  */
 
 import Link from "next/link";
 import { useState } from "react";
-import { CalendarClock, CalendarPlus, Check, Pencil, Users, X } from "lucide-react";
 
-import { Alert, Badge, Button, Checkbox, Field, Input, Modal, Textarea } from "@/components/ui";
-import type { BadgeVariant } from "@/components/ui";
+import { Icon } from "@/components/ui/Icon";
+import { Badge, Button, EmptyState, type BadgeTone } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { CONTROL, FIELD_LABEL, HINT } from "@/features/questionsAdmin/questionLook";
 import type { LearningEvent } from "@/features/events/eventsApi";
 import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
 import { AudiencePicker } from "@/features/ops/telegram-posts/AudiencePicker";
 import { draftChats, draftFrom, type AudienceDraft } from "@/features/ops/telegram-posts/audience";
+import {
+  AREA,
+  BOX,
+  CAPTION,
+  CAPTION_ROW,
+  CheckRow,
+  FILE_INPUT,
+  FormDialog,
+  LoadFailed,
+  Notice,
+  RowsLoading,
+  TEXT_LINK,
+  dotted,
+} from "@/features/ops/telegram-posts/telegramLook";
 import { useTelegramGroups } from "@/features/ops/telegram-posts/telegramPostsHooks";
 import {
   useAdminEvents,
@@ -47,13 +64,13 @@ function fmtRegisteredAt(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
-function statusOf(event: LearningEvent): { variant: BadgeVariant; label: string } {
-  if (event.status === "CANCELLED") return { variant: "neutral", label: "Cancelled" };
-  if (event.status === "DRAFT") return { variant: "warning", label: "Draft" };
+function statusOf(event: LearningEvent): { tone: BadgeTone; label: string } {
+  if (event.status === "CANCELLED") return { tone: "neutral", label: "Cancelled" };
+  if (event.status === "DRAFT") return { tone: "attention", label: "Draft" };
   if (new Date(event.ends_at).getTime() < Date.now()) {
-    return { variant: "neutral", label: "Finished" };
+    return { tone: "neutral", label: "Finished" };
   }
-  return { variant: "success", label: "Published" };
+  return { tone: "positive", label: "Published" };
 }
 
 function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: () => void }) {
@@ -136,66 +153,121 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
   };
 
   return (
-    <Modal open onClose={onClose} title={event ? "Edit event" : "Add an event"}>
-      <div className="space-y-3">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Field label="Name" hint="What students see first.">
-          <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-        </Field>
-        <Field label="About it" hint="What happens, and what to bring.">
-          <Textarea
+    <FormDialog
+      title={event ? "Edit event" : "Add an event"}
+      onClose={onClose}
+      width={600}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" state={save.isPending ? "busy" : "idle"} disabled={save.isPending} onClick={submit}>
+            Save draft
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+        <div>
+          <label htmlFor="event-title" className={FIELD_LABEL}>
+            Name
+          </label>
+          <input
+            id="event-title"
+            data-autofocus
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            className={CONTROL}
+          />
+          <p className={HINT}>What students see first.</p>
+        </div>
+        <div>
+          <label htmlFor="event-description" className={FIELD_LABEL}>
+            About it
+          </label>
+          <textarea
+            id="event-description"
             rows={3}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
+            className={AREA}
           />
-        </Field>
-        <Field label="Picture" hint={event ? "Leave empty to keep the current one." : "Optional."}>
+          <p className={HINT}>What happens, and what to bring.</p>
+        </div>
+        <div>
+          <label htmlFor="event-picture" className={FIELD_LABEL}>
+            Picture
+          </label>
           <input
+            id="event-picture"
             type="file"
             accept="image/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-sm"
+            className={FILE_INPUT}
           />
-        </Field>
+          <p className={HINT}>{event ? "Leave empty to keep the current one." : "Optional."}</p>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Starts">
-            <Input
+          <div className="min-w-0">
+            <label htmlFor="event-starts" className={FIELD_LABEL}>
+              Starts
+            </label>
+            <input
+              id="event-starts"
               type="datetime-local"
               value={form.starts_at}
               onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
+              className={CONTROL}
             />
-          </Field>
-          <Field label="Ends">
-            <Input
+          </div>
+          <div className="min-w-0">
+            <label htmlFor="event-ends" className={FIELD_LABEL}>
+              Ends
+            </label>
+            <input
+              id="event-ends"
               type="datetime-local"
               value={form.ends_at}
               onChange={(e) => setForm({ ...form, ends_at: e.target.value })}
+              className={CONTROL}
             />
-          </Field>
+          </div>
         </div>
-        <Field label="Where" hint="The branch and the room.">
-          <Input
+        <div>
+          <label htmlFor="event-location" className={FIELD_LABEL}>
+            Where
+          </label>
+          <input
+            id="event-location"
             value={form.location}
             onChange={(e) => setForm({ ...form, location: e.target.value })}
+            className={CONTROL}
           />
-        </Field>
-        <Field label="Seats" hint="How many students can sign up.">
-          <Input
-            type="number"
-            value={form.seats}
-            onChange={(e) => setForm({ ...form, seats: e.target.value })}
-          />
-        </Field>
+          <p className={HINT}>The branch and the room.</p>
+        </div>
+        <div>
+          <label htmlFor="event-seats" className={FIELD_LABEL}>
+            Seats
+          </label>
+          <div className="max-w-[10rem]">
+            <input
+              id="event-seats"
+              type="number"
+              value={form.seats}
+              onChange={(e) => setForm({ ...form, seats: e.target.value })}
+              className={CONTROL}
+            />
+          </div>
+          <p className={HINT}>How many students can sign up.</p>
+        </div>
         {telegramOn && unposted ? (
-          <p className="text-xs text-muted-foreground">Published without Telegram posts — changing this posts nothing.</p>
+          <p className="text-[13px] text-ms-fg-3">Published without Telegram posts — changing this posts nothing.</p>
         ) : null}
         {showTelegram ? (
-          <div className="space-y-2 rounded-xl border border-border p-3">
-            <Checkbox
-              label="Post to Telegram groups"
-              checked={telegramPost}
-              onChange={(e) => setTelegramPost(e.target.checked)}
-            />
+          <div className="flex flex-col gap-2.5 rounded-ms-card border border-ms-border p-3.5">
+            <CheckRow label="Post to Telegram groups" checked={telegramPost} onChange={() => setTelegramPost(!telegramPost)} />
             {telegramPost ? (
               <AudiencePicker
                 groups={groups.data?.groups ?? []}
@@ -204,19 +276,15 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
                 allowSpecific={false}
               />
             ) : null}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[13px] text-ms-fg-3">
               {published
                 ? "Already published — this changes the evening-before reminder only."
                 : "Posted when you publish, with a reminder the evening before at 18:00."}
             </p>
           </div>
         ) : null}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} loading={save.isPending}>Save draft</Button>
-        </div>
       </div>
-    </Modal>
+    </FormDialog>
   );
 }
 
@@ -243,83 +311,86 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
         : registrations;
 
   return (
-    <Modal open onClose={onClose} title={event.title} description="Who signed up, and who came" size="lg">
+    <FormDialog title={event.title} description="Who signed up, and who came" onClose={onClose} width={760}>
       {list.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : list.isError ? (
-        <div className="text-sm">
-          <p className="font-semibold text-foreground">The list didn&apos;t load.</p>
-          <button
-            type="button"
-            onClick={() => void list.refetch()}
-            className="mt-1 font-bold text-primary underline"
-          >
-            Try again
-          </button>
+        <div role="status" aria-busy="true" className="flex flex-col gap-2">
+          <span className="sr-only">Loading…</span>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-12 animate-ms-shimmer rounded-ms-ctl bg-ms-surface-2" />
+          ))}
         </div>
+      ) : list.isError ? (
+        <LoadFailed onRetry={() => void list.refetch()}>The list didn&apos;t load.</LoadFailed>
       ) : (
-        <div className="space-y-3">
-          <Field label="Ticket code" hint="Type or paste it — dashes and case don't matter.">
-            <Input
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              placeholder="4K29-7XPD"
-            />
-          </Field>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label htmlFor="event-ticket-code" className={FIELD_LABEL}>
+              Ticket code
+            </label>
+            <div className="max-w-xs font-ms-mono">
+              <input
+                id="event-ticket-code"
+                data-autofocus
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder="4K29-7XPD"
+                autoComplete="off"
+                spellCheck={false}
+                className={CONTROL}
+              />
+            </div>
+            <p className={HINT}>Type or paste it — dashes and case don&apos;t matter.</p>
+          </div>
           {lookupCode ? (
             lookup.isPending ? (
-              <Alert tone="info">Checking the code…</Alert>
+              <Notice tone="info">Checking the code…</Notice>
             ) : lookup.isError ? (
-              <Alert tone="danger">No ticket with that code.</Alert>
+              <Notice tone="danger">No ticket with that code.</Notice>
             ) : lookup.data && lookup.data.event.id !== event.id ? (
-              <Alert tone="warning">That ticket is for {lookup.data.event.title}.</Alert>
+              <Notice tone="warning">That ticket is for {lookup.data.event.title}.</Notice>
             ) : null
           ) : null}
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+          <p className={`${CAPTION} tabular-nums`}>
             Registered {counts?.registered ?? 0} · Attended {counts?.attended ?? 0} · Missed{" "}
             {counts?.missed ?? 0} · Not marked {counts?.not_marked ?? 0}
           </p>
           {!open && opensAt ? (
-            <Alert tone="info">
+            <Notice tone="info">
               You can mark arrivals from {opensAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}.
-            </Alert>
+            </Notice>
           ) : null}
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-ms-line overflow-hidden rounded-ms-ctl border border-ms-border">
             {matches.map((row) => (
-              <li key={row.id} className="flex flex-wrap items-center gap-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-foreground">{row.student_name}</p>
-                  <p className="truncate text-xs font-semibold text-muted-foreground">
+              <li key={row.id} data-registration={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5">
+                <div className="min-w-0 flex-1 basis-[12rem]">
+                  <p className="truncate text-[14px] font-semibold text-ms-fg">{row.student_name}</p>
+                  <p className="truncate text-[13px] text-ms-fg-2">
                     {row.phone || "No phone"}
                     {row.status === "CANCELLED" ? " · cancelled" : ""}
                   </p>
                 </div>
-                <span className="text-xs font-bold tracking-widest text-muted-foreground">
-                  {row.ticket_code || "No code"}
-                </span>
-                <span className="text-xs font-bold tracking-widest text-muted-foreground">
-                  {fmtRegisteredAt(row.registered_at)}
-                </span>
+                <span className="font-ms-mono text-[13px] tracking-[.06em] text-ms-fg-2">{row.ticket_code || "No code"}</span>
+                <span className="text-[13px] tabular-nums text-ms-fg-3">{fmtRegisteredAt(row.registered_at)}</span>
                 {row.status === "CANCELLED" ? (
-                  <span className="text-xs font-bold text-muted-foreground">Gave the seat back</span>
+                  <span className="text-[13px] font-medium text-ms-fg-3">Gave the seat back</span>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <Button
                       size="sm"
+                      icon="check"
                       variant={row.attendance === "ATTENDED" ? "primary" : "secondary"}
                       disabled={!open || mark.isPending}
                       onClick={() => mark.mutate({ id: row.id, attendance: "ATTENDED" })}
                     >
-                      <Check className="mr-1.5 h-4 w-4" aria-hidden />
                       Attended
                     </Button>
                     <Button
                       size="sm"
+                      icon="x"
                       variant={row.attendance === "MISSED" ? "primary" : "secondary"}
                       disabled={!open || mark.isPending}
                       onClick={() => mark.mutate({ id: row.id, attendance: "MISSED" })}
                     >
-                      <X className="mr-1.5 h-4 w-4" aria-hidden />
                       Missed
                     </Button>
                   </div>
@@ -327,14 +398,14 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
               </li>
             ))}
             {matches.length === 0 ? (
-              <li className="py-6 text-center text-sm text-muted-foreground">
+              <li className="px-3.5 py-6 text-center text-[14px] text-ms-fg-3">
                 {registrations.length === 0 ? "Nobody has signed up yet." : "No match for that code."}
               </li>
             ) : null}
           </ul>
         </div>
       )}
-    </Modal>
+    </FormDialog>
   );
 }
 
@@ -348,75 +419,54 @@ export default function OpsEventsPage() {
   const [viewing, setViewing] = useState<LearningEvent | null>(null);
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <OpsPageHeader
         section="Events"
         title="Events"
         description="Workshops, talks and open days. Publishing one emails every student and, when ticked, posts it into the class Telegram groups."
         actions={
-          <Button onClick={() => setEditing(null)}>
-            <CalendarPlus className="mr-1.5 h-4 w-4" aria-hidden />
+          <Button variant="primary" icon="plus" onClick={() => setEditing(null)}>
             Add an event
           </Button>
         }
       />
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            All events
-          </p>
+      <section className={`animate-ms-card-in ${BOX}`}>
+        <div className={CAPTION_ROW}>
+          <p className={CAPTION}>All events</p>
         </div>
 
         {events.isPending ? (
-          <div className="divide-y divide-border">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
-                <div className="h-4 w-48 rounded bg-muted" />
-              </div>
-            ))}
-          </div>
+          <RowsLoading />
         ) : events.isError ? (
-          <div className="px-5 py-8 text-center">
-            <p className="text-sm font-semibold text-foreground">The events didn&apos;t load.</p>
-            <button
-              type="button"
-              onClick={() => void events.refetch()}
-              className="mt-1 text-sm font-bold text-primary underline"
-            >
-              Try again
-            </button>
-          </div>
+          <LoadFailed onRetry={() => void events.refetch()}>The events didn&apos;t load.</LoadFailed>
         ) : (events.data?.length ?? 0) === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <CalendarClock className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="font-semibold text-foreground">No events yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Add one, then publish it when it is ready.
-            </p>
-          </div>
+          <EmptyState icon="cal" title="No events yet" detail="Add one, then publish it when it is ready." />
         ) : (
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-ms-line">
             {events.data?.map((event) => {
               const status = statusOf(event);
               const taken = event.seats - event.seats_left;
               return (
-                <li key={event.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold">{event.title}</p>
-                    <p className="flex flex-wrap items-center gap-x-2 text-xs font-semibold text-muted-foreground">
-                      <Badge variant={status.variant}>{status.label}</Badge>
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarClock className="h-3 w-3" aria-hidden />
+                <li key={event.id} data-event={event.id} className="ms-transition flex flex-wrap items-center gap-3 px-5 py-3.5 hover:bg-ms-surface">
+                  <div className="min-w-0 flex-1 basis-[18rem]">
+                    <p className="truncate text-[15px] font-semibold text-ms-fg">{event.title}</p>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ms-fg-2">
+                      <Badge tone={status.tone} dot={dotted(status.tone)}>
+                        {status.label}
+                      </Badge>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon name="cal" size="sm" className="size-3.5 text-ms-fg-3" />
                         {new Date(event.starts_at).toLocaleString()}
                       </span>
                       {event.location ? <span>{event.location}</span> : null}
-                      <span className="inline-flex items-center gap-1">
-                        <Users className="h-3 w-3" aria-hidden />
+                      <span className="inline-flex items-center gap-1.5 tabular-nums">
+                        <Icon name="users" size="sm" className="size-3.5 text-ms-fg-3" />
                         {taken}/{event.seats}
                       </span>
                       {event.telegram ? (
-                        <Link href={`/ops/telegram-posts/${event.telegram.post_id}`} className="underline">
+                        <Link href={`/ops/telegram-posts/${event.telegram.post_id}`} className={`inline-flex items-center gap-1.5 ${TEXT_LINK}`}>
+                          <Icon name="ms-classpost" size="sm" className="size-3.5" />
                           {event.telegram.total === 0 && event.telegram.deleted > 0
                             ? "Telegram post deleted"
                             : `Telegram ${event.telegram.sent}/${event.telegram.total}${
@@ -427,10 +477,12 @@ export default function OpsEventsPage() {
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {event.status === "DRAFT" ? (
                       <Button
                         size="sm"
+                        variant="primary"
+                        icon="send"
                         onClick={() => {
                           // Publishing IS the send — about 370 emails and, when ticked, a post
                           // in every chosen class group. There is no test send and no undo.
@@ -451,19 +503,18 @@ export default function OpsEventsPage() {
                       </Button>
                     ) : null}
                     {event.status === "PUBLISHED" ? (
-                      <Button size="sm" variant="secondary" onClick={() => setViewing(event)}>
-                        <Users className="mr-1.5 h-4 w-4" aria-hidden />
+                      <Button size="sm" variant="secondary" icon="users" onClick={() => setViewing(event)}>
                         Who came
                       </Button>
                     ) : null}
-                    <Button size="sm" variant="secondary" onClick={() => setEditing(event)}>
-                      <Pencil className="mr-1.5 h-4 w-4" aria-hidden />
+                    <Button size="sm" variant="secondary" icon="pencil" onClick={() => setEditing(event)}>
                       Edit
                     </Button>
                     {event.status === "DRAFT" ? (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 text-xs font-bold text-muted-foreground underline-offset-2 hover:text-danger hover:underline"
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon="trash"
                         onClick={() => {
                           if (window.confirm(`Delete “${event.title}”? This cannot be undone.`)) {
                             remove.mutate(event.id);
@@ -471,12 +522,13 @@ export default function OpsEventsPage() {
                         }}
                       >
                         Delete
-                      </button>
+                      </Button>
                     ) : null}
                     {event.status === "PUBLISHED" ? (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 text-xs font-bold text-muted-foreground underline-offset-2 hover:text-danger hover:underline"
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon="x"
                         onClick={() => {
                           if (
                             window.confirm(
@@ -488,7 +540,7 @@ export default function OpsEventsPage() {
                         }}
                       >
                         Call it off
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                 </li>
@@ -496,7 +548,7 @@ export default function OpsEventsPage() {
             })}
           </ul>
         )}
-      </div>
+      </section>
 
       {editing !== undefined ? (
         <EventForm event={editing} onClose={() => setEditing(undefined)} />

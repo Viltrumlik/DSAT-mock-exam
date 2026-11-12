@@ -11,23 +11,34 @@
  * different reasons — unticked, not started yet, already finished — and an admin who cannot
  * tell those apart at a glance will re-upload a story that was going to appear on Friday. So
  * the server computes `is_live` and every row says plainly which of the four states it is in.
+ *
+ * In the console's look (design handoff v0.3): a card with a caption row, the console's badges,
+ * form dialog and confirm dialog. The words, the window's time handling and the calls are the
+ * page's own.
  */
 
 import { useState } from "react";
-import { CalendarClock, Image as ImageIcon, ImagePlus, Pencil, Trash2 } from "lucide-react";
-import {
-  Alert,
-  Badge,
-  Button,
-  Field,
-  Input,
-  Modal,
-  Textarea,
-} from "@/components/ui";
+
+import { Icon } from "@/components/ui/Icon";
+import { Badge, Button, ConfirmDialog, EmptyState, type BadgeTone } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import {
+  AREA,
+  CaptionCount,
+  CheckRow,
+  FILE_INPUT,
+  FormDialog,
+  FormField,
+  LoadFailed,
+  Notice,
+  Panel,
+  SkeletonRows,
+} from "@/features/ops/settings/settingsParts";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import { useAdminStories, useDeleteStory, useSaveStory } from "@/features/stories/storiesHooks";
-import type { BadgeVariant } from "@/components/ui";
 import type { Story } from "@/features/stories/storiesApi";
+import { normalizeApiError } from "@/lib/apiError";
+import { cn } from "@/lib/cn";
 
 const EMPTY = {
   title: "",
@@ -65,19 +76,19 @@ function fromLocalInput(value: string): string | null {
 
 /** Why a story is not on the rail — or that it is. The server owns `is_live`; this only
  *  explains it, and never re-derives it. */
-function statusOf(story: Story): { variant: BadgeVariant; label: string } {
-  if (story.is_live) return { variant: "success", label: "Showing now" };
-  if (!story.is_active) return { variant: "neutral", label: "Hidden" };
+function statusOf(story: Story): { tone: BadgeTone; label: string } {
+  if (story.is_live) return { tone: "positive", label: "Showing now" };
+  if (!story.is_active) return { tone: "neutral", label: "Hidden" };
   const now = Date.now();
   if (story.starts_at && new Date(story.starts_at).getTime() > now) {
-    return { variant: "warning", label: "Scheduled" };
+    return { tone: "attention", label: "Scheduled" };
   }
   if (story.ends_at && new Date(story.ends_at).getTime() <= now) {
-    return { variant: "neutral", label: "Finished" };
+    return { tone: "neutral", label: "Finished" };
   }
   // Active, inside its window, and still not live. The only way to reach here is a clock skew
   // between this browser and the server. Say so rather than inventing a reason.
-  return { variant: "neutral", label: "Not showing" };
+  return { tone: "neutral", label: "Not showing" };
 }
 
 function StoryForm({ story, onClose }: { story: Story | null; onClose: () => void }) {
@@ -149,81 +160,105 @@ function StoryForm({ story, onClose }: { story: Story | null; onClose: () => voi
   };
 
   return (
-    <Modal open onClose={onClose} title={story ? "Edit story" : "Add a story"}>
-      <div className="space-y-3">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Field label="Title" hint="The word under the circle. Keep it short.">
-          <Input
+    <FormDialog
+      open
+      onClose={onClose}
+      title={story ? "Edit story" : "Add a story"}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            state={save.isPending ? "busy" : "idle"}
+            disabled={save.isPending}
+            onClick={submit}
+          >
+            Save
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+        <FormField label="Title" htmlFor="story-title" hint="The word under the circle. Keep it short.">
+          <input
+            id="story-title"
+            className={CONTROL}
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
           />
-        </Field>
-        <Field label="Caption" hint="What a student reads once they have opened it.">
-          <Textarea
+        </FormField>
+        <FormField label="Caption" htmlFor="story-caption" hint="What a student reads once they have opened it.">
+          <textarea
+            id="story-caption"
+            className={AREA}
             rows={3}
             value={form.caption}
             onChange={(e) => setForm({ ...form, caption: e.target.value })}
           />
-        </Field>
-        <Field
+        </FormField>
+        <FormField
           label="Picture"
+          htmlFor="story-image"
           hint={story ? "Leave empty to keep the current one." : "Required — this is the story."}
         >
           <input
+            id="story-image"
             type="file"
             accept="image/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-sm"
+            className={FILE_INPUT}
           />
-        </Field>
-        <Field label="Link" hint="Optional. Where tapping the story takes a student.">
-          <Input
+        </FormField>
+        <FormField label="Link" htmlFor="story-link" hint="Optional. Where tapping the story takes a student.">
+          <input
+            id="story-link"
+            className={CONTROL}
             placeholder="/shop"
             value={form.link_url}
             onChange={(e) => setForm({ ...form, link_url: e.target.value })}
           />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Starts" hint="Empty = show it straight away.">
-            <Input
+        </FormField>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField label="Starts" htmlFor="story-starts" hint="Empty = show it straight away.">
+            <input
+              id="story-starts"
               type="datetime-local"
+              className={cn(CONTROL, "tabular-nums")}
               value={form.starts_at}
               onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
             />
-          </Field>
-          <Field label="Ends" hint="Empty = leave it up.">
-            <Input
+          </FormField>
+          <FormField label="Ends" htmlFor="story-ends" hint="Empty = leave it up.">
+            <input
+              id="story-ends"
               type="datetime-local"
+              className={cn(CONTROL, "tabular-nums")}
               value={form.ends_at}
               onChange={(e) => setForm({ ...form, ends_at: e.target.value })}
             />
-          </Field>
+          </FormField>
         </div>
-        <Field label="Sort order" hint="Lower shows first on the rail.">
-          <Input
+        <FormField label="Sort order" htmlFor="story-sort" hint="Lower shows first on the rail.">
+          <input
+            id="story-sort"
             type="number"
+            className={cn(CONTROL, "tabular-nums")}
             value={form.sort_order}
             onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
           />
-        </Field>
-        <label className="flex items-center gap-2 text-sm font-semibold">
-          <input
-            type="checkbox"
-            checked={form.is_active}
-            onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-          />
+        </FormField>
+        <CheckRow
+          id="story-active"
+          checked={form.is_active}
+          onChange={(checked) => setForm({ ...form, is_active: checked })}
+        >
           Show on the dashboard
-        </label>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={submit} loading={save.isPending}>
-            Save
-          </Button>
-        </div>
+        </CheckRow>
       </div>
-    </Modal>
+    </FormDialog>
   );
 }
 
@@ -233,80 +268,57 @@ export default function OpsStoriesPage() {
   // `undefined` = the modal is closed; `null` = open on a new story; a Story = open on that
   // one. Three states in one variable, which is the same trick /ops/shop uses.
   const [editing, setEditing] = useState<Story | null | undefined>(undefined);
+  // The story being deleted outlives the dialog, so its title stays while the dialog leaves.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Story | null>(null);
 
   const liveCount = stories.data?.filter((s) => s.is_live).length ?? 0;
 
+  const runDelete = async () => {
+    if (!pendingDelete) return;
+    try {
+      await remove.mutateAsync(pendingDelete.id);
+    } catch (e) {
+      throw new Error(normalizeApiError(e).message);
+    }
+  };
+
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <OpsPageHeader
         section="Stories"
         title="Stories"
         description="The ring of circles across the top of every student's dashboard."
         actions={
-          <Button onClick={() => setEditing(null)}>
-            <ImagePlus className="mr-1.5 h-4 w-4" aria-hidden />
+          <Button variant="primary" icon="image" onClick={() => setEditing(null)}>
             Add a story
           </Button>
         }
       />
 
-      {/* Flat bordered panel with an uppercase header strip — the idiom Users, Classrooms and
-          Exam dates use. This was a shadowed `Card` with a bold heading inside it, which is
-          what made the page read as belonging to a different console. */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            All stories
-          </p>
-          {liveCount > 0 ? (
-            <span className="ml-auto text-[10px] font-bold text-primary">
-              {liveCount} showing
-            </span>
-          ) : null}
-        </div>
-
+      <Panel
+        title="All stories"
+        icon="ms-story"
+        aside={liveCount > 0 ? <CaptionCount tone="primary">{liveCount} showing</CaptionCount> : null}
+      >
         {/* Four branches: loading, error, empty, data. An error rendered as "no stories yet"
             would tell an admin their noticeboard is empty when in fact it failed to load —
             and the obvious next move, posting the notice again, is exactly the wrong one. */}
         {stories.isPending ? (
-          <div className="divide-y divide-border">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
-                <div className="h-12 w-12 shrink-0 rounded-full bg-muted" />
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="h-4 w-40 rounded bg-muted" />
-                  <div className="h-3 w-24 rounded bg-muted" />
-                </div>
-              </div>
-            ))}
-          </div>
+          <SkeletonRows count={3} thumb="round" />
         ) : stories.isError ? (
-          <div className="px-5 py-8 text-center">
-            <p className="text-sm font-semibold text-foreground">The stories didn&apos;t load.</p>
-            <button
-              type="button"
-              onClick={() => void stories.refetch()}
-              className="mt-1 text-sm font-bold text-primary underline"
-            >
-              Try again
-            </button>
-          </div>
+          <LoadFailed onRetry={() => void stories.refetch()}>The stories didn&apos;t load.</LoadFailed>
         ) : stories.data.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <ImageIcon className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="font-semibold text-foreground">No stories yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Add one and it appears on every student&apos;s dashboard.
-            </p>
-          </div>
+          <EmptyState icon="ms-story" title="No stories yet" detail="Add one and it appears on every student's dashboard." />
         ) : (
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-ms-line">
             {stories.data.map((story) => {
               const status = statusOf(story);
               return (
                 <li
                   key={story.id}
-                  className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-3.5"
+                  data-story={story.id}
+                  className="ms-transition flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 hover:bg-ms-surface"
                 >
                   {/* A plain <img>, not next/image: these are signed R2 URLs on a host the
                       image optimiser is not configured for, and an un-optimisable remote
@@ -316,27 +328,29 @@ export default function OpsStoriesPage() {
                     <img
                       src={story.image_url}
                       alt=""
-                      className="h-12 w-12 shrink-0 rounded-full object-cover ring-2 ring-primary/30"
+                      className="size-12 shrink-0 rounded-full object-cover shadow-[0_0_0_2px_var(--ms-card),0_0_0_4px_var(--ms-primary-soft-2)]"
                     />
                   ) : (
                     <span
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                      className="grid size-12 shrink-0 place-items-center rounded-full bg-ms-surface-2 text-ms-fg-3"
                       title="Saved without a picture"
                     >
-                      <ImageIcon className="h-5 w-5" aria-hidden />
+                      <Icon name="image" />
                     </span>
                   )}
 
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold">
-                      {story.title || <span className="text-muted-foreground">Untitled</span>}
+                  <div className="min-w-0 flex-1 basis-[14rem]">
+                    <p className="truncate text-[15px] font-semibold leading-[22px] text-ms-fg">
+                      {story.title || <span className="font-normal italic text-ms-fg-3">Untitled</span>}
                     </p>
-                    <p className="flex flex-wrap items-center gap-x-2 text-xs font-semibold text-muted-foreground">
-                      <Badge variant={status.variant}>{status.label}</Badge>
-                      <span>#{story.sort_order}</span>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-ms-fg-2">
+                      <Badge tone={status.tone} dot={status.tone !== "neutral"}>
+                        {status.label}
+                      </Badge>
+                      <span className="tabular-nums">#{story.sort_order}</span>
                       {story.starts_at || story.ends_at ? (
-                        <span className="inline-flex items-center gap-1">
-                          <CalendarClock className="h-3 w-3" aria-hidden />
+                        <span className="inline-flex items-center gap-1 tabular-nums">
+                          <Icon name="cal" size="sm" className="size-3.5 text-ms-fg-3" />
                           {story.starts_at
                             ? new Date(story.starts_at).toLocaleDateString()
                             : "now"}
@@ -349,34 +363,44 @@ export default function OpsStoriesPage() {
 
                   {/* Editing is the routine act and destruction is the exception, so only one
                       of these is a button. Same weighting as the shop's order rows. */}
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => setEditing(story)}>
-                      <Pencil className="mr-1.5 h-4 w-4" aria-hidden />
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="secondary" icon="pencil" onClick={() => setEditing(story)}>
                       Edit
                     </Button>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 text-xs font-bold text-muted-foreground underline-offset-2 hover:text-danger hover:underline"
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="trash"
                       onClick={() => {
-                        if (window.confirm(`Delete "${story.title}"? This cannot be undone.`)) {
-                          remove.mutate(story.id);
-                        }
+                        setPendingDelete(story);
+                        setDeleteOpen(true);
                       }}
                     >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </li>
               );
             })}
           </ul>
         )}
-      </div>
+      </Panel>
 
       {editing !== undefined ? (
         <StoryForm story={editing} onClose={() => setEditing(undefined)} />
       ) : null}
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        tone="critical"
+        icon="trash"
+        title={pendingDelete ? `Delete "${pendingDelete.title}"?` : ""}
+        confirmLabel="Delete"
+        onConfirm={runDelete}
+      >
+        This cannot be undone.
+      </ConfirmDialog>
     </div>
   );
 }

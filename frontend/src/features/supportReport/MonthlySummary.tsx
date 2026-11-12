@@ -53,19 +53,14 @@ function Headline({ report }: { report: SupportMonthlyReport }) {
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       <StatTile
         label="Attendance"
-        value={
-          <RateFigure
-            rate={t.attendance_rate}
-            reason={attendanceReason(t)}
-            className="text-2xl font-extrabold"
-          />
-        }
+        value={<RateFigure rate={t.attendance_rate} reason={attendanceReason(t)} />}
         detail={`${formatShare(attendedCount(t), settledCount(t))} settled either way`}
       />
       {/* Late rides in this tile's detail rather than as a seventh tile: the grid is laid
           out for six, and a seventh would strand the amber "Not settled yet" call to action
           on a row of its own. The table below has its own "Came late" column. */}
       <StatTile
+        delay={30}
         label="Sessions held"
         value={t.held}
         detail={
@@ -75,6 +70,7 @@ function Headline({ report }: { report: SupportMonthlyReport }) {
         }
       />
       <StatTile
+        delay={60}
         label="Students who came"
         value={t.students_helped}
         detail={
@@ -84,17 +80,20 @@ function Headline({ report }: { report: SupportMonthlyReport }) {
         }
       />
       <StatTile
+        delay={90}
         label={label(report, "NO_SHOW")}
         value={t.no_show}
         detail="Took a seat and did not turn up"
       />
       <StatTile
+        delay={120}
         label={label(report, "CANCELLED")}
         value={t.cancelled}
         detail="Called off before the hour"
       />
       {/* Amber whenever it is not zero — the one tile here that is a call to action. */}
       <StatTile
+        delay={150}
         label={UNSETTLED_LABEL}
         value={t.unsettled}
         tone={t.unsettled > 0 ? "warning" : "default"}
@@ -119,10 +118,10 @@ function columns(report: SupportMonthlyReport): Column<MonthlyTeacherRow>[] {
           {/* Wraps rather than truncates: Uzbek names run long, and a list of support
               teachers whose surnames are cut off is useless precisely when two of them
               share a first name. */}
-          <span className="block font-semibold leading-snug text-foreground">
+          <span className="block font-semibold leading-snug text-ms-fg">
             {personName(row.support_teacher)}
           </span>
-          <span className="block text-[11px] text-muted-foreground">{teacherSubline(row)}</span>
+          <span className="block text-[12px] text-ms-fg-3">{teacherSubline(row)}</span>
         </div>
       ),
     },
@@ -146,7 +145,7 @@ function columns(report: SupportMonthlyReport): Column<MonthlyTeacherRow>[] {
       cell: (row) => (
         <Num
           value={row.held}
-          className="font-bold"
+          className="font-semibold"
           title="Sessions the teacher confirmed the student attended. The only outcome that pays points."
         />
       ),
@@ -245,7 +244,7 @@ export function MonthlySummary({
   const cols = columns(report);
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {empty ? null : <Headline report={report} />}
 
       <SectionCard
@@ -254,8 +253,9 @@ export function MonthlySummary({
         actions={monthPicker}
       >
         {empty ? (
-          <div className="p-5">
+          <div className="px-5">
             <EmptyPanel
+              icon="cal"
               title={`No support hours in ${shown || "this month"}`}
               body="Nobody published an hour and nobody booked one in this month. Pick another month above — the picker lists every month the desk has had hours on the calendar."
             />
@@ -268,10 +268,10 @@ export function MonthlySummary({
               rowKey={(row) => row.support_teacher_id}
               minWidthClass="min-w-[900px]"
               footer={
-                <tr className="bg-surface-2 align-middle">
+                <tr className="bg-ms-surface align-middle">
                   <td className="px-3 py-3 pl-5 text-left">
-                    <span className="font-bold text-foreground">The whole learning center</span>
-                    <span className="block text-[11px] text-muted-foreground">
+                    <span className="font-semibold text-ms-fg">The whole learning center</span>
+                    <span className="block text-[12px] text-ms-fg-3">
                       {teacherSubline(total)}
                     </span>
                   </td>
@@ -283,7 +283,7 @@ export function MonthlySummary({
                     />
                   </td>
                   <td className="px-3 py-3 text-right">
-                    <Num value={total.held} className="font-bold" />
+                    <Num value={total.held} className="font-semibold" />
                   </td>
                   <td className="px-3 py-3 text-right">
                     <Num value={total.late ?? 0} />
@@ -307,7 +307,7 @@ export function MonthlySummary({
               }
             />
 
-            <div className="space-y-2 border-t border-border px-5 py-4">
+            <div className="flex flex-col gap-2 border-t border-ms-line px-5 py-4">
               <Note>
                 Attendance is {formatRate(total.attendance_rate)} for the learning center:{" "}
                 {formatShare(attendedCount(total), settledCount(total))} settled either way, pooled across

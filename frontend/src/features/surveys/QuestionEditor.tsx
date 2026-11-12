@@ -2,17 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { ImagePlus, Plus, Trash2, X } from "lucide-react";
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Field,
-  IconButton,
-  Input,
-  Select,
-} from "@/components/ui";
+import { Icon } from "@/components/ui/Icon";
+import { Button, buttonClass } from "@/features/console/ui";
+import { CONTROL } from "@/features/questionsAdmin/questionLook";
 import { cn } from "@/lib/cn";
+import { CheckRow, Field, INSET, Notice } from "./surveyLook";
 import {
   isChoiceType,
   isNumericType,
@@ -257,14 +251,15 @@ export function QuestionEditor({
   }
 
   return (
-    <div className="space-y-3.5">
+    <div className="flex flex-col gap-4">
       <Field label="Question" htmlFor={`${idPrefix}-prompt`} required>
-        <Input
+        <input
           id={`${idPrefix}-prompt`}
           value={draft.prompt}
           maxLength={500}
           onChange={(e) => set("prompt", e.target.value)}
           placeholder="What do you want to ask?"
+          className={CONTROL}
         />
       </Field>
 
@@ -273,21 +268,22 @@ export function QuestionEditor({
         htmlFor={`${idPrefix}-help`}
         hint="Optional. A line of context the student reads before answering."
       >
-        <Input
+        <input
           id={`${idPrefix}-help`}
           value={draft.help_text}
           maxLength={300}
           onChange={(e) => set("help_text", e.target.value)}
+          className={CONTROL}
         />
       </Field>
 
-      <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <Field
           label="Answer type"
           htmlFor={`${idPrefix}-type`}
           hint={TYPE_HINTS[draft.question_type]}
         >
-          <Select
+          <select
             id={`${idPrefix}-type`}
             value={draft.question_type}
             onChange={(e) => {
@@ -297,21 +293,17 @@ export function QuestionEditor({
               // wrong control wearing the right name.
               onChange({ ...draft, question_type: type, ...defaultsForType(type) });
             }}
+            className={CONTROL}
           >
             {(Object.keys(TYPE_LABELS) as SurveyQuestionType[]).map((t) => (
               <option key={t} value={t}>
                 {TYPE_LABELS[t]}
               </option>
             ))}
-          </Select>
+          </select>
         </Field>
-        <div className="flex h-11 items-center px-1">
-          <Checkbox
-            id={`${idPrefix}-required`}
-            label="Required"
-            checked={draft.is_required}
-            onChange={(e) => set("is_required", e.target.checked)}
-          />
+        <div className="flex items-center px-1 sm:mt-[26px] sm:h-[var(--ms-h-ctl)]">
+          <CheckRow label="Required" checked={draft.is_required} onChange={(on) => set("is_required", on)} />
         </div>
       </div>
 
@@ -321,47 +313,49 @@ export function QuestionEditor({
           label="Options"
           hint="Tick “asks for more” on an option like “I have a suggestion” to open a text box under it."
         >
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             {draft.options.map((opt, i) => {
               const trimmed = opt.trim();
               return (
-                <div key={i} className="flex items-center gap-2">
-                  <Input
-                    inputSize="sm"
-                    value={opt}
-                    onChange={(e) => setOption(i, e.target.value)}
-                    placeholder={`Option ${i + 1}`}
-                    aria-label={`Option ${i + 1}`}
-                  />
-                  <div className="shrink-0">
-                    <Checkbox
+                <div key={i} data-option={i} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <div className="min-w-0 flex-1 basis-[14rem]">
+                    <input
+                      value={opt}
+                      onChange={(e) => setOption(i, e.target.value)}
+                      placeholder={`Option ${i + 1}`}
+                      aria-label={`Option ${i + 1}`}
+                      className={CONTROL}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <CheckRow
                       label="asks for more"
                       checked={Boolean(trimmed) && draft.follow_up_options.includes(trimmed)}
                       disabled={!trimmed}
-                      onChange={(e) => toggleTrigger(trimmed, e.target.checked)}
+                      onChange={(on) => toggleTrigger(trimmed, on)}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="x"
+                      disabled={draft.options.length <= 1}
+                      onClick={() => removeOption(i)}
+                      aria-label={`Remove option ${i + 1}`}
                     />
                   </div>
-                  <IconButton
-                    size="sm"
-                    variant="ghost"
-                    className="shrink-0"
-                    disabled={draft.options.length <= 1}
-                    onClick={() => removeOption(i)}
-                    aria-label={`Remove option ${i + 1}`}
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden />
-                  </IconButton>
                 </div>
               );
             })}
-            <Button
-              size="sm"
-              variant="secondary"
-              leftIcon={<Plus aria-hidden />}
-              onClick={() => set("options", [...draft.options, ""])}
-            >
-              Add option
-            </Button>
+            <div>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="plus"
+                onClick={() => set("options", [...draft.options, ""])}
+              >
+                Add option
+              </Button>
+            </div>
           </div>
         </Field>
       )}
@@ -376,14 +370,17 @@ export function QuestionEditor({
               : "0 means they can tick as many as they like."
           }
         >
-          <Input
-            id={`${idPrefix}-cap`}
-            type="number"
-            min={0}
-            max={draft.options.filter((o) => o.trim()).length}
-            value={draft.max_selections}
-            onChange={(e) => set("max_selections", Number(e.target.value) || 0)}
-          />
+          <div className="max-w-[10rem]">
+            <input
+              id={`${idPrefix}-cap`}
+              type="number"
+              min={0}
+              max={draft.options.filter((o) => o.trim()).length}
+              value={draft.max_selections}
+              onChange={(e) => set("max_selections", Number(e.target.value) || 0)}
+              className={CONTROL}
+            />
+          </div>
         </Field>
       )}
 
@@ -391,23 +388,25 @@ export function QuestionEditor({
       {numeric && (
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Lowest number" htmlFor={`${idPrefix}-min`}>
-            <Input
+            <input
               id={`${idPrefix}-min`}
               type="number"
               min={0}
               max={100}
               value={draft.scale_min}
               onChange={(e) => set("scale_min", Number(e.target.value))}
+              className={CONTROL}
             />
           </Field>
           <Field label="Highest number" htmlFor={`${idPrefix}-max`}>
-            <Input
+            <input
               id={`${idPrefix}-max`}
               type="number"
               min={1}
               max={100}
               value={draft.scale_max}
               onChange={(e) => set("scale_max", Number(e.target.value))}
+              className={CONTROL}
             />
           </Field>
         </div>
@@ -420,21 +419,23 @@ export function QuestionEditor({
             htmlFor={`${idPrefix}-low`}
             hint="Write whatever the question is really about."
           >
-            <Input
+            <input
               id={`${idPrefix}-low`}
               value={draft.scale_low_label}
               maxLength={80}
               onChange={(e) => set("scale_low_label", e.target.value)}
               placeholder="Would not recommend"
+              className={CONTROL}
             />
           </Field>
           <Field label="Label at the high end" htmlFor={`${idPrefix}-high`}>
-            <Input
+            <input
               id={`${idPrefix}-high`}
               value={draft.scale_high_label}
               maxLength={80}
               onChange={(e) => set("scale_high_label", e.target.value)}
               placeholder="Would recommend"
+              className={CONTROL}
             />
           </Field>
         </div>
@@ -451,48 +452,53 @@ export function QuestionEditor({
               : `Anything below ${draft.follow_up_threshold} is asked why. ${draft.follow_up_threshold} and above is not.`
           }
         >
-          <Input
-            id={`${idPrefix}-threshold`}
-            type="number"
-            min={draft.scale_min + 1}
-            max={draft.scale_max}
-            value={draft.follow_up_threshold ?? ""}
-            onChange={(e) =>
-              set("follow_up_threshold", e.target.value === "" ? null : Number(e.target.value))
-            }
-            placeholder="e.g. 8"
-          />
+          <div className="max-w-[10rem]">
+            <input
+              id={`${idPrefix}-threshold`}
+              type="number"
+              min={draft.scale_min + 1}
+              max={draft.scale_max}
+              value={draft.follow_up_threshold ?? ""}
+              onChange={(e) =>
+                set("follow_up_threshold", e.target.value === "" ? null : Number(e.target.value))
+              }
+              placeholder="e.g. 8"
+              className={CONTROL}
+            />
+          </div>
         </Field>
       )}
 
       {/* ── What the follow-up box says and whether it is compulsory ────────── */}
       {hasTrigger && (
-        <div className="space-y-3 rounded-xl border border-border bg-surface-2 p-3.5">
-          <p className="text-[13px] font-bold text-foreground">The follow-up box</p>
+        <div className={cn(INSET, "flex flex-col gap-3 p-3.5")}>
+          <p className="text-[14px] font-semibold text-ms-fg">The follow-up box</p>
           <Field
             label="What the empty box says"
             htmlFor={`${idPrefix}-placeholder`}
             hint="It disappears as soon as the student starts typing."
           >
-            <Input
+            <input
               id={`${idPrefix}-placeholder`}
-              inputSize="sm"
               value={draft.follow_up_placeholder}
               maxLength={200}
               onChange={(e) => set("follow_up_placeholder", e.target.value)}
               placeholder="Why did you give this score?"
+              className={CONTROL}
             />
           </Field>
-          <Checkbox
-            id={`${idPrefix}-fu-required`}
+          <CheckRow
             label="They must fill it in"
             checked={draft.follow_up_required}
-            onChange={(e) => set("follow_up_required", e.target.checked)}
+            onChange={(on) => set("follow_up_required", on)}
           />
           {draft.follow_up_required && (
-            <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">
-              A student who cannot think of anything to write can only get past this by
-              changing their answer. Leave it optional unless you really need the note.
+            <p className="flex items-start gap-1.5 text-[13px] font-medium leading-[18px] text-ms-attention-fg">
+              <Icon name="warn" size="sm" className="mt-px size-3.5" />
+              <span>
+                A student who cannot think of anything to write can only get past this by
+                changing their answer. Leave it optional unless you really need the note.
+              </span>
             </p>
           )}
         </div>
@@ -503,9 +509,9 @@ export function QuestionEditor({
 
       {/* ── Picture ─────────────────────────────────────────────────────────── */}
       <Field label="Picture" hint="Optional. Shown above the answer control.">
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {shownImage && (
-            <div className="relative w-full max-w-sm overflow-hidden rounded-xl border border-border">
+            <div className="relative w-full max-w-sm overflow-hidden rounded-ms-ctl border border-ms-border bg-ms-surface">
               <Image
                 src={shownImage}
                 alt=""
@@ -517,13 +523,8 @@ export function QuestionEditor({
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <label
-              className={cn(
-                "ds-ring inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border",
-                "bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-2",
-              )}
-            >
-              <ImagePlus className="h-3.5 w-3.5" aria-hidden />
+            <label className={buttonClass({ variant: "secondary", size: "sm", className: "cursor-pointer" })}>
+              <Icon name="image" size="sm" />
               {shownImage ? "Replace picture" : "Add a picture"}
               <input
                 type="file"
@@ -533,12 +534,7 @@ export function QuestionEditor({
               />
             </label>
             {image && (
-              <Button
-                size="sm"
-                variant="ghost"
-                leftIcon={<Trash2 aria-hidden />}
-                onClick={() => onImageChange(null)}
-              >
+              <Button size="sm" variant="ghost" icon="trash" onClick={() => onImageChange(null)}>
                 Undo
               </Button>
             )}
@@ -710,37 +706,37 @@ function ConditionEditor({
         label="When to show this"
         hint="The first question is always shown — a rule can only look at a question above it."
       >
-        <p className="text-[13px] text-muted-foreground">Nothing above this one to depend on yet.</p>
+        <p className="text-[14px] text-ms-fg-3">Nothing above this one to depend on yet.</p>
       </Field>
     );
   }
 
   return (
     <Field label="When should students see this question?">
-      <div className="space-y-3 rounded-xl border border-border bg-surface-2 p-3.5">
-        <div className="space-y-1.5">
+      <div className={cn(INSET, "flex flex-col gap-3 p-3.5")}>
+        <div className="flex flex-col gap-1.5">
           {MODES.map((m) => {
             const usable = m.value === "ALWAYS" || sourcesFor(m.value, earlier).length > 0;
             return (
               <label
                 key={m.value}
                 className={cn(
-                  "flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors",
-                  mode === m.value ? "bg-primary/10" : "hover:bg-card",
-                  !usable && "cursor-not-allowed opacity-45",
+                  "ms-transition flex items-start gap-2.5 rounded-ms-ctl border px-3 py-2",
+                  mode === m.value ? "border-ms-primary bg-ms-primary-soft" : "border-ms-border-input bg-ms-card hover:bg-ms-surface",
+                  usable ? "cursor-pointer" : "cursor-not-allowed opacity-50",
                 )}
               >
                 <input
                   type="radio"
                   name={`${idPrefix}-cond-mode`}
-                  className="ds-ring mt-0.5 h-[18px] w-[18px] shrink-0 accent-primary"
+                  className="mt-0.5 size-4 shrink-0 accent-[var(--ms-primary)]"
                   checked={mode === m.value}
                   disabled={!usable}
                   onChange={() => setMode(m.value)}
                 />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-foreground">{m.label}</span>
-                  <span className="block text-[12px] text-muted-foreground">
+                  <span className="block text-[14px] font-medium leading-5 text-ms-fg">{m.label}</span>
+                  <span className="block text-[13px] leading-[18px] text-ms-fg-3">
                     {usable
                       ? m.hint
                       : m.value === "HIGH" || m.value === "LOW"
@@ -754,9 +750,9 @@ function ConditionEditor({
         </div>
 
         {mode !== "ALWAYS" && (
-          <div className="space-y-2.5 border-t border-border pt-3">
+          <div className="flex flex-col gap-3 border-t border-ms-line pt-3">
             <Field label="Based on their answer to" htmlFor={`${idPrefix}-cond-q`}>
-              <Select
+              <select
                 id={`${idPrefix}-cond-q`}
                 value={draft.condition_question == null ? "" : String(draft.condition_question)}
                 onChange={(e) => {
@@ -767,13 +763,14 @@ function ConditionEditor({
                     condition_value: defaultValueFor(mode, next),
                   });
                 }}
+                className={CONTROL}
               >
                 {candidates.map((q) => (
                   <option key={q.id} value={String(q.id)}>
                     {earlier.indexOf(q) + 1}. {q.prompt.slice(0, 48)}
                   </option>
                 ))}
-              </Select>
+              </select>
             </Field>
 
             {(mode === "HIGH" || mode === "LOW") && source && (
@@ -786,29 +783,35 @@ function ConditionEditor({
                     : `Less than ${draft.condition_value}, out of ${source.scale_max}.`
                 }
               >
-                <Input
-                  id={`${idPrefix}-cond-n`}
-                  type="number"
-                  min={source.scale_min}
-                  max={source.scale_max}
-                  value={typeof draft.condition_value === "number" ? draft.condition_value : ""}
-                  onChange={(e) =>
-                    onChange({
-                      ...draft,
-                      condition_value: e.target.value === "" ? null : Number(e.target.value),
-                    })
-                  }
-                />
+                <div className="max-w-[10rem]">
+                  <input
+                    id={`${idPrefix}-cond-n`}
+                    type="number"
+                    min={source.scale_min}
+                    max={source.scale_max}
+                    value={typeof draft.condition_value === "number" ? draft.condition_value : ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...draft,
+                        condition_value: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    className={CONTROL}
+                  />
+                </div>
               </Field>
             )}
 
             {(mode === "PICKED" || mode === "NOT_PICKED") && source && (
               <Field label={mode === "PICKED" ? "Which answers" : "Which answers to exclude"}>
-                <div className="space-y-1.5">
+                <div className="flex flex-col">
                   {hasDuplicateOptions && (
-                    <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">
-                      “{source.prompt.slice(0, 30)}” has more than one option with the same
-                      name, so a rule cannot tell them apart. Rename them on that question.
+                    <p className="mb-1 flex items-start gap-1.5 text-[13px] font-medium leading-[18px] text-ms-attention-fg">
+                      <Icon name="warn" size="sm" className="mt-px size-3.5" />
+                      <span>
+                        “{source.prompt.slice(0, 30)}” has more than one option with the same
+                        name, so a rule cannot tell them apart. Rename them on that question.
+                      </span>
                     </p>
                   )}
                   {options.map((opt, i) => {
@@ -816,17 +819,17 @@ function ConditionEditor({
                       ? draft.condition_value.map(String)
                       : [];
                     return (
-                      <Checkbox
+                      <CheckRow
                         // Keyed by INDEX, not by text — two options with the same name gave
                         // React duplicate keys and made every one of them render as ticked
                         // the moment any single one was.
                         key={`${opt}-${i}`}
                         label={opt}
                         checked={chosen.includes(opt)}
-                        onChange={(e) =>
+                        onChange={(on) =>
                           onChange({
                             ...draft,
-                            condition_value: e.target.checked
+                            condition_value: on
                               ? [...chosen, opt]
                               : chosen.filter((c) => c !== opt),
                           })
@@ -841,11 +844,12 @@ function ConditionEditor({
             {/* The finished rule, restated in English. The single biggest thing that makes
                 this readable without knowing what any of the controls are called. */}
             {preview() && (
-              <p className="rounded-lg bg-card px-3 py-2 text-[13px] font-medium text-foreground">
-                {preview()}
+              <p className="flex items-start gap-2 rounded-ms-ctl border border-ms-border bg-ms-card px-3 py-2 text-[14px] font-medium leading-5 text-ms-fg">
+                <Icon name="filter" size="sm" className="mt-0.5 text-ms-primary-text" />
+                <span>{preview()}</span>
               </p>
             )}
-            <p className="text-[12px] text-muted-foreground">
+            <p className="text-[13px] leading-[18px] text-ms-fg-3">
               Students who don’t match never see this question, and anything they had already
               put in it is discarded.
             </p>
@@ -860,8 +864,8 @@ function ConditionEditor({
 export function DraftProblems({ problems }: { problems: string[] }) {
   if (problems.length === 0) return null;
   return (
-    <Alert tone="warning" title={problems[0]}>
+    <Notice tone="warning" title={problems[0]}>
       {problems.length > 1 ? problems.slice(1).join(" ") : undefined}
-    </Alert>
+    </Notice>
   );
 }

@@ -1,34 +1,37 @@
 "use client";
 
+/**
+ * /ops/journals — pick a subject, then a level: each level's journal with its progress, or Create journal.
+ *
+ * In the console's look (design handoff v0.3). The words and the calls are the page's own.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/cn";
-import { levelsForSubject, levelLabel, type LevelKey } from "@/lib/levels";
+
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { LibraryError } from "@/features/builderLibrary/sectionParts";
+import { Badge, Button, type BadgeTone } from "@/features/console/ui";
 import { journalsApi } from "@/features/journals/api";
+import { LoadingLine, PANEL } from "@/features/journals/journalParts";
 import { courseMeta } from "@/features/journals/structure";
 import type { JournalListItem, JournalStatus } from "@/features/journals/types";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
-import {
-  BookOpen,
-  Calculator,
-  CheckCircle2,
-  ChevronRight,
-  Loader2,
-  Plus,
-} from "lucide-react";
+import { cn } from "@/lib/cn";
+import { levelsForSubject, levelLabel, type LevelKey } from "@/lib/levels";
 
 type SubjectCode = "MATH" | "ENGLISH";
 
-const SUBJECTS: { code: SubjectCode; lower: "math" | "english"; label: string; icon: typeof BookOpen }[] = [
-  { code: "MATH", lower: "math", label: "Math", icon: Calculator },
-  { code: "ENGLISH", lower: "english", label: "English", icon: BookOpen },
+const SUBJECTS: { code: SubjectCode; lower: "math" | "english"; label: string; icon: IconName; tint: string }[] = [
+  { code: "MATH", lower: "math", label: "Math", icon: "sigma", tint: "bg-ms-math-soft text-ms-math-fg" },
+  { code: "ENGLISH", lower: "english", label: "English", icon: "book", tint: "bg-ms-rw-soft text-ms-rw-fg" },
 ];
 
-const STATUS_STYLE: Record<JournalStatus | "NONE", string> = {
-  PUBLISHED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  DRAFT: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  ARCHIVED: "bg-surface-2 text-muted-foreground",
-  NONE: "bg-surface-2 text-muted-foreground",
+const STATUS_TONE: Record<JournalStatus | "NONE", BadgeTone> = {
+  PUBLISHED: "positive",
+  DRAFT: "attention",
+  ARCHIVED: "neutral",
+  NONE: "neutral",
 };
 
 function ProgressRing({ pct }: { pct: number }) {
@@ -36,12 +39,12 @@ function ProgressRing({ pct }: { pct: number }) {
   const c = 2 * Math.PI * r;
   const off = c - (Math.min(100, Math.max(0, pct)) / 100) * c;
   return (
-    <svg viewBox="0 0 44 44" className="h-11 w-11 shrink-0 -rotate-90">
-      <circle cx="22" cy="22" r={r} fill="none" strokeWidth="4" className="stroke-border" />
+    <svg viewBox="0 0 44 44" aria-hidden="true" className="h-11 w-11 shrink-0 -rotate-90">
+      <circle cx="22" cy="22" r={r} fill="none" strokeWidth="4" className="stroke-ms-surface-3" />
       <circle
         cx="22" cy="22" r={r} fill="none" strokeWidth="4" strokeLinecap="round"
         strokeDasharray={c} strokeDashoffset={off}
-        className={pct >= 100 ? "stroke-emerald-500" : "stroke-primary"}
+        className={pct >= 100 ? "stroke-ms-positive" : "stroke-ms-primary"}
       />
     </svg>
   );
@@ -96,34 +99,36 @@ export default function JournalsDashboardPage() {
   // ── Subject picker ──
   if (!subject) {
     return (
-      <div className="mx-auto w-full max-w-4xl">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
         <Header />
         <div className="grid gap-4 sm:grid-cols-2">
-          {SUBJECTS.map((s) => {
+          {SUBJECTS.map((s, i) => {
             const levels = levelsForSubject(s.lower);
             const created = countFor(s.code);
             return (
               <button
                 key={s.code}
                 type="button"
+                data-subject={s.code}
                 onClick={() => setSubject(s.code)}
-                className="group flex flex-col gap-4 rounded-2xl border border-border bg-card p-6 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
+                style={{ animationDelay: `${i * 40}ms` }}
+                className={cn(PANEL, "animate-ms-card-in ms-hover-lift group flex flex-col gap-4 p-6 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-ring")}
               >
                 <div className="flex items-center gap-3">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                    <s.icon className="h-6 w-6" />
+                  <span className={cn("grid size-12 shrink-0 place-items-center rounded-[14px]", s.tint)}>
+                    <Icon name={s.icon} size="xl" />
                   </span>
-                  <div>
-                    <h2 className="text-xl font-extrabold text-foreground">{s.label}</h2>
-                    <p className="text-sm font-semibold text-muted-foreground">
+                  <div className="min-w-0">
+                    <h2 className="text-[20px] font-bold leading-7 tracking-[-0.01em] text-ms-fg">{s.label}</h2>
+                    <p className="text-[14px] text-ms-fg-2">
                       {levels.length} levels · {created} journal{created !== 1 ? "s" : ""} started
                     </p>
                   </div>
-                  <ChevronRight className="ml-auto h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  <Icon name="right" className="ms-transition ml-auto text-ms-fg-3 group-hover:translate-x-0.5 group-hover:text-ms-fg" />
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {levels.map((lv) => (
-                    <span key={lv} className="rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+                    <span key={lv} className="inline-flex h-6 items-center rounded-full bg-ms-surface-2 px-[9px] text-[13px] font-medium leading-none text-ms-fg-2">
                       {levelLabel(lv)}
                     </span>
                   ))}
@@ -132,8 +137,8 @@ export default function JournalsDashboardPage() {
             );
           })}
         </div>
-        {loading && <LoadingRow />}
-        {error && <ErrorRow msg={error} />}
+        {loading && <LoadingLine card>Loading journals…</LoadingLine>}
+        {error && <LibraryError>{error}</LibraryError>}
       </div>
     );
   }
@@ -143,22 +148,26 @@ export default function JournalsDashboardPage() {
   const levels = levelsForSubject(active.lower);
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
       <Header />
-      <div className="mb-4 flex items-center gap-2 text-sm font-bold">
-        <button type="button" onClick={() => setSubject(null)} className="text-muted-foreground hover:text-primary">
+      <nav aria-label="Breadcrumb" className="-mt-1 flex items-center gap-1.5 text-[14px]">
+        <button
+          type="button"
+          onClick={() => setSubject(null)}
+          className="ms-transition rounded-[6px] font-medium text-ms-fg-3 hover:text-ms-primary-text"
+        >
           Subjects
         </button>
-        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        <span className="text-foreground">{active.label}</span>
-      </div>
+        <Icon name="right" size="sm" className="text-ms-fg-3" />
+        <span className="font-semibold text-ms-fg">{active.label}</span>
+      </nav>
 
-      {error && <ErrorRow msg={error} />}
+      {error && <LibraryError>{error}</LibraryError>}
       {loading ? (
-        <LoadingRow />
+        <LoadingLine card>Loading journals…</LoadingLine>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {levels.map((lv) => {
+          {levels.map((lv, i) => {
             const journal = byKey.get(`${subject}:${lv}`);
             const meta = courseMeta(lv);
             const key = `${subject}:${lv}`;
@@ -166,22 +175,25 @@ export default function JournalsDashboardPage() {
             return (
               <div
                 key={lv}
+                data-level={lv}
+                style={{ animationDelay: `${i * 40}ms` }}
                 className={cn(
-                  "flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm",
-                  journal && "cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md",
+                  PANEL,
+                  "animate-ms-card-in flex flex-col gap-3 p-5",
+                  journal && "ms-hover-lift cursor-pointer",
                 )}
                 onClick={journal ? () => router.push(`/ops/journals/${journal.id}`) : undefined}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-lg font-extrabold text-foreground">{levelLabel(lv)}</h3>
-                    <p className="text-xs font-semibold text-muted-foreground">
+                  <div className="min-w-0">
+                    <h3 className="text-[18px] font-bold leading-6 text-ms-fg">{levelLabel(lv)}</h3>
+                    <p className="mt-0.5 text-[13px] text-ms-fg-2">
                       {meta.months} month{meta.months !== 1 ? "s" : ""} · {meta.lessons} lessons
                     </p>
                   </div>
-                  <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide", STATUS_STYLE[journal?.status ?? "NONE"])}>
+                  <Badge tone={STATUS_TONE[journal?.status ?? "NONE"]} dot>
                     {journal ? journal.status : "Not started"}
-                  </span>
+                  </Badge>
                 </div>
 
                 {journal ? (
@@ -189,38 +201,39 @@ export default function JournalsDashboardPage() {
                     <div className="flex items-center gap-3">
                       <div className="relative flex items-center justify-center">
                         <ProgressRing pct={journal.progress.completion_pct} />
-                        <span className="absolute text-[11px] font-extrabold text-foreground">
+                        <span className="absolute text-[11px] font-bold tabular-nums text-ms-fg">
                           {journal.progress.completion_pct}%
                         </span>
                       </div>
-                      <div className="flex flex-col gap-0.5 text-xs font-semibold text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                      <div className="flex flex-col gap-0.5 text-[13px] text-ms-fg-2">
+                        <span className="flex items-center gap-1.5">
+                          <Icon name="ok" size="sm" className="size-3.5 text-ms-positive-fg" />
                           {journal.progress.homework_ready}/{journal.progress.homework_total} homework ready
                         </span>
                         <span>{journal.progress.midterm_total} midterm{journal.progress.midterm_total !== 1 ? "s" : ""}</span>
                       </div>
                     </div>
-                    <div className="mt-auto flex items-center justify-between border-t border-border pt-2 text-[11px] font-medium text-muted-foreground">
+                    <div className="mt-auto flex items-center justify-between border-t border-ms-line pt-2.5 text-[13px] text-ms-fg-3">
                       <span>Updated {new Date(journal.last_updated).toLocaleDateString()}</span>
-                      <ChevronRight className="h-4 w-4" />
+                      <Icon name="right" size="sm" />
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="flex gap-4 text-xs font-semibold text-muted-foreground">
+                    <div className="flex gap-4 text-[13px] text-ms-fg-2">
                       <span>{meta.homework} homework</span>
                       <span>{meta.midterms} midterm{meta.midterms !== 1 ? "s" : ""}</span>
                     </div>
-                    <button
-                      type="button"
-                      disabled={isCreating}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon="plus"
+                      state={isCreating ? "busy" : "idle"}
                       onClick={() => createAndOpen(subject, lv)}
-                      className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                      className="mt-auto w-full"
                     >
-                      {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                       Create journal
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
@@ -237,28 +250,10 @@ function Header() {
   // beside this title is dropped rather than kept: no other page in the console has one, and
   // the sidebar already shows this section's icon a couple of inches to the left.
   return (
-    <div className="mb-6">
-      <OpsPageHeader
-        section="Journals"
-        title="Journals"
-        description="Pre-author every homework of a course, per level."
-      />
-    </div>
-  );
-}
-
-function LoadingRow() {
-  return (
-    <div className="mt-4 flex items-center gap-2 rounded-2xl border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
-      <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading journals…
-    </div>
-  );
-}
-
-function ErrorRow({ msg }: { msg: string }) {
-  return (
-    <div className="mb-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
-      {msg}
-    </div>
+    <OpsPageHeader
+      section="Journals"
+      title="Journals"
+      description="Pre-author every homework of a course, per level."
+    />
   );
 }

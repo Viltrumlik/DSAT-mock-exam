@@ -16,7 +16,7 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Send } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useToast } from "@/components/ToastProvider";
@@ -176,7 +176,7 @@ const BACK = (
     href={smsTabHref("campaigns")}
     className="inline-flex items-center gap-1 text-[13px] font-medium text-ms-fg-3 hover:text-ms-fg"
   >
-    <ArrowLeft className="h-4 w-4" aria-hidden />
+    <Icon name="left" size="sm" className="size-4" />
     Campaigns
   </Link>
 );
@@ -258,7 +258,7 @@ function ComposerForm({ start }: { start: ComposerDraft }) {
 
   const sendButton = (
     <Button size="sm" fullWidth disabled={!canSend} loading={creator.isPending} onClick={send}>
-      <Send className="h-4 w-4" aria-hidden />
+      <Icon name="send" size="sm" className="size-4" />
       {priced ? `Send ${priced.count} SMS` : "Send"}
     </Button>
   );

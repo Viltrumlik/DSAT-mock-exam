@@ -1,13 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Check, ChevronRight, Search } from "lucide-react";
+
+import { Icon } from "@/components/ui/Icon";
+import { cn } from "@/lib/cn";
 import type { VocabSectionOpt } from "./types";
 
 /**
  * Two-level vocabulary picker: section cards → set cards, mirroring the classroom
  * AssignmentForm's vocab picker. Vocabulary is not subject/level scoped, so the section
  * list can be large — hence the drill-down + search rather than one flat list.
+ *
+ * In the console's look (design handoff v0.3); the search field takes the editor's own control class.
  */
 export default function VocabPicker({
   sections,
@@ -47,13 +51,13 @@ export default function VocabPicker({
   const pickedIn = (sec: VocabSectionOpt) => sec.sets.filter((v) => selectedIds.has(v.id)).length;
 
   if (sections.length === 0) {
-    return <p className="text-sm text-muted-foreground">No published vocabulary sets yet.</p>;
+    return <p className="text-[14px] text-ms-fg-2">No published vocabulary sets yet.</p>;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Icon name="search" size="sm" className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-ms-fg-3" />
         <input
           id={`${idPrefix}-search`}
           value={search}
@@ -72,33 +76,37 @@ export default function VocabPicker({
               <button
                 key={sec.id}
                 type="button"
+                data-vocab-section={sec.id}
                 onClick={() => {
                   setOpenSectionId(sec.id);
                   setSearch("");
                 }}
-                className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-left transition-colors hover:bg-surface-2"
+                className="ms-transition flex items-center gap-3 rounded-ms-ctl border border-ms-border bg-ms-card px-4 py-3 text-left hover:border-ms-border-strong hover:bg-ms-surface"
               >
+                <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-ms-surface-2 text-ms-fg-3">
+                  <Icon name="ms-vocab" size="sm" />
+                </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-foreground">{sec.title}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="truncate text-[14px] font-semibold text-ms-fg">{sec.title}</p>
+                  <p className="text-[13px] text-ms-fg-2">
                     {sec.sets.length} sets · {words} words
                   </p>
                 </div>
                 {picked > 0 && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+                  <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-ms-primary-soft px-[9px] text-[13px] font-semibold leading-none text-ms-primary-text">
                     {picked} selected
                   </span>
                 )}
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <Icon name="right" size="sm" className="text-ms-fg-3" />
               </button>
             );
           })}
           {filteredSections.length === 0 && (
-            <p className="text-sm text-muted-foreground">No sections match “{search}”.</p>
+            <p className="text-[14px] text-ms-fg-2">No sections match “{search}”.</p>
           )}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <button
               type="button"
@@ -106,11 +114,11 @@ export default function VocabPicker({
                 setOpenSectionId(null);
                 setSearch("");
               }}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+              className="ms-transition inline-flex items-center gap-1.5 rounded-[6px] text-[14px] font-semibold text-ms-primary-text hover:underline"
             >
-              <ArrowLeft className="h-4 w-4" /> All sections
+              <Icon name="left" size="sm" /> All sections
             </button>
-            <span className="text-xs font-semibold text-muted-foreground">
+            <span className="text-[13px] font-medium tabular-nums text-ms-fg-2">
               {pickedIn(openSection)} of {openSection.sets.length} selected
             </span>
           </div>
@@ -121,27 +129,31 @@ export default function VocabPicker({
                 <button
                   key={v.id}
                   type="button"
+                  data-vocab-set={v.id}
                   onClick={() => onToggle(v.id)}
-                  className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
-                    on ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-surface-2"
-                  }`}
+                  className={cn(
+                    "ms-transition flex items-center gap-3 rounded-ms-ctl border px-4 py-3 text-left",
+                    on ? "border-ms-primary bg-ms-primary-soft" : "border-ms-border bg-ms-card hover:border-ms-border-strong hover:bg-ms-surface",
+                  )}
                 >
                   <span
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
-                      on ? "border-primary bg-primary text-white" : "border-border"
-                    }`}
+                    aria-hidden="true"
+                    className={cn(
+                      "ms-transition grid size-5 shrink-0 place-items-center rounded-[6px] border-[1.5px] text-white",
+                      on ? "border-ms-primary bg-ms-primary" : "border-ms-border-input bg-ms-card",
+                    )}
                   >
-                    {on && <Check className="h-3.5 w-3.5" />}
+                    {on && <Icon name="check" size="sm" className="animate-ms-check-pop size-3.5" />}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-foreground">{v.title}</p>
-                    <p className="text-xs text-muted-foreground">{v.word_count} words</p>
+                    <p className="truncate text-[14px] font-semibold text-ms-fg">{v.title}</p>
+                    <p className="text-[13px] text-ms-fg-2">{v.word_count} words</p>
                   </div>
                 </button>
               );
             })}
             {filteredSets.length === 0 && (
-              <p className="text-sm text-muted-foreground">No sets match “{search}”.</p>
+              <p className="text-[14px] text-ms-fg-2">No sets match “{search}”.</p>
             )}
           </div>
         </div>
