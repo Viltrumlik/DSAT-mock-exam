@@ -7,8 +7,9 @@
  * In the console's look (design handoff v0.3, PR 20). The words, the filters and the call are the page's own.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { Icon } from "@/components/ui/Icon";
 import { applyClientFilters, computeQuestionBankStats, listAllQuestions } from "@/domains/questions/api";
@@ -43,16 +44,44 @@ const EMPTY_FILTERS: QuestionBankFilters = {
   questionType: "all",
   activeStatus: "all",
   setId: "all",
+  category: "all",
   search: "",
 };
 
+/** The starting filters from the links that point here: Categories (`?category=`) and Archived (`?setId=`). */
+function filtersFromQuery(params: URLSearchParams): QuestionBankFilters {
+  const category = params.get("category")?.trim();
+  const setId = Number(params.get("setId"));
+  return {
+    ...EMPTY_FILTERS,
+    category: category || "all",
+    setId: Number.isInteger(setId) && setId > 0 ? setId : "all",
+  };
+}
+
 export default function QuestionBankPage() {
+  // useSearchParams needs a Suspense boundary above it, or the production build's prerender fails.
+  return (
+    <Suspense fallback={null}>
+      <BankFromQuery />
+    </Suspense>
+  );
+}
+
+function BankFromQuery() {
+  const query = useSearchParams().toString();
+  // A new link to the bank starts from its own query.
+  return <BankList key={query} initial={filtersFromQuery(new URLSearchParams(query))} />;
+}
+
+function BankList({ initial }: { initial: QuestionBankFilters }) {
   const [allQuestions, setAllQuestions] = useState<QuestionWithContext[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [filters, setFilters] = useState<QuestionBankFilters>(EMPTY_FILTERS);
-  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<QuestionBankFilters>(initial);
+  // A link to one set opens the Filters card so the chosen set shows.
+  const [showFilters, setShowFilters] = useState(initial.setId !== "all");
 
   // Load questions; re-fetch when subject filter changes (server-side filter)
   useEffect(() => {
@@ -159,6 +188,27 @@ export default function QuestionBankPage() {
         </Button>
       </div>
 
+      {/* The category a link from Categories brought — removable here or by Reset filters. */}
+      {filters.category && filters.category !== "all" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            data-filter-chip="category"
+            className="animate-ms-fade-in inline-flex h-8 items-center gap-1.5 rounded-full bg-ms-primary-soft pl-3 pr-1 text-[14px] font-medium text-ms-primary-text"
+          >
+            <Icon name="tag" size="sm" className="size-3.5" />
+            Category: {filters.category}
+            <button
+              type="button"
+              aria-label="Clear category filter"
+              onClick={() => patchFilter({ category: "all" })}
+              className="ms-transition grid size-6 place-items-center rounded-full hover:bg-ms-surface-2"
+            >
+              <Icon name="x" size="sm" className="size-3.5" />
+            </button>
+          </span>
+        </div>
+      ) : null}
+
       {/* Expanded filters */}
       {showFilters && (
         <div
@@ -211,6 +261,10 @@ export default function QuestionBankPage() {
               className={CONTROL}
             >
               <option value="all">All sets</option>
+              {/* A set a link named that has no questions here still shows as the choice. */}
+              {typeof filters.setId === "number" && !setOptions.some(([id]) => id === filters.setId) ? (
+                <option value={filters.setId}>Set #{filters.setId}</option>
+              ) : null}
               {setOptions.map(([id, title]) => (
                 <option key={id} value={id}>
                   {title}
