@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -46,7 +46,7 @@ const { AudienceStep, audienceBody } = await import("@/features/ops/sms/composer
 const { MessageStep, rolesFor } = await import("@/features/ops/sms/composer/MessageStep");
 const { PhonePreview } = await import("@/features/ops/sms/composer/PhonePreview");
 const { RecipientsDrawer } = await import("@/features/ops/sms/composer/RecipientsDrawer");
-const { WhenStep, whenLabel, whenProblem } = await import("@/features/ops/sms/composer/WhenStep");
+const { WhenStep, whenIso, whenLabel, whenProblem } = await import("@/features/ops/sms/composer/WhenStep");
 const { EMPTY_FILTER } = await import("@/features/ops/sms/composer/useComposerDraft");
 
 let container: HTMLDivElement;
@@ -338,5 +338,54 @@ describe("RecipientsDrawer", () => {
     await setValue(control("Find a person"), "bek");
     expect(text()).not.toContain("Malika Karimova");
     expect(text()).toContain("Bekzod Aliyev");
+  });
+});
+
+/**
+ * The send time is Tashkent's: the night warning, the "Today 10:00" buttons and the label all
+ * read it there already. The field itself used to read on the device's clock, so on a device
+ * three hours behind (Europe/Kyiv in November) a typed 16:00 went out at 19:00 Tashkent, and
+ * "Tomorrow 10:00" filled the field with 08:00.
+ */
+describe("WhenStep on a device outside Tashkent", () => {
+  /** 08:00 on the 3rd in Tashkent — 05:00 on the device. */
+  const now = new Date("2026-11-03T08:00:00+05:00");
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(now.getHours()).toBe(5);
+  });
+
+  it("sends a typed 16:00 at 16:00 Tashkent, and labels it so", () => {
+    const typed = { mode: "at" as const, at: "2026-11-03T16:00" };
+    expect(whenIso(typed)).toBe("2026-11-03T11:00:00.000Z");
+    expect(whenLabel(typed, now)).toBe("Today 16:00");
+    expect(whenProblem(typed, now)).toBeNull();
+  });
+
+  it("fills the field with 10:00 from the Today and Tomorrow buttons", async () => {
+    const onChange = vi.fn();
+    await render(<WhenStep value={{ mode: "now", at: "" }} onChange={onChange} now={now} />);
+    await click(button("Today 10:00")!);
+    expect(onChange).toHaveBeenLastCalledWith({ mode: "at", at: "2026-11-03T10:00" });
+    await click(button("Tomorrow 10:00")!);
+    expect(onChange).toHaveBeenLastCalledWith({ mode: "at", at: "2026-11-04T10:00" });
+  });
+
+  it("starts the field at Tashkent's now and says whose clock it is", async () => {
+    await render(<WhenStep value={{ mode: "at", at: "" }} onChange={vi.fn()} now={now} />);
+    expect((control("Goes out at") as HTMLInputElement).min).toBe("2026-11-03T08:00");
+    expect(text()).toContain("Tashkent time.");
+    expect(text()).not.toContain("Your device's time.");
   });
 });

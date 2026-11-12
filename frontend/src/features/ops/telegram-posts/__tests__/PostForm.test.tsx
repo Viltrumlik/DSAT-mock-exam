@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -190,11 +190,12 @@ describe("PostForm", () => {
     expect(controlOf("Goes out at")).toBe(document.body.querySelector('input[type="datetime-local"]'));
   });
 
-  it("says the send time is read in the device's time zone", async () => {
+  it("says the send time is read on Tashkent's clock", async () => {
     await render();
-    expect(text()).not.toContain("Your device's time.");
+    expect(text()).not.toContain("Tashkent time.");
     await act(async () => radio("Once, at a set time").click());
-    expect(text()).toContain("Your device's time.");
+    expect(text()).toContain("Tashkent time.");
+    expect(text()).not.toContain("Your device's time.");
   });
 
   it("lets a post that has not run change its timing", async () => {
@@ -228,5 +229,40 @@ describe("PostForm", () => {
     await act(async () => button("Schedule").click());
     expect(String(confirmSpy.mock.calls[0][0])).toContain("Schedule this for 3 Telegram groups?");
     expect(save.mock.calls[0][0]).toMatchObject({ id: 7, body: { when: "WEEKLY", weekdays: [5] } });
+  });
+});
+
+/**
+ * The list shows a scheduled post at Tashkent's hour (#364); its edit form has to agree. On a
+ * device three hours behind (Europe/Kyiv in November) it used to show a 16:00 post as 13:00 and
+ * to save a typed 16:00 as 19:00 Tashkent.
+ */
+describe("PostForm on a device outside Tashkent", () => {
+  const FOUR_PM = "2026-11-09T16:00:00+05:00";
+  let savedTz: string | undefined;
+
+  beforeAll(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = "Europe/Kyiv";
+  });
+
+  afterAll(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it("really is on the other clock — otherwise nothing below proves anything", () => {
+    expect(new Date(FOUR_PM).getHours()).toBe(13);
+  });
+
+  it("edits a 16:00 post as 16:00 and saves it untouched as 16:00", async () => {
+    await render(weeklyPost({ when: "ONCE", send_at: FOUR_PM, weekdays: [], time_of_day: null }));
+    const field = controlOf("Goes out at") as HTMLInputElement;
+    expect(field.value).toBe("2026-11-09T16:00");
+
+    await act(async () => button("Schedule").click());
+    expect(save.mock.calls[0][0]).toMatchObject({
+      id: 7, body: { when: "ONCE", send_at: "2026-11-09T11:00:00.000Z" },
+    });
   });
 });
