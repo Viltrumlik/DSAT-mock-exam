@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from django.http import HttpResponse
+from rest_framework.permissions import IsAdminUser
+from rest_framework.views import APIView
 
 from users.security_metrics import get
 
@@ -27,12 +29,14 @@ def security_metrics_prometheus() -> str:
     return "\n".join(lines) + "\n"
 
 
-class AdminSecurityPrometheusMetricsView:
-    @staticmethod
-    def as_view():
-        def view(request):
-            body = security_metrics_prometheus()
-            return HttpResponse(body, content_type="text/plain; version=0.0.4")
+class AdminSecurityPrometheusMetricsView(APIView):
+    """Security counters in Prometheus text — staff only, like the exams/realtime metrics views.
 
-        return view
+    It was a bare Django view, so it answered anyone, signed in or not, and nginx's metrics rule
+    covers only /api/(exams|realtime|assessments)/… — not this path."""
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        return HttpResponse(security_metrics_prometheus(), content_type="text/plain; version=0.0.4")
 

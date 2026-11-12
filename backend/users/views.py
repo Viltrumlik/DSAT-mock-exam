@@ -77,6 +77,7 @@ from time import monotonic
 
 from .security_audit import log_security_event
 from . import admin_audit
+from .account_rank import may_change_account, refuse_unless_may_change
 from .security_risk import clear_security_step_up, record_failed_refresh_attempt
 from .telegram_oidc import (
     TelegramOIDCError,
@@ -1195,6 +1196,13 @@ class UserUpdateView(generics.UpdateAPIView):
         # update users outside their subject (out-of-scope targets 404).
         return manageable_users_queryset(self.request.user)
 
+    def get_object(self):
+        # Seeing an account is not changing it: an admin sees the owner in the Staff list, but only
+        # the owner changes an owner's (or another admin's) password, phone, role or freeze.
+        target = super().get_object()
+        refuse_unless_may_change(self.request.user, target)
+        return target
+
     def perform_update(self, serializer):
         before = admin_audit.snapshot(serializer.instance)
         super().perform_update(serializer)
@@ -1223,6 +1231,11 @@ class UserDeleteView(generics.DestroyAPIView):
         # Scope to the actor's manageable set so a subject-scoped manager cannot
         # delete users outside their subject (out-of-scope targets 404).
         return manageable_users_queryset(self.request.user)
+
+    def get_object(self):
+        target = super().get_object()
+        refuse_unless_may_change(self.request.user, target)
+        return target
 
     def perform_destroy(self, instance):
         actor = self.request.user
@@ -1274,6 +1287,10 @@ class UserBulkActionView(APIView):
             target = allowed.filter(pk=uid).first()
             if target is None:
                 results.append({"id": uid, "ok": False, "error": "not found or out of scope"})
+                skipped += 1
+                continue
+            if not may_change_account(actor, target):
+                results.append({"id": uid, "ok": False, "error": "only the owner can change this account"})
                 skipped += 1
                 continue
             try:

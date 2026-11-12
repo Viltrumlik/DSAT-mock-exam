@@ -13,6 +13,7 @@ from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess
 from billing.views import IsGlobalAdmin
 
 from . import admin_audit
+from .account_rank import OWNER_ONLY, may_change_account
 from .models import RefreshSession
 from .people_detail import person_core
 from .people_parts import PARTS
@@ -90,6 +91,8 @@ class PersonRevokeSessionsView(APIView):
             return Response({"detail": "Not found."}, status=404)
         if user.pk == request.user.pk:
             return Response({"detail": "Use your own account's sign-out instead."}, status=400)
+        if not may_change_account(request.user, user):
+            return Response({"detail": OWNER_ONLY}, status=403)
         n = _revoke_session_rows(RefreshSession.objects.filter(user=user, revoked_at__isnull=True))
         admin_audit.log_admin_action(request=request, user_id=user.pk, event_type=admin_audit.ADMIN_REVOKE_SESSIONS,
                                      sessions=n)
@@ -122,6 +125,8 @@ class PersonOneTimePasswordView(APIView):
             return Response({"detail": "Change your own password from your profile."}, status=400)
         if (user.role or "").strip().lower() not in ONE_TIME_PASSWORD_ROLES:
             return Response({"detail": "An administrator's password is not reset from here."}, status=400)
+        if not may_change_account(request.user, user):  # e.g. a Django superuser whose role string says teacher
+            return Response({"detail": OWNER_ONLY}, status=403)
         try:
             claim = issue_one_time_password(user, now=timezone.now())
         except OneTimePasswordRefused as refused:
