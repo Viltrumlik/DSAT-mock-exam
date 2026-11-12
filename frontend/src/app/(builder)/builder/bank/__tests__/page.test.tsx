@@ -1,13 +1,17 @@
 /**
  * Builder Old sets bank (PR 20): the tiles, a row per question (type, set, In use / Free, category, points,
  * state, Open in set), the subject select refetching with the subject, the type / status / set filters, the
- * search, Reset filters, and the 150-row cap.
+ * search, Reset filters, and the 150-row cap. PR 21: the links that point here (?setId= from Archived, ?category=
+ * from Categories) land filtered.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const listAllSets = vi.fn();
+let query = "";
+
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query) }));
 
 vi.mock("next/link", () => ({
   default: ({ children, href, className, title }: { children: React.ReactNode; href: string; className?: string; title?: string }) => (
@@ -87,6 +91,7 @@ beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   listAllSets.mockReset();
   listAllSets.mockResolvedValue({ results: SETS });
+  query = "";
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -196,5 +201,59 @@ describe("the bank", () => {
     listAllSets.mockRejectedValue({ response: { data: { detail: "Not allowed." } } });
     await render();
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("Not allowed.");
+  });
+});
+
+describe("links that point here", () => {
+  it("?setId= (Archived's Questions) shows that set's questions with Filters open on it", async () => {
+    query = "setId=2";
+    await render();
+    expect(listAllSets).toHaveBeenCalledWith(undefined);
+    expect(rows()).toEqual(["2-3"]);
+    expect(buttonIn(host, "Filters").getAttribute("aria-expanded")).toBe("true");
+    expect((document.getElementById("bank-set") as HTMLSelectElement).value).toBe("2");
+    expect(host.textContent).toContain("3 total");
+
+    await click(buttonIn(host, "Reset filters"));
+    expect(rows()).toEqual(["1-1", "2-3", "1-2"]);
+  });
+
+  it("?category= (Categories' View questions) keeps that category, and its chip clears it", async () => {
+    query = "category=Algebra";
+    await render();
+    expect(rows()).toEqual(["1-1", "1-2"]);
+    expect(buttonIn(host, "Filters").getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector('[data-filter-chip="category"]')!.textContent).toContain("Category: Algebra");
+
+    await click(host.querySelector('[aria-label="Clear category filter"]')!);
+    expect(rows()).toEqual(["1-1", "2-3", "1-2"]);
+    expect(host.querySelector('[data-filter-chip="category"]')).toBeNull();
+  });
+
+  it("?category=(Uncategorised) keeps the sets without a category; Reset filters clears it", async () => {
+    query = `category=${encodeURIComponent("(Uncategorised)")}`;
+    await render();
+    expect(rows()).toEqual(["2-3"]);
+    await click(buttonIn(host, "Filters"));
+    await click(buttonIn(host, "Reset filters"));
+    expect(rows()).toEqual(["1-1", "2-3", "1-2"]);
+    expect(host.querySelector('[data-filter-chip="category"]')).toBeNull();
+  });
+
+  it("ignores a bad set id, and still names a set that has no questions here", async () => {
+    query = "setId=abc";
+    await render();
+    expect(rows()).toEqual(["1-1", "2-3", "1-2"]);
+    expect(buttonIn(host, "Filters").getAttribute("aria-expanded")).toBe("false");
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    query = "setId=9";
+    await render();
+    expect(rows()).toEqual([]);
+    expect(host.textContent).toContain("No questions match your filters.");
+    const select = document.getElementById("bank-set") as HTMLSelectElement;
+    expect(select.value).toBe("9");
+    expect(select.selectedOptions[0].textContent).toBe("Set #9");
   });
 });

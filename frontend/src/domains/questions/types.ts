@@ -60,6 +60,9 @@ export type QuestionLifecycleState =
   | "ARCHIVED"
   | "REJECTED";
 
+/** The category name for a set that has none — what Categories lists and what the bank's category filter matches. */
+export const UNCATEGORISED_CATEGORY = "(Uncategorised)";
+
 /**
  * Filters that can be applied to the Question Bank listing.
  */
@@ -68,5 +71,7 @@ export type QuestionBankFilters = {
   questionType?: AssessmentQuestion["question_type"] | "all";
   activeStatus?: "active" | "inactive" | "all";
   setId?: number | "all";
+  /** A set's category, trimmed; UNCATEGORISED_CATEGORY for the sets without one. */
+  category?: string | "all";
   search?: string;
 };

@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import { Icon } from "@/components/ui/Icon";
+import { UNCATEGORISED_CATEGORY } from "@/domains/questions/types";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import type { AssessmentSet } from "@/features/assessments/types";
 import { PageNotice, SetSubjectPill } from "@/features/builderLibrary/assessmentParts";
@@ -25,7 +26,8 @@ type CategoryRow = {
   englishCount: number;
 };
 
-const UNCATEGORISED = "(Uncategorised)";
+// The bank's category filter matches this same name (a link from here lands filtered).
+const UNCATEGORISED = UNCATEGORISED_CATEGORY;
 
 export default function CategoriesPage() {
   const [sets, setSets] = useState<AssessmentSet[]>([]);
