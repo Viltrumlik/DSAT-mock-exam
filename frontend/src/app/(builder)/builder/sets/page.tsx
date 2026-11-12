@@ -10,7 +10,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ToastProvider";
@@ -18,10 +18,10 @@ import { useAssessmentSetsList, useDeleteAssessmentSet, useSetReviewStatus } fro
 import { REVIEW_STATUS_LABELS, type AssessmentSet, type ReviewStatus, type Subject } from "@/features/assessments/types";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import { FIELD, FIELD_HINT, FIELD_LABEL, LibraryError, LibraryHeader } from "@/features/builderLibrary/sectionParts";
+import { BucketCard, ChipGroup, Crumb, CrumbSep, LevelBar, SubjectSquare } from "@/features/builderLibrary/drillDown";
 import {
   Badge,
   Button,
-  ChipCount,
   ConfirmDialog,
   Dialog,
   EmptyState,
@@ -29,7 +29,6 @@ import {
   Select,
   StatTile,
   buttonClass,
-  chipClass,
   type BadgeTone,
 } from "@/features/console/ui";
 import { normalizeApiError } from "@/lib/apiError";
@@ -298,7 +297,7 @@ export default function BuilderSetsPage() {
         )}
         {selectedSubject && !scopedSubject && (
           <>
-            <Icon name="right" size="sm" className="text-ms-fg-3" />
+            <CrumbSep />
             <Crumb current={!selectedLevel} onClick={() => setSelectedLevel(null)}>
               {subjectName(selectedSubject)}
             </Crumb>
@@ -306,7 +305,7 @@ export default function BuilderSetsPage() {
         )}
         {selectedSubject && selectedLevel && (
           <>
-            <Icon name="right" size="sm" className="text-ms-fg-3" />
+            <CrumbSep />
             <Crumb current>{selectedLevelLabel}</Crumb>
           </>
         )}
@@ -383,11 +382,7 @@ export default function BuilderSetsPage() {
                   setSelectedSubject(s.code);
                   setSelectedLevel(null);
                 }}
-                lead={
-                  <span className={cn("grid size-12 shrink-0 place-items-center rounded-[14px]", math ? "bg-ms-math-soft text-ms-math-fg" : "bg-ms-rw-soft text-ms-rw-fg")}>
-                    <Icon name={math ? "sigma" : "book"} />
-                  </span>
-                }
+                lead={<SubjectSquare math={math} />}
                 title={s.label}
                 sub={`${n} set${n !== 1 ? "s" : ""}`}
               />
@@ -404,7 +399,7 @@ export default function BuilderSetsPage() {
                 key={code}
                 delay={i * 40}
                 onClick={() => setSelectedLevel(code)}
-                lead={<span aria-hidden="true" className={cn("h-9 w-1 shrink-0 rounded-full", selectedSubject === "math" ? "bg-ms-math-fg" : "bg-ms-rw-fg")} />}
+                lead={<LevelBar math={selectedSubject === "math"} />}
                 title={levelLabel(code)}
                 sub={`${n} set${n !== 1 ? "s" : ""}`}
               />
@@ -574,98 +569,6 @@ export default function BuilderSetsPage() {
       >
         {deleteTarget ? `“#${deleteTarget.id} · ${deleteTarget.title}” and its draft questions will be permanently removed.` : null}
       </ConfirmDialog>
-    </div>
-  );
-}
-
-/** One step of "All subjects › Math › Junior": the earlier steps go back, the last one is where you are. */
-function Crumb({ current, onClick, children }: { current: boolean; onClick?: () => void; children: ReactNode }) {
-  return current && !onClick ? (
-    <span aria-current="page" className="rounded-[8px] px-2 py-1 font-semibold text-ms-fg">
-      {children}
-    </span>
-  ) : (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={current ? "page" : undefined}
-      className={cn(
-        "ms-transition rounded-[8px] px-2 py-1 font-semibold hover:bg-ms-surface-2",
-        current ? "text-ms-fg" : "text-ms-primary-text",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** A subject or a level to open: its name and how many sets are in it. */
-function BucketCard({
-  lead,
-  title,
-  sub,
-  big = false,
-  dashed = false,
-  delay = 0,
-  onClick,
-}: {
-  lead?: ReactNode;
-  title: string;
-  sub: string;
-  big?: boolean;
-  dashed?: boolean;
-  delay?: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{ animationDelay: `${delay}ms` }}
-      className={cn(
-        "group animate-ms-card-in ms-hover-lift ms-press flex items-center justify-between gap-4 rounded-ms-card text-left",
-        big ? "p-6" : "p-5",
-        dashed ? "border border-dashed border-ms-border-strong bg-transparent" : "bg-ms-card shadow-ms-1",
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-4">
-        {lead}
-        <span className="min-w-0">
-          <span className={cn("block font-bold text-ms-fg", big ? "text-[18px] leading-6" : "text-[16px] leading-[22px]")}>{title}</span>
-          <span className="mt-0.5 block text-[14px] text-ms-fg-2">{sub}</span>
-        </span>
-      </span>
-      <Icon name="right" className="shrink-0 text-ms-fg-3 transition-transform group-hover:translate-x-0.5" />
-    </button>
-  );
-}
-
-/** A filter as chips with their counts in this level. */
-function ChipGroup<T extends string>({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: T;
-  onChange: (v: T) => void;
-  options: { v: T; l: string; n: number }[];
-}) {
-  return (
-    <div role="group" aria-label={label} className="flex flex-wrap items-center gap-1.5">
-      {options.map((o) => (
-        <button
-          key={o.v}
-          type="button"
-          aria-pressed={value === o.v}
-          onClick={() => onChange(o.v)}
-          className={chipClass(value === o.v, o.n === 0 && o.v !== "all")}
-        >
-          {o.l}
-          <ChipCount n={o.n} on={value === o.v} />
-        </button>
-      ))}
     </div>
   );
 }
