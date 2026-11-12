@@ -2259,6 +2259,8 @@ mark.ts-annot {
   /* Page cards arrive in reading order; a lesson block fills across its own hours. */
   --animate-ms-card-in: ms-card-in 320ms var(--ms-ease-out) backwards;
   --animate-ms-wipe-in: ms-wipe-in 420ms var(--ms-ease-out) backwards;
+  /* Drag lift (Motion board): the picked-up row grows to its own scale and shadow (1.02, shadow 2). */
+  --animate-ms-lift: ms-lift var(--ms-dur-base) var(--ms-ease-out) backwards;
 
   @keyframes ms-fade-in { from { opacity: 0; translate: 0 4px; } }
   @keyframes ms-fade-out { to { opacity: 0; } }
@@ -2288,6 +2290,7 @@ mark.ts-annot {
   @keyframes ms-ring-turn { to { rotate: 360deg; } }
   @keyframes ms-card-in { from { opacity: 0; translate: 0 10px; } }
   @keyframes ms-wipe-in { from { clip-path: inset(0 100% 0 0); } }
+  @keyframes ms-lift { from { scale: 1; box-shadow: var(--ms-sh-1); } }
 }
 
 /* The console surface root. Opt-in: a console shell puts `ms` on its outermost element. In a layer

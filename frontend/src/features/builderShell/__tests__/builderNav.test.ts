@@ -73,14 +73,23 @@ describe("isBuilderEditorRoute", () => {
   it("keeps the editors full-screen and the lists in the frame", () => {
     for (const path of [
       "/builder/sets/12",
-      "/builder/pastpapers/1/2/3",
-      "/builder/practice-tests/1/2/3",
+      // A past paper / practice test module: the test, then the module (two numbers).
+      "/builder/pastpapers/2/12",
+      "/builder/practice-tests/21/50",
       "/builder/midterms/1/2/3",
       "/builder/full-mocks/4/5",
     ]) {
       expect(isBuilderEditorRoute(path)).toBe(true);
     }
-    for (const path of ["/builder", "/builder/sets", "/builder/sets/new", "/builder/pastpapers", "/builder/full-mocks/4"]) {
+    for (const path of [
+      "/builder",
+      "/builder/sets",
+      "/builder/sets/new",
+      "/builder/pastpapers",
+      "/builder/practice-tests",
+      "/builder/midterms",
+      "/builder/full-mocks/4",
+    ]) {
       expect(isBuilderEditorRoute(path)).toBe(false);
     }
   });
