@@ -114,7 +114,7 @@ export function AssessmentQuestionEditorFields({
           <p className="px-3 pt-2 text-ms-over uppercase text-ms-fg-3">
             Formula insert — click a symbol, then type in a field below
           </p>
-          <FormulaToolbar look="console" onInsert={handleFormulaInsert} />
+          <FormulaToolbar onInsert={handleFormulaInsert} />
         </div>
       )}
 
