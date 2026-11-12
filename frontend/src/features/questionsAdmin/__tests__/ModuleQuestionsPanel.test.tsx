@@ -1,6 +1,7 @@
 /**
  * The module editor's frame (PR 14a): the outline's rows and their dots, ⌥↑ / ⌥↓ reordering with the
- * same single save a drag makes, and a full module refusing another question.
+ * same single save a drag makes, and a full module refusing another question. The question pane (PR 14b):
+ * the answer key's card follows the Correct answer field, and Save sends what it always sent.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -10,6 +11,7 @@ import type { AdminModuleQuestion } from "../types";
 
 const reorder = vi.fn();
 const create = vi.fn();
+const update = vi.fn();
 let questions: AdminModuleQuestion[] = [];
 
 const idle = { isPending: false, isError: false, error: null };
@@ -34,7 +36,7 @@ vi.mock("@/features/questionsAdmin/hooks", () => ({
   useCreateModuleQuestion: () => ({ ...idle, mutateAsync: create }),
   useReorderModuleQuestionsBulk: () => ({ ...idle, mutateAsync: reorder }),
   useImportModuleQuestionsCsv: () => ({ ...idle, mutateAsync: vi.fn() }),
-  useUpdateModuleQuestion: () => ({ ...idle, mutateAsync: vi.fn() }),
+  useUpdateModuleQuestion: () => ({ ...idle, mutateAsync: update }),
   useDeleteModuleQuestion: () => ({ ...idle, mutateAsync: vi.fn() }),
 }));
 
@@ -80,6 +82,7 @@ async function press(el: HTMLElement, key: string, altKey = true) {
 beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   reorder.mockReset().mockResolvedValue(undefined);
+  update.mockReset().mockImplementation(async ({ questionId }: { questionId: number }) => questions.find((q) => q.id === questionId));
   create.mockReset();
   questions = [question(1), question(2), question(3)];
   host = document.createElement("div");
@@ -160,5 +163,86 @@ describe("the module editor's top bar", () => {
     expect(bar.textContent).toContain("Module full (22/22)");
     const add = Array.from(bar.querySelectorAll("button")).find((b) => b.textContent?.includes("Add question"))!;
     expect(add.disabled).toBe(true);
+  });
+});
+
+/** Type into a controlled field the way React hears it. */
+async function typeInto(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+const button = (words: string) =>
+  Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === words)!;
+async function click(el: HTMLElement) {
+  await act(async () => {
+    el.click();
+  });
+}
+
+describe("the question pane", () => {
+  it("puts the type, the weight and the skill under Properties", async () => {
+    await render();
+    const props = host.querySelector('aside[aria-label="Properties"]')!;
+    expect(props.textContent).toContain("Question type");
+    expect(props.textContent).toContain("Score weight");
+    expect(props.textContent).toContain("Student types numeric answer (no A/B/C/D choices)");
+    expect(props.textContent).toContain("SAT skill (optional)");
+  });
+
+  it("marks the answer key's choice, and moves the mark as the Correct answer changes", async () => {
+    await render();
+    expect(host.textContent).toContain("Answer key · B");
+    await typeInto(host.querySelector<HTMLInputElement>("#q1-answer")!, "d");
+    expect(host.textContent).not.toContain("Answer key · B");
+    expect(host.textContent).toContain("Answer key · D");
+  });
+
+  it("saves the same fields it always sent", async () => {
+    await render();
+    await typeInto(host.querySelector<HTMLTextAreaElement>("#q1-stem")!, "If x + 1 = 4, what is x?");
+    await click(button("Save question"));
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({
+      questionId: 1,
+      data: {
+        question_type: "MATH",
+        question_text: "If x + 1 = 4, what is x?",
+        question_prompt: "",
+        is_math_input: false,
+        option_a: "1",
+        option_b: "2",
+        option_c: "3",
+        option_d: "4",
+        correct_answer: "B",
+        explanation: "",
+        score: 10,
+        skill: null,
+      },
+    });
+    expect(host.textContent).toContain("Saved");
+  });
+
+  it("keeps a midterm's True / False controls and saves them as before", async () => {
+    questions = [question(1, { option_a: "True", option_b: "False", option_c: "", option_d: "", correct_answer: "A" })];
+    await render({ examKind: "MIDTERM", sectionSubject: "MATH" });
+    expect(host.textContent).toContain("Answer choices (True / False)");
+    expect(host.querySelector('aside[aria-label="Properties"]')!.textContent).toContain("Answer format");
+    const falseButton = host.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
+    expect(falseButton.textContent).toBe("False");
+    await click(falseButton);
+    expect(falseButton.getAttribute("aria-pressed")).toBe("true");
+    await click(button("Save question"));
+    expect(update.mock.calls[0][0].data).toMatchObject({ option_a: "True", option_b: "False", correct_answer: "B", is_math_input: false });
+  });
+
+  it("asks before deleting, inline", async () => {
+    await render();
+    await click(button("Delete"));
+    expect(host.textContent).toContain("Delete this question?");
+    await click(button("Cancel"));
+    expect(host.textContent).not.toContain("Delete this question?");
   });
 });

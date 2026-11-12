@@ -37,20 +37,9 @@ import {
   useSkillTaxonomyQuery,
 } from "@/features/questionsAdmin/skillTaxonomy";
 import { normalizeApiError } from "@/lib/apiError";
-import {
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  ImagePlus,
-  Loader2,
-  Save,
-  Trash2,
-  X,
-} from "lucide-react";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { Button, EmptyState, buttonClass, prefersReducedMotion } from "@/features/console/ui";
+import { Badge, Button, EmptyState, buttonClass, inputShell, prefersReducedMotion } from "@/features/console/ui";
 import { cn } from "@/lib/cn";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
 import { MathText } from "@/components/MathText";
 import {
@@ -110,10 +99,31 @@ function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string, examKi
   };
 }
 
-// Re-export canonical tokens under local aliases so the rest of this file
-// uses concise names, while the source of truth lives in studio/primitives.ts.
-const FIELD_LABEL = STUDIO_FIELD_LABEL;
-const INPUT = STUDIO_INPUT;
+// ─── The question pane's look (design handoff v0.3, PR 14b) ──────────────────
+
+/** A field's words above it, as the console's Field labels them. */
+const FIELD_LABEL = "mb-1.5 block text-[14px] font-medium leading-5 text-ms-fg";
+/** Help under a field. */
+const HINT = "mt-1.5 text-[13px] leading-[18px] text-ms-fg-3";
+/** The console field shell on a native select or input; it draws its own focus, so no outline on top. */
+const CONTROL = inputShell({ className: "w-full outline-none placeholder:text-ms-fg-3" });
+/**
+ * A long field in the student's Georgia: the stem, the passage, the explanation. The face sits on a wrapper
+ * (`font-ms-serif`): globals.css sets `font-family: inherit` on every control, unlayered, so a font utility
+ * on the textarea itself never applies.
+ */
+const SERIF_AREA = inputShell({ area: true, className: "w-full resize-y outline-none placeholder:text-ms-fg-3" });
+/** A choice as the student sees it: a card with its letter in a circle; the answer key's card in green. */
+const CHOICE = "ms-transition flex rounded-[14px] border-[1.5px] p-3";
+const CHOICE_IDLE = "border-ms-border-strong bg-ms-card";
+const CHOICE_KEY = "border-ms-positive bg-ms-positive-soft";
+const LETTER = "mt-px grid size-7 shrink-0 place-items-center rounded-full border-[1.5px] text-[13px] font-semibold";
+const LETTER_IDLE = "border-ms-border-input text-ms-fg-2";
+const LETTER_KEY = "border-ms-positive bg-ms-positive text-white";
+/** The midterm's letter and True / False buttons: choice-shaped, the picked one green. */
+const PICK = "ms-transition ms-press inline-flex items-center justify-center rounded-[12px] border-[1.5px] font-semibold";
+const PICK_OFF = "border-ms-border-strong bg-ms-card text-ms-fg hover:bg-ms-surface";
+const PICK_ON = "border-ms-positive bg-ms-positive-soft text-ms-positive-fg";
 
 // ─── Question editor pane ────────────────────────────────────────────────────
 
@@ -319,541 +329,521 @@ function QuestionEditor({
     [],
   );
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Header — save button row (never scrolls) */}
-      <div className="shrink-0 border-b border-border bg-card">
-        <div className="flex items-center justify-between gap-3 px-5 py-3">
-          <div className="min-w-0">
-            <p className="text-xs font-extrabold text-foreground">Q{question.order + 1} — #{question.id}</p>
-            <p className="text-[10px] text-muted-foreground">Question editor</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {saveOk && (
-              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Saved
-              </span>
-            )}
+  // The answer key, read from the Correct answer field as it is typed: its choice card turns green.
+  const keyLetter = isMC ? draft.correct_answer.trim().toUpperCase() : "";
+
+  /** Upload / Replace / Remove / Cancel for one image slot — the same four as before, as console buttons. */
+  const imageControls = (imgKey: ImageKey, existing: string | null | undefined, words: { add: string; change: string; replace: string }, alt: string, size: "lg" | "sm") => {
+    const file = imageFiles[imgKey];
+    const cleared = clearImages[imgKey];
+    const thumb = size === "lg" ? "max-h-32 rounded-[12px]" : "max-h-16 rounded-[10px]";
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {existing && !cleared && !file && (
+          <>
+            <img src={existing} alt={alt} className={cn(thumb, "border border-ms-border bg-ms-card object-contain")} />
             <button
               type="button"
-              disabled={isBusy}
-              onClick={() => void handleSave()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              onClick={() => setClearImages((c) => ({ ...c, [imgKey]: true }))}
+              className={buttonClass({ variant: "ghost", size: "sm", className: "text-ms-critical-fg hover:text-ms-critical-fg" })}
             >
-              {update.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )}
-              Save
+              <Icon name="x" size="sm" /> Remove
             </button>
+          </>
+        )}
+        {file && (
+          <>
+            <img src={URL.createObjectURL(file)} alt="Preview" className={cn(thumb, "border border-ms-border bg-ms-card object-contain")} />
+            <button
+              type="button"
+              onClick={() => setImageFiles((f) => { const n = { ...f }; delete n[imgKey]; return n; })}
+              className={buttonClass({ variant: "ghost", size: "sm" })}
+            >
+              <Icon name="x" size="sm" /> Cancel
+            </button>
+          </>
+        )}
+        <label className={buttonClass({ variant: size === "lg" ? "secondary" : "ghost", size: "sm", className: "cursor-pointer" })}>
+          <Icon name="image" size="sm" />
+          {file ? words.change : existing && !cleared ? words.replace : words.add}
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) { setImageFiles((prev) => ({ ...prev, [imgKey]: f })); setClearImages((c) => ({ ...c, [imgKey]: false })); }
+            }}
+          />
+        </label>
+      </div>
+    );
+  };
+
+  const saveButton = (where: "top" | "bottom") => (
+    <Button
+      variant="primary"
+      size={where === "top" ? "sm" : "md"}
+      state={update.isPending ? "busy" : "idle"}
+      busyLabel={where === "bottom" ? "Saving…" : undefined}
+      disabled={del.isPending}
+      onClick={() => void handleSave()}
+    >
+      {where === "top" ? "Save" : "Save question"}
+    </Button>
+  );
+
+  const properties = (
+    <aside
+      aria-label="Properties"
+      className="flex shrink-0 flex-col gap-5 border-ms-border bg-ms-card p-[18px] max-lg:border-b lg:order-2 lg:w-[300px] lg:overflow-y-auto lg:border-l"
+    >
+      <h2 className="font-ms-display text-[16px] font-bold leading-6 text-ms-fg">Properties</h2>
+
+      {/* Type row — midterms use answer-format selector; SAT uses type + score */}
+      {isMidterm ? (
+        <>
+          <div>
+            <label htmlFor={`q${question.id}-format`} className={FIELD_LABEL}>Answer format</label>
+            <select
+              id={`q${question.id}-format`}
+              className={CONTROL}
+              value={draft.midtermFormat}
+              onChange={(e) => patch({ midtermFormat: e.target.value as MidtermFormat })}
+            >
+              <option value="mc">Multiple choice (A / B / C / D)</option>
+              <option value="numeric">Numeric (student enters a number)</option>
+              <option value="short_text">Short text (student types an answer)</option>
+              <option value="true_false">True / False</option>
+            </select>
           </div>
-        </div>
-      </div>
-
-      {/* Formula toolbar — always visible, never scrolls away */}
-      <div className="shrink-0 border-b border-border bg-card">
-        <div className="px-3 pt-2 pb-0">
-          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
-            Formula insert — click a symbol, then type in a field below
-          </p>
-        </div>
-        <FormulaToolbar onInsert={handleFormulaInsert} />
-      </div>
-
-      {/* Error banners */}
-      {(updateErr || deleteErr) && (
-        <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 shrink-0">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          <span>{updateErr ?? deleteErr}</span>
-        </div>
-      )}
-
-      {/* Scrollable form body */}
-      <div className="flex-1 overflow-y-auto">
-      <div className="space-y-5 p-5">
-
-        {/* Type row — midterms use answer-format selector; SAT uses type + score */}
-        {isMidterm ? (
-          <div className={isScale800Midterm ? "grid grid-cols-2 gap-4" : ""}>
+          {/* 800-point midterms weight questions onto the SAT curve. */}
+          {isScale800Midterm && (
             <div>
-              <label className={FIELD_LABEL}>Answer format</label>
+              <label htmlFor={`q${question.id}-score`} className={FIELD_LABEL}>Score weight</label>
               <select
-                className={INPUT}
-                value={draft.midtermFormat}
-                onChange={(e) => patch({ midtermFormat: e.target.value as MidtermFormat })}
+                id={`q${question.id}-score`}
+                className={CONTROL}
+                value={draft.score}
+                onChange={(e) => patch({ score: Number(e.target.value) })}
               >
-                <option value="mc">Multiple choice (A / B / C / D)</option>
-                <option value="numeric">Numeric (student enters a number)</option>
-                <option value="short_text">Short text (student types an answer)</option>
-                <option value="true_false">True / False</option>
+                <option value={10}>10 ball</option>
+                <option value={20}>20 ball</option>
+                <option value={40}>40 ball</option>
               </select>
             </div>
-            {/* 800-point midterms weight questions onto the SAT curve. */}
-            {isScale800Midterm && (
-              <div>
-                <label className={FIELD_LABEL}>Score weight</label>
-                <select
-                  className={INPUT}
-                  value={draft.score}
-                  onChange={(e) => patch({ score: Number(e.target.value) })}
-                >
-                  <option value={10}>10 ball</option>
-                  <option value={20}>20 ball</option>
-                  <option value={40}>40 ball</option>
-                </select>
+          )}
+        </>
+      ) : (
+        <>
+          <div>
+            <label htmlFor={`q${question.id}-type`} className={FIELD_LABEL}>Question type</label>
+            <select
+              id={`q${question.id}-type`}
+              className={CONTROL}
+              value={draft.question_type}
+              onChange={(e) => patchQuestionType(e.target.value as QuestionDraft["question_type"])}
+            >
+              {allowedTypes.map((t) => (
+                <option key={t} value={t}>
+                  {SAT_QUESTION_TYPE_LABEL[t as SatQuestionType] ?? t}
+                </option>
+              ))}
+            </select>
+            {/* SAT type mismatch warning */}
+            {typeWarning && (
+              <div className="mt-2 flex items-start gap-2 rounded-[10px] border border-ms-attention-line bg-ms-attention-soft px-2.5 py-2 text-ms-attention-fg">
+                <Icon name="warn" size="sm" className="mt-px size-3.5" />
+                <p className="text-[13px] font-medium leading-[18px]">{typeWarning}</p>
               </div>
             )}
           </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={FIELD_LABEL}>Question type</label>
-                <select
-                  className={INPUT}
-                  value={draft.question_type}
-                  onChange={(e) => patchQuestionType(e.target.value as QuestionDraft["question_type"])}
-                >
-                  {allowedTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {SAT_QUESTION_TYPE_LABEL[t as SatQuestionType] ?? t}
-                    </option>
-                  ))}
-                </select>
-                {/* SAT type mismatch warning */}
-                {typeWarning && (
-                  <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5">
-                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-                    <p className="text-[11px] font-semibold leading-snug text-amber-800">{typeWarning}</p>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className={FIELD_LABEL}>Score weight</label>
-                <select
-                  className={INPUT}
-                  value={draft.score}
-                  onChange={(e) => patch({ score: Number(e.target.value) })}
-                >
-                  <option value={10}>10 ball</option>
-                  <option value={20}>20 ball</option>
-                  <option value={40}>40 ball</option>
-                </select>
-              </div>
-            </div>
+          <div>
+            <label htmlFor={`q${question.id}-score`} className={FIELD_LABEL}>Score weight</label>
+            <select
+              id={`q${question.id}-score`}
+              className={CONTROL}
+              value={draft.score}
+              onChange={(e) => patch({ score: Number(e.target.value) })}
+            >
+              <option value={10}>10 ball</option>
+              <option value={20}>20 ball</option>
+              <option value={40}>40 ball</option>
+            </select>
+          </div>
 
-            {/* Math input toggle — SAT only */}
-            <div className="flex items-center gap-3">
+          {/* Math input toggle — SAT only */}
+          <label htmlFor="is_math_input" className="flex cursor-pointer select-none items-start gap-2.5 text-[14px] font-medium leading-5 text-ms-fg">
+            <span className="relative mt-px inline-flex size-[18px] shrink-0">
               <input
                 type="checkbox"
                 id="is_math_input"
                 checked={draft.is_math_input}
                 onChange={(e) => patch({ is_math_input: e.target.checked })}
-                className="h-4 w-4 rounded border-border accent-primary"
+                className="peer ms-transition size-[18px] cursor-pointer appearance-none rounded-[6px] border border-ms-border-strong bg-ms-card checked:border-ms-primary checked:bg-ms-primary"
               />
-              <label htmlFor="is_math_input" className="text-sm font-semibold text-foreground cursor-pointer select-none">
-                Student types numeric answer (no A/B/C/D choices)
-              </label>
-            </div>
-          </>
-        )}
+              <Icon name="check" size="sm" className="pointer-events-none absolute inset-0 m-auto size-3 text-white opacity-0 peer-checked:opacity-100" />
+            </span>
+            Student types numeric answer (no A/B/C/D choices)
+          </label>
+        </>
+      )}
 
-        {/* SAT skill, or the level's own topic — optional tag; feeds the student's report. */}
-        <div>
-          <label className={FIELD_LABEL}>{isTopicList ? "Topic (optional)" : "SAT skill (optional)"}</label>
-          <select
-            className={INPUT}
-            value={draft.skill ?? ""}
-            onChange={(e) => patch({ skill: e.target.value ? Number(e.target.value) : null })}
-          >
-            <option value="">Unclassified</option>
-            {skillIsOffList && (
-              <option value={String(draft.skill)}>
-                {question.skill_name || `Skill #${draft.skill}`}
-                {question.domain_name ? ` (${question.domain_name})` : ""}
-                {isTopicList ? " — not a topic of this list, pick one below" : ""}
-              </option>
-            )}
-            {taxonomyDomains.map((d) => (
-              <optgroup key={d.domain_id} label={d.domain}>
-                {d.skills.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {taxonomy.isLoading
-              ? "Loading skills…"
-              : taxonomy.isError
-              ? "Skill list unavailable — the question can still be saved unclassified."
-              : taxonomyDomains.length === 0
-              ? "No skills seeded for this subject yet."
-              : isTopicList
-              ? "The student sees this topic in their midterm report. Leave unclassified if unsure."
-              : "Groups the question in the student's error report. Leave unclassified if unsure."}
-          </p>
-        </div>
-
-        {/* Question text */}
-        <div>
-          <label className={FIELD_LABEL}>Question text (stem)</label>
-          <textarea
-            className={`${INPUT} min-h-[140px] leading-relaxed`}
-            placeholder="Enter the full question text here. LaTeX math is supported: \( x^2 + 1 = 0 \)"
-            value={draft.question_text}
-            onChange={(e) => patch({ question_text: e.target.value })}
-            onFocus={(e) => {
-              activeFieldRef.current = {
-                el: e.currentTarget,
-                setVal: (v) => patch({ question_text: v }),
-              };
-            }}
-          />
-          {draft.question_text.trim() && (
-            <div className="mt-2 rounded-xl border border-border/60 bg-surface-2/50 px-3 py-2.5">
-              <p className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                Preview
-              </p>
-              <MathText text={draft.question_text} className="text-sm leading-relaxed text-foreground" />
-            </div>
+      {/* SAT skill, or the level's own topic — optional tag; feeds the student's report. */}
+      <div>
+        <label htmlFor={`q${question.id}-skill`} className={FIELD_LABEL}>{isTopicList ? "Topic (optional)" : "SAT skill (optional)"}</label>
+        <select
+          id={`q${question.id}-skill`}
+          className={CONTROL}
+          value={draft.skill ?? ""}
+          onChange={(e) => patch({ skill: e.target.value ? Number(e.target.value) : null })}
+        >
+          <option value="">Unclassified</option>
+          {skillIsOffList && (
+            <option value={String(draft.skill)}>
+              {question.skill_name || `Skill #${draft.skill}`}
+              {question.domain_name ? ` (${question.domain_name})` : ""}
+              {isTopicList ? " — not a topic of this list, pick one below" : ""}
+            </option>
           )}
-          {/* Question image */}
-          <div className="mt-3">
-            <label className={FIELD_LABEL}>Question image (optional)</label>
-            <div className="mt-1 space-y-2">
-              {question.question_image && !clearImages.question && !imageFiles.question && (
-                <div className="flex items-center gap-2">
-                  <img src={question.question_image} alt="Question" className="max-h-32 rounded-xl border border-border object-contain" />
-                  <button
-                    type="button"
-                    onClick={() => setClearImages((c) => ({ ...c, question: true }))}
-                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
-                  >
-                    <X className="h-3 w-3" /> Remove
-                  </button>
-                </div>
-              )}
-              {imageFiles.question && (
-                <div className="flex items-center gap-2">
-                  <img src={URL.createObjectURL(imageFiles.question)} alt="Preview" className="max-h-32 rounded-xl border border-border object-contain" />
-                  <button
-                    type="button"
-                    onClick={() => setImageFiles((f) => { const n = { ...f }; delete n.question; return n; })}
-                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
-                  >
-                    <X className="h-3 w-3" /> Cancel
-                  </button>
-                </div>
-              )}
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/30 px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
-                <ImagePlus className="h-3.5 w-3.5" />
-                {imageFiles.question ? "Change image" : question.question_image && !clearImages.question ? "Replace image" : "Upload image"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) { setImageFiles((prev) => ({ ...prev, question: f })); setClearImages((c) => ({ ...c, question: false })); }
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Secondary prompt */}
-        <div>
-          <label className={FIELD_LABEL}>Stimulus / passage excerpt (optional)</label>
-          <textarea
-            className={`${INPUT} min-h-[80px] leading-relaxed`}
-            placeholder="Secondary text shown above the answer choices — e.g. a short passage excerpt or graph description."
-            value={draft.question_prompt}
-            onChange={(e) => patch({ question_prompt: e.target.value })}
-            onFocus={(e) => {
-              activeFieldRef.current = {
-                el: e.currentTarget,
-                setVal: (v) => patch({ question_prompt: v }),
-              };
-            }}
-          />
-        </div>
-
-        {/* MC choices — True/False mode shows static True/False labels; regular MC shows editable A-D */}
-        {isMC && draft.midtermFormat === "true_false" ? (
-          <div className="rounded-2xl border border-border bg-surface-2/30 p-4">
-            <p className={`${FIELD_LABEL} mb-3`}>Answer choices (True / False)</p>
-            <div className="flex gap-3">
-              {(["True", "False"] as const).map((label) => (
-                <div
-                  key={label}
-                  className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground"
-                >
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-2 text-xs font-extrabold text-muted-foreground">
-                    {label === "True" ? "A" : "B"}
-                  </span>
-                  {label}
-                </div>
+          {taxonomyDomains.map((d) => (
+            <optgroup key={d.domain_id} label={d.domain}>
+              {d.skills.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
               ))}
-            </div>
-          </div>
-        ) : isMC && (
-          <div className="rounded-2xl border border-border bg-surface-2/30 p-4 space-y-3">
-            <p className={FIELD_LABEL}>Answer choices</p>
-            {(["a", "b", "c", "d"] as const).map((letter) => {
-              const key = `option_${letter}` as keyof QuestionDraft;
-              const val = draft[key] as string;
-              return (
-                <div key={letter} className="space-y-1">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-extrabold text-foreground">
-                      {letter.toUpperCase()}
-                    </div>
-                    <textarea
-                      className={`${INPUT} flex-1 resize-none overflow-hidden`}
-                      rows={1}
-                      placeholder={`Option ${letter.toUpperCase()}`}
-                      value={val}
-                      ref={(el) => {
-                        if (el) {
-                          el.style.height = "auto";
-                          el.style.height = `${el.scrollHeight}px`;
-                        }
-                      }}
-                      onChange={(e) => {
-                        patch({ [key]: e.target.value } as Partial<QuestionDraft>);
-                        e.currentTarget.style.height = "auto";
-                        e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
-                      }}
-                      onFocus={(e) => {
-                        activeFieldRef.current = {
-                          el: e.currentTarget,
-                          setVal: (v) => patch({ [key]: v } as Partial<QuestionDraft>),
-                        };
-                      }}
-                    />
-                  </div>
-                  {val.trim() && (
-                    <div className="ml-9 rounded-lg border border-border/50 bg-card px-2.5 py-1.5">
-                      <MathText text={val} className="text-xs leading-relaxed text-foreground" />
-                    </div>
-                  )}
-                  {/* Option image */}
-                  <div className="ml-9 flex flex-wrap items-center gap-2">
-                    {(() => {
-                      const imgKey = letter as ImageKey;
-                      const existingImg = question[`option_${letter}_image` as keyof typeof question] as string | null | undefined;
-                      const file = imageFiles[imgKey];
-                      const cleared = clearImages[imgKey];
-                      return (
-                        <>
-                          {existingImg && !cleared && !file && (
-                            <>
-                              <img src={existingImg} alt={`Option ${letter.toUpperCase()}`} className="max-h-16 rounded-lg border border-border object-contain" />
-                              <button
-                                type="button"
-                                onClick={() => setClearImages((c) => ({ ...c, [imgKey]: true }))}
-                                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
-                              >
-                                <X className="h-3 w-3" /> Remove
-                              </button>
-                            </>
-                          )}
-                          {file && (
-                            <>
-                              <img src={URL.createObjectURL(file)} alt="Preview" className="max-h-16 rounded-lg border border-border object-contain" />
-                              <button
-                                type="button"
-                                onClick={() => setImageFiles((f) => { const n = { ...f }; delete n[imgKey]; return n; })}
-                                className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
-                              >
-                                <X className="h-3 w-3" /> Cancel
-                              </button>
-                            </>
-                          )}
-                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-border bg-surface-2/30 px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
-                            <ImagePlus className="h-3 w-3" />
-                            {file ? "Change" : existingImg && !cleared ? "Replace" : "Add image"}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="sr-only"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) { setImageFiles((prev) => ({ ...prev, [imgKey]: f })); setClearImages((c) => ({ ...c, [imgKey]: false })); }
-                              }}
-                            />
-                          </label>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+            </optgroup>
+          ))}
+        </select>
+        <p className={HINT}>
+          {taxonomy.isLoading
+            ? "Loading skills…"
+            : taxonomy.isError
+            ? "Skill list unavailable — the question can still be saved unclassified."
+            : taxonomyDomains.length === 0
+            ? "No skills seeded for this subject yet."
+            : isTopicList
+            ? "The student sees this topic in their midterm report. Leave unclassified if unsure."
+            : "Groups the question in the student's error report. Leave unclassified if unsure."}
+        </p>
+      </div>
+    </aside>
+  );
 
-        {/* Correct answer — format-aware for midterms */}
-        <div>
-          {isMidterm && draft.midtermFormat === "true_false" ? (
-            <>
-              <label className={FIELD_LABEL}>Correct answer</label>
-              <div className="flex gap-3 mt-1">
-                {(["True", "False"] as const).map((label, i) => {
-                  const letter = i === 0 ? "A" : "B";
-                  const isSelected = draft.correct_answer.toUpperCase() === letter;
-                  return (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => patch({ correct_answer: letter })}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition-colors ${
-                        isSelected
-                          ? "border-emerald-400 bg-emerald-50 text-emerald-800"
-                          : "border-border bg-card text-foreground hover:bg-surface-2"
-                      }`}
-                    >
-                      {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />}
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : isMidterm && draft.midtermFormat === "mc" ? (
-            <>
-              <label className={FIELD_LABEL}>Correct answer</label>
-              <div className="flex gap-2 mt-1">
-                {(["A", "B", "C", "D"] as const).map((letter) => {
-                  const isSelected = draft.correct_answer.toUpperCase() === letter;
-                  return (
-                    <button
-                      key={letter}
-                      type="button"
-                      onClick={() => patch({ correct_answer: letter })}
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl border text-sm font-extrabold transition-colors ${
-                        isSelected
-                          ? "border-emerald-400 bg-emerald-50 text-emerald-800"
-                          : "border-border bg-card text-foreground hover:bg-surface-2"
-                      }`}
-                    >
-                      {letter}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <>
-              <label className={FIELD_LABEL}>
-                {isMidterm && draft.midtermFormat === "numeric"
-                  ? "Correct answer (number — separate multiple valid forms with commas)"
-                  : isMidterm && draft.midtermFormat === "short_text"
-                  ? "Correct answer (text — case-insensitive, comma-separated alternatives)"
-                  : isMC
-                  ? "Correct answer (A, B, C, or D)"
-                  : "Correct answer (comma-separated for multiple valid forms, e.g. 2/3, 0.667)"}
-              </label>
-              <input
-                className={INPUT}
-                placeholder={
-                  isMidterm && draft.midtermFormat === "numeric"
-                    ? "e.g. 42 or 2/3, 0.667"
-                    : isMidterm && draft.midtermFormat === "short_text"
-                    ? "e.g. Paris or paris"
-                    : isMC
-                    ? "A"
-                    : "e.g. 42 or 2/3, 0.666, 0.667"
-                }
-                value={draft.correct_answer}
-                onChange={(e) => patch({ correct_answer: e.target.value })}
-                onFocus={(e) => {
-                  activeFieldRef.current = {
-                    el: e.currentTarget,
-                    setVal: (v) => patch({ correct_answer: v }),
-                  };
-                }}
-              />
-              {!isMidterm && isMC && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Must exactly match one of the choice letters above (case-insensitive).
-                </p>
-              )}
-            </>
-          )}
+  return (
+    <div className="flex flex-col lg:h-full">
+      {/* Header — save button row (never scrolls) */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-ms-border bg-ms-card px-5 py-2.5">
+        <div className="min-w-0">
+          <p className="font-ms-mono text-[13px] font-semibold leading-5 text-ms-fg">Q{question.order + 1} — #{question.id}</p>
+          <p className="text-[12px] leading-4 text-ms-fg-3">Question editor</p>
         </div>
-
-        {/* Explanation */}
-        <div>
-          <label className={FIELD_LABEL}>Explanation / solution rationale</label>
-          <textarea
-            className={`${INPUT} min-h-[100px] leading-relaxed`}
-            placeholder="Explain why the correct answer is right. Students see this after the test."
-            value={draft.explanation}
-            onChange={(e) => patch({ explanation: e.target.value })}
-            onFocus={(e) => {
-              activeFieldRef.current = {
-                el: e.currentTarget,
-                setVal: (v) => patch({ explanation: v }),
-              };
-            }}
-          />
-        </div>
-
-        {/* Save button (bottom) */}
-        <div className="flex items-center justify-between border-t border-border pt-4">
-          <button
-            type="button"
-            disabled={isBusy}
-            onClick={() => void handleSave()}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {update.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {update.isPending ? "Saving…" : "Save question"}
-          </button>
-
-          {/* Delete */}
-          {confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-red-700">Delete this question?</span>
-              <button
-                type="button"
-                disabled={del.isPending}
-                onClick={() => void handleDelete()}
-                className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-              >
-                {del.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes, delete"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
-            </button>
+        <div className="flex shrink-0 items-center gap-3">
+          {saveOk && (
+            <span className="animate-ms-fade-in flex items-center gap-1.5 text-[13px] font-semibold text-ms-positive-fg">
+              <Icon name="ok" size="sm" className="size-4" />
+              Saved
+            </span>
           )}
+          {saveButton("top")}
         </div>
       </div>
+
+      {/* Formula toolbar — always visible, never scrolls away */}
+      <div className="shrink-0 border-b border-ms-border bg-ms-surface">
+        <p className="px-4 pt-2.5 text-ms-over uppercase text-ms-fg-3">Formula insert — click a symbol, then type in a field below</p>
+        <FormulaToolbar look="console" onInsert={handleFormulaInsert} />
+      </div>
+
+      {/* Error banners */}
+      {(updateErr || deleteErr) && (
+        <div className="shrink-0 px-5 pt-3">
+          <Notice tone="critical">{updateErr ?? deleteErr}</Notice>
+        </div>
+      )}
+
+      <div className="flex flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
+        {properties}
+
+        {/* The question as the student reads it: Georgia, on the page. */}
+        <div className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <div className="mx-auto flex max-w-[800px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10 lg:py-7">
+            {/* Question text */}
+            <div>
+              <label htmlFor={`q${question.id}-stem`} className={FIELD_LABEL}>Question text (stem)</label>
+              <div className="font-ms-serif">
+                <textarea
+                  id={`q${question.id}-stem`}
+                  className={cn(SERIF_AREA, "min-h-[140px] text-[17px] leading-7")}
+                  placeholder="Enter the full question text here. LaTeX math is supported: \( x^2 + 1 = 0 \)"
+                  value={draft.question_text}
+                  onChange={(e) => patch({ question_text: e.target.value })}
+                  onFocus={(e) => {
+                    activeFieldRef.current = {
+                      el: e.currentTarget,
+                      setVal: (v) => patch({ question_text: v }),
+                    };
+                  }}
+                />
+              </div>
+              {draft.question_text.trim() && (
+                <div className="animate-ms-fade-in mt-2.5 rounded-ms-ctl border border-ms-border bg-ms-card px-4 py-3">
+                  <p className="mb-1 text-ms-over uppercase text-ms-fg-3">Preview</p>
+                  <MathText text={draft.question_text} className="font-ms-serif text-[17px] leading-7 text-ms-fg" />
+                </div>
+              )}
+              {/* Question image */}
+              <div className="mt-4">
+                <p className={FIELD_LABEL}>Question image (optional)</p>
+                {imageControls("question", question.question_image, { add: "Upload image", change: "Change image", replace: "Replace image" }, "Question", "lg")}
+              </div>
+            </div>
+
+            {/* Secondary prompt */}
+            <div>
+              <label htmlFor={`q${question.id}-prompt`} className={FIELD_LABEL}>Stimulus / passage excerpt (optional)</label>
+              <div className="font-ms-serif">
+                <textarea
+                  id={`q${question.id}-prompt`}
+                  className={cn(SERIF_AREA, "min-h-[80px] text-[16px] leading-[26px]")}
+                  placeholder="Secondary text shown above the answer choices — e.g. a short passage excerpt or graph description."
+                  value={draft.question_prompt}
+                  onChange={(e) => patch({ question_prompt: e.target.value })}
+                  onFocus={(e) => {
+                    activeFieldRef.current = {
+                      el: e.currentTarget,
+                      setVal: (v) => patch({ question_prompt: v }),
+                    };
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* MC choices — True/False mode shows static True/False labels; regular MC shows editable A-D */}
+            {isMC && draft.midtermFormat === "true_false" ? (
+              <div className="flex flex-col gap-2.5">
+                <p className={FIELD_LABEL}>Answer choices (True / False)</p>
+                <div className="flex gap-3">
+                  {(["True", "False"] as const).map((label) => {
+                    const letter = label === "True" ? "A" : "B";
+                    const isKey = keyLetter === letter;
+                    return (
+                      <div key={label} className={cn(CHOICE, "flex-1 items-center gap-3", isKey ? CHOICE_KEY : CHOICE_IDLE)}>
+                        <span className={cn(LETTER, isKey ? LETTER_KEY : LETTER_IDLE)}>
+                          {isKey ? <Icon name="check" size="sm" className="size-4" /> : letter}
+                          {isKey ? <span className="sr-only">{letter}</span> : null}
+                        </span>
+                        <span className="font-ms-serif text-[16px] leading-6 text-ms-fg">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : isMC && (
+              <div className="flex flex-col gap-2.5">
+                <p className={FIELD_LABEL}>Answer choices</p>
+                {(["a", "b", "c", "d"] as const).map((letter) => {
+                  const key = `option_${letter}` as keyof QuestionDraft;
+                  const val = draft[key] as string;
+                  const L = letter.toUpperCase();
+                  const isKey = keyLetter === L;
+                  return (
+                    <div key={letter} className={cn(CHOICE, "flex-col focus-within:border-ms-primary", isKey ? CHOICE_KEY : CHOICE_IDLE)}>
+                      <div className="flex items-start gap-3">
+                        <span className={cn(LETTER, isKey ? LETTER_KEY : LETTER_IDLE)}>
+                          {isKey ? <Icon name="check" size="sm" className="size-4" /> : L}
+                          {isKey ? <span className="sr-only">{L}</span> : null}
+                        </span>
+                        <div className="min-w-0 flex-1 font-ms-serif">
+                          <textarea
+                            className="min-h-7 w-full resize-none overflow-hidden bg-transparent py-0.5 text-[16px] leading-6 text-ms-fg outline-none placeholder:text-ms-fg-3"
+                            rows={1}
+                            aria-label={`Option ${L}`}
+                            placeholder={`Option ${L}`}
+                            value={val}
+                            ref={(el) => {
+                              if (el) {
+                                el.style.height = "auto";
+                                el.style.height = `${el.scrollHeight}px`;
+                              }
+                            }}
+                            onChange={(e) => {
+                              patch({ [key]: e.target.value } as Partial<QuestionDraft>);
+                              e.currentTarget.style.height = "auto";
+                              e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
+                            }}
+                            onFocus={(e) => {
+                              activeFieldRef.current = {
+                                el: e.currentTarget,
+                                setVal: (v) => patch({ [key]: v } as Partial<QuestionDraft>),
+                              };
+                            }}
+                          />
+                        </div>
+                        {isKey ? (
+                          <Badge tone="positive" className="mt-0.5 shrink-0">
+                            Answer key · {L}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {/* The preview only when the choice carries math or markup (\\( … \\), $, **, <u>): a plain
+                          choice already reads as itself in the card. */}
+                      {/[\\$*<]/.test(val) && (
+                        <div className="ml-10 mt-2 rounded-[10px] bg-ms-surface px-3 py-2">
+                          <MathText text={val} className="font-ms-serif text-[15px] leading-6 text-ms-fg" />
+                        </div>
+                      )}
+                      {/* Option image */}
+                      <div className="ml-10 mt-2">
+                        {imageControls(
+                          letter as ImageKey,
+                          question[`option_${letter}_image` as keyof typeof question] as string | null | undefined,
+                          { add: "Add image", change: "Change", replace: "Replace" },
+                          `Option ${L}`,
+                          "sm",
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Correct answer — format-aware for midterms */}
+            <div>
+              {isMidterm && draft.midtermFormat === "true_false" ? (
+                <>
+                  <p className={FIELD_LABEL}>Correct answer</p>
+                  <div className="flex gap-3">
+                    {(["True", "False"] as const).map((label, i) => {
+                      const letter = i === 0 ? "A" : "B";
+                      const isSelected = draft.correct_answer.toUpperCase() === letter;
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => patch({ correct_answer: letter })}
+                          className={cn(PICK, "h-11 flex-1 gap-2 text-[15px]", isSelected ? PICK_ON : PICK_OFF)}
+                        >
+                          {isSelected && <Icon name="ok" size="sm" className="size-4" />}
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : isMidterm && draft.midtermFormat === "mc" ? (
+                <>
+                  <p className={FIELD_LABEL}>Correct answer</p>
+                  <div className="flex gap-2">
+                    {(["A", "B", "C", "D"] as const).map((letter) => {
+                      const isSelected = draft.correct_answer.toUpperCase() === letter;
+                      return (
+                        <button
+                          key={letter}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => patch({ correct_answer: letter })}
+                          className={cn(PICK, "size-11 text-[15px]", isSelected ? PICK_ON : PICK_OFF)}
+                        >
+                          {letter}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label htmlFor={`q${question.id}-answer`} className={FIELD_LABEL}>
+                    {isMidterm && draft.midtermFormat === "numeric"
+                      ? "Correct answer (number — separate multiple valid forms with commas)"
+                      : isMidterm && draft.midtermFormat === "short_text"
+                      ? "Correct answer (text — case-insensitive, comma-separated alternatives)"
+                      : isMC
+                      ? "Correct answer (A, B, C, or D)"
+                      : "Correct answer (comma-separated for multiple valid forms, e.g. 2/3, 0.667)"}
+                  </label>
+                  <input
+                    id={`q${question.id}-answer`}
+                    className={CONTROL}
+                    placeholder={
+                      isMidterm && draft.midtermFormat === "numeric"
+                        ? "e.g. 42 or 2/3, 0.667"
+                        : isMidterm && draft.midtermFormat === "short_text"
+                        ? "e.g. Paris or paris"
+                        : isMC
+                        ? "A"
+                        : "e.g. 42 or 2/3, 0.666, 0.667"
+                    }
+                    value={draft.correct_answer}
+                    onChange={(e) => patch({ correct_answer: e.target.value })}
+                    onFocus={(e) => {
+                      activeFieldRef.current = {
+                        el: e.currentTarget,
+                        setVal: (v) => patch({ correct_answer: v }),
+                      };
+                    }}
+                  />
+                  {!isMidterm && isMC && (
+                    <p className={HINT}>
+                      Must exactly match one of the choice letters above (case-insensitive).
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Explanation */}
+            <div>
+              <label htmlFor={`q${question.id}-explanation`} className={FIELD_LABEL}>Explanation / solution rationale</label>
+              <div className="font-ms-serif">
+                <textarea
+                  id={`q${question.id}-explanation`}
+                  className={cn(SERIF_AREA, "min-h-[100px] text-[16px] leading-[26px]")}
+                  placeholder="Explain why the correct answer is right. Students see this after the test."
+                  value={draft.explanation}
+                  onChange={(e) => patch({ explanation: e.target.value })}
+                  onFocus={(e) => {
+                    activeFieldRef.current = {
+                      el: e.currentTarget,
+                      setVal: (v) => patch({ explanation: v }),
+                    };
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Save button (bottom) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ms-line pt-5">
+              {saveButton("bottom")}
+
+              {/* Delete */}
+              {confirmDelete ? (
+                <div className="animate-ms-fade-in flex flex-wrap items-center gap-2">
+                  <span className="text-[14px] font-semibold text-ms-critical-fg">Delete this question?</span>
+                  <Button variant="danger" size="sm" state={del.isPending ? "busy" : "idle"} onClick={() => void handleDelete()}>
+                    Yes, delete
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="trash"
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-ms-critical-fg hover:text-ms-critical-fg"
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1440,9 +1430,9 @@ export default function ModuleQuestionsPanel(props: {
           {!isLoading && orderedQuestions.length > 0 ? <OutlineLegend /> : null}
         </aside>
 
-        {/* Centre: the open question. Its insides keep their own look until PR 14b. */}
-        <main className="min-w-0 p-3 sm:p-4 lg:min-h-0 lg:flex-1 lg:p-5">
-          <div className="overflow-hidden rounded-ms-card bg-ms-card shadow-ms-1 lg:h-full">
+        {/* Centre: the open question, its Properties at the right (PR 14b). */}
+        <main className="min-w-0 lg:min-h-0 lg:flex-1">
+          <div className="lg:h-full">
             {isLoading ? (
               <div aria-hidden className="flex flex-col gap-4 p-6">
                 <div className="h-6 w-48 animate-ms-shimmer rounded-[8px] bg-ms-surface-2" />
@@ -1450,7 +1440,7 @@ export default function ModuleQuestionsPanel(props: {
                 <div className="h-24 animate-ms-shimmer rounded-ms-ctl bg-ms-surface-2" />
               </div>
             ) : selectedQ ? (
-              <div className="font-serif text-[16px] leading-[1.6] text-foreground lg:h-full">
+              <div className="lg:h-full">
                 <QuestionEditor
                   key={selectedQ.id}
                   question={selectedQ}
