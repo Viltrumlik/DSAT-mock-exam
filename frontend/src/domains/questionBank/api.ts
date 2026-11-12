@@ -6,18 +6,14 @@ import api from "@/lib/api";
 import type {
   QbBulkInput,
   QbBulkResult,
-  QbClassifyInput,
   QbClearImages,
   QbDomain,
   QbImageFiles,
-  QbImportBatch,
-  QbImportCandidate,
   QbPaginated,
   QbQuestionDetail,
   QbQuestionFilters,
   QbQuestionListItem,
   QbSkill,
-  QbValidation,
   QbWritePayload,
 } from "./types";
 
@@ -109,56 +105,9 @@ export const questionBankApi = {
     return r.data;
   },
 
-  // ── Triage writes ─────────────────────────────────────────────────────────
-  classify: async (id: number, payload: QbClassifyInput): Promise<QbQuestionDetail> => {
-    const r = await api.post(`${BASE}/questions/${id}/classify/`, payload);
-    return r.data;
-  },
-  approve: async (id: number): Promise<QbQuestionDetail> => {
-    const r = await api.post(`${BASE}/questions/${id}/approve/`);
-    return r.data;
-  },
-  reject: async (id: number, reason = ""): Promise<QbQuestionDetail> => {
-    const r = await api.post(`${BASE}/questions/${id}/reject/`, { reason });
-    return r.data;
-  },
-  acceptSuggestion: async (id: number): Promise<QbQuestionDetail> => {
-    const r = await api.post(`${BASE}/questions/${id}/accept-suggestion/`);
-    return r.data;
-  },
+  // ── Bulk (the list's Approve) ─────────────────────────────────────────────
   bulk: async (payload: QbBulkInput): Promise<{ action: string; results: QbBulkResult[] }> => {
     const r = await api.post(`${BASE}/questions/bulk/`, payload);
-    return r.data;
-  },
-
-  // ── Import batches ────────────────────────────────────────────────────────
-  listBatches: async (status?: string): Promise<QbPaginated<QbImportBatch>> => {
-    const r = await api.get(`${BASE}/import-batches/`, { params: clean({ status }) });
-    return r.data;
-  },
-  getBatch: async (id: number): Promise<QbImportBatch> => {
-    const r = await api.get(`${BASE}/import-batches/${id}/`);
-    return r.data;
-  },
-  listCandidates: async (
-    batchId: number,
-    validationStatus?: QbValidation,
-  ): Promise<QbPaginated<QbImportCandidate>> => {
-    const r = await api.get(`${BASE}/import-batches/${batchId}/candidates/`, {
-      params: clean({ validation_status: validationStatus }),
-    });
-    return r.data;
-  },
-  promoteBatch: async (id: number): Promise<QbImportBatch> => {
-    const r = await api.post(`${BASE}/import-batches/${id}/promote/`);
-    return r.data;
-  },
-  uploadBatch: async (file: File, sourceReference?: string): Promise<QbImportBatch> => {
-    const form = new FormData();
-    form.append("file", file);
-    if (sourceReference) form.append("source_reference", sourceReference);
-    // Let axios set the multipart boundary; don't override Content-Type.
-    const r = await api.post(`${BASE}/import-batches/upload/`, form);
     return r.data;
   },
 };

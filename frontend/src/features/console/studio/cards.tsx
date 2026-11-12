@@ -40,10 +40,9 @@ export function ago(at: string | number, now = Date.now()): string {
 /** The greeting's second line: the review queue and the draft mock closest to ready. */
 export function headerLine(s: StudioSummary | undefined): string {
   if (!s) return "Content studio";
-  const parts = [s.review.count ? `${s.review.count} ${s.review.count === 1 ? "question" : "questions"} waiting for review` : "Nothing waits for review"];
+  // The mock closest to ready; the review count left with the Review queue (2026-11-12).
   const mock = [...s.mocks.not_ready].filter((m) => m.short > 0).sort((a, b) => a.short - b.short)[0];
-  if (mock) parts.push(`${mock.title} is ${mock.short} ${mock.short === 1 ? "question" : "questions"} from ready`);
-  return parts.join(" · ");
+  return mock ? `${mock.title} is ${mock.short} ${mock.short === 1 ? "question" : "questions"} from ready` : "Content studio";
 }
 
 /** The thinnest skills first (where the writing is needed), then A–Z. */
@@ -202,7 +201,7 @@ export function TeamToday({ q, delay }: { q: Q; delay: number }) {
     <section className="animate-ms-card-in flex min-w-0 flex-col gap-3 rounded-ms-card bg-ms-card px-[22px] py-5 shadow-ms-1" style={{ animationDelay: `${delay}ms` }}>
       <h2 className="text-ms-h text-ms-fg">Team today</h2>
       {q.isError ? <Failed what="today’s activity" retry={() => void q.refetch()} /> : q.isPending && !q.data ? <Skeleton rows={3} /> : rows.length === 0 ? (
-        <p className="text-[14px] text-ms-fg-2">Nothing yet today. Approvals, imports and publishing show up here as they happen.</p>
+        <p className="text-[14px] text-ms-fg-2">Nothing yet today. Approvals and publishing show up here as they happen.</p>
       ) : (
         <ul className="-my-1 flex flex-col divide-y divide-ms-line">
           {rows.map((l, i) => (
@@ -294,11 +293,6 @@ export function libraryTiles(lib: StudioSummary["library"] | undefined): { capti
           href: "/builder/vocabulary", icon: "ms-vocab", title: "Vocabulary", count: lib?.vocabulary.sections,
           sub: "sections · words, definitions, examples",
           meta: lib && lib.vocabulary.names.length ? [{ text: lib.vocabulary.names.join(" · ") + (lib.vocabulary.sections > lib.vocabulary.names.length ? " · …" : "") }] : [],
-        },
-        {
-          href: "/builder/question-bank/imports", icon: "ms-import", title: "Imports", count: lib?.imports.batches,
-          sub: "CSV and PDF batches",
-          meta: lib && lib.imports.with_errors ? [{ text: `${lib.imports.with_errors} with errors`, tone: "critical" }] : [],
         },
         {
           href: "/builder/categories", icon: "tag", title: "Categories", count: lib?.sets.categories,

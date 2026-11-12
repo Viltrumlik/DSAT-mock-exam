@@ -47,8 +47,7 @@ function BankTable({ delay }: { delay: number }) {
     >
       {failed ? <Failed what="the question bank" retry={retry} /> : pending ? <Skeleton /> : all.data!.count === 0 ? (
         <p className="text-[15px] text-ms-fg-2">
-          The bank is empty. <Link href="/builder/question-bank/new" className="font-semibold text-ms-primary-text hover:underline">Write the first question</Link>{" "}
-          or <Link href="/builder/question-bank/imports" className="font-semibold text-ms-primary-text hover:underline">import a CSV</Link>.
+          The bank is empty. <Link href="/builder/question-bank/new" className="font-semibold text-ms-primary-text hover:underline">Write the first question</Link>.
         </p>
       ) : (
         <div className="animate-ms-fade-in overflow-x-auto">
@@ -99,7 +98,7 @@ function BankTable({ delay }: { delay: number }) {
 
 /**
  * /builder — Studio home (design handoff v0.3, BuilderHome board): what waits for review and how close the
- * next mock is, the rule that content is live (and who is in a live mock now), where you left off, the five
+ * next mock is, the rule that content is live (and who is in a live mock now), where you left off, the three
  * kinds of thing that need the team, the bank at a glance, what the team did today, coverage by skill, and
  * the library with live counts. One Studio summary request feeds every card and the bell.
  */
@@ -119,10 +118,6 @@ export function StudioHome() {
           <p className="text-ms-body text-ms-fg-2">{headerLine(summary.data)}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/builder/question-bank/imports" className={buttonClass()}>
-            <Icon name="ms-import" />
-            Import CSV
-          </Link>
           <Link href="/builder/question-bank/new" className={buttonClass({ variant: "primary" })}>
             <Icon name="plus" />
             New question

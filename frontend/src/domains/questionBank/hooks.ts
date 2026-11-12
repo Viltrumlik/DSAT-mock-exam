@@ -6,11 +6,9 @@ import { questionBankApi } from "./api";
 import { qbKeys } from "./queryKeys";
 import type {
   QbBulkInput,
-  QbClassifyInput,
   QbClearImages,
   QbImageFiles,
   QbQuestionFilters,
-  QbValidation,
   QbWritePayload,
 } from "./types";
 
@@ -48,29 +46,8 @@ export function useQbSkills(params?: { domain?: number; subject?: string }) {
   });
 }
 
-export function useQbBatches(status?: string) {
-  return useQuery({
-    queryKey: qbKeys.batches(status),
-    queryFn: () => questionBankApi.listBatches(status),
-    staleTime: 5_000,
-  });
-}
 
-export function useQbBatch(id: number) {
-  return useQuery({
-    queryKey: qbKeys.batch(id),
-    queryFn: () => questionBankApi.getBatch(id),
-    enabled: Number.isFinite(id) && id > 0,
-  });
-}
 
-export function useQbCandidates(batchId: number, validationStatus?: QbValidation) {
-  return useQuery({
-    queryKey: qbKeys.candidates(batchId, validationStatus),
-    queryFn: () => questionBankApi.listCandidates(batchId, validationStatus),
-    enabled: Number.isFinite(batchId) && batchId > 0,
-  });
-}
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 function useInvalidateQuestions() {
@@ -119,39 +96,9 @@ export function useQbRestore() {
   });
 }
 
-export function useQbClassify() {
-  const invalidate = useInvalidateQuestions();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: QbClassifyInput }) =>
-      questionBankApi.classify(id, payload),
-    onSuccess: (_d, vars) => invalidate(vars.id),
-  });
-}
 
-export function useQbApprove() {
-  const invalidate = useInvalidateQuestions();
-  return useMutation({
-    mutationFn: (id: number) => questionBankApi.approve(id),
-    onSuccess: (_d, id) => invalidate(id),
-  });
-}
 
-export function useQbReject() {
-  const invalidate = useInvalidateQuestions();
-  return useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
-      questionBankApi.reject(id, reason ?? ""),
-    onSuccess: (_d, vars) => invalidate(vars.id),
-  });
-}
 
-export function useQbAcceptSuggestion() {
-  const invalidate = useInvalidateQuestions();
-  return useMutation({
-    mutationFn: (id: number) => questionBankApi.acceptSuggestion(id),
-    onSuccess: (_d, id) => invalidate(id),
-  });
-}
 
 export function useQbBulk() {
   const invalidate = useInvalidateQuestions();
@@ -161,23 +108,4 @@ export function useQbBulk() {
   });
 }
 
-export function useQbUploadBatch() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (file: File) => questionBankApi.uploadBatch(file),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [...qbKeys.all, "batches"] }),
-  });
-}
 
-export function useQbPromoteBatch() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: number) => questionBankApi.promoteBatch(id),
-    onSuccess: (_d, id) => {
-      qc.invalidateQueries({ queryKey: qbKeys.batch(id) });
-      qc.invalidateQueries({ queryKey: [...qbKeys.all, "batches"] });
-      qc.invalidateQueries({ queryKey: [...qbKeys.all, "candidates"] });
-      qc.invalidateQueries({ queryKey: [...qbKeys.all, "questions"] });
-    },
-  });
-}

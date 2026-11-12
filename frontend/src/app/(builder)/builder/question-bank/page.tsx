@@ -82,7 +82,7 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
   },
 ];
 
-/** Approve only: rejecting stays in the Triage Queue, where a question is looked at before it goes. */
+/** Approve only: rejecting lived in the Triage Queue, which the owner removed on 2026-11-12. */
 type Pending = { ids: number[]; resolve: (done: boolean) => void };
 
 export default function QuestionBankListPage() {
@@ -162,14 +162,6 @@ function QuestionBankChangeList() {
         rowLabel={(q) => q.qb_id}
         headerAction={
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/builder/question-bank/triage" className={buttonClass()}>
-              <Icon name="review" />
-              Triage Queue
-            </Link>
-            <Link href="/builder/question-bank/imports" className={buttonClass()}>
-              <Icon name="ms-import" />
-              Imports
-            </Link>
             <Link href="/builder/question-bank/new" className={buttonClass({ variant: "primary" })}>
               <Icon name="plus" />
               New question
