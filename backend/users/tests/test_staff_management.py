@@ -151,3 +151,23 @@ class AccessTests(StaffCase):
         self.assertEqual(self.call(self.admin, "post", self.url(self.teacher), {"active": False}).status_code, 403)
         self.teacher.refresh_from_db()
         self.assertTrue(self.teacher.is_active)
+
+
+class NewStaffAccountTests(StaffCase):
+    def body(self, **over):
+        return {
+            "first_name": "Malika", "last_name": "Karimova", "email": "sm-new@example.com",
+            "password": "a-long-pass-1", "role": C.ROLE_ACCOUNTANT, **over,
+        }
+
+    def test_the_owner_creates_an_accountant_without_a_username(self):
+        res = self.call(self.owner, "post", reverse("user-create"), self.body())
+        self.assertEqual(res.status_code, 201, res.content)
+        made = User.objects.get(email="sm-new@example.com")
+        self.assertEqual(made.role, C.ROLE_ACCOUNTANT)
+        self.assertTrue(made.check_password("a-long-pass-1"))
+
+    def test_the_administrator_cannot_create_staff(self):
+        res = self.call(self.admin, "post", reverse("user-create"), self.body(role=C.ROLE_TEACHER, subject=C.DOMAIN_MATH))
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertFalse(User.objects.filter(email="sm-new@example.com").exists())
