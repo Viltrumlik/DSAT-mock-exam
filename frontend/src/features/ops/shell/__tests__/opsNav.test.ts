@@ -26,7 +26,7 @@ const DJANGO_SUPERUSER = { role: "admin", permissions: ["*"], is_superuser: true
 /** What GET /users/me/ gives an administrator: the old six, plus every CRM permission (PR 2). */
 const ADMIN = {
   role: "admin",
-  permissions: ["adjust_balance", "assign_access", "create_classroom", "debt_freeze", "edit_people", "enroll", "events_shop", "lcup_tools", "manage_groups", "manage_seats", "manage_staff", "manage_tests", "manage_users", "send_debt_sms", "send_sms", "set_prices", "submit_test", "take_payment", "view_dashboard", "view_money", "view_people", "view_reports", "void_payment"],
+  permissions: ["adjust_balance", "assign_access", "create_classroom", "debt_freeze", "edit_people", "enroll", "events_shop", "lcup_tools", "manage_groups", "manage_seats", "manage_tests", "manage_users", "send_debt_sms", "send_sms", "set_prices", "submit_test", "take_payment", "view_dashboard", "view_money", "view_people", "view_reports", "void_payment"],
 };
 /** An accountant as PR 4 will make one: money only. */
 const ACCOUNTANT = {
@@ -150,13 +150,11 @@ describe("visibleNav / visibleCategories", () => {
     }
   });
 
-  it("drops a category with nothing the person may open — a teacher has no Content and no System", () => {
+  it("drops a category with nothing the person may open — a teacher has no Centre, Content or System", () => {
     const categories = visibleCategories(OPS_CATEGORIES, TEACHER);
-    expect(ids(categories)).toEqual(["today", "people", "teaching", "centre"]);
-    // Centre keeps only Help (Support hours); Teaching keeps Branches and the academic pages.
-    expect(map(categories.find((c) => c.id === "centre")!)).toEqual([["Help", ["Support hours"]]]);
+    // Support hours and Branches are group desks (manage_groups); Teaching keeps the academic pages.
+    expect(ids(categories)).toEqual(["today", "people", "teaching"]);
     expect(map(categories.find((c) => c.id === "teaching")!)).toEqual([
-      ["Classes", ["Branches"]],
       ["Course", ["Journals", "Midterm results"]],
       ["Exams", ["Mock sittings", "Exam dates"]],
     ]);
@@ -189,10 +187,10 @@ describe("visibleNav / visibleCategories", () => {
   });
 
   it("shows an accountant the money, and none of the desk's other sections", () => {
-    // Branches and Support hours still go by role on the server; the accountant's role decides them (PR 4).
+    // Branches and Support hours are group desks (manage_groups), not money.
     const seen = hrefs(visibleNav(OPS_NAV_GROUPS, ACCOUNTANT));
-    for (const href of ["/ops", "/ops/finance", "/ops/sms", "/ops/classrooms"]) expect(seen).toContain(href);
-    for (const href of ["/ops/students", "/ops/staff", "/ops/trials", "/ops/lcup", "/ops/shop", "/ops/events", "/ops/journals", "/ops/stories"]) {
+    expect(seen).toEqual(["/ops", "/ops/classrooms", "/ops/finance", "/ops/sms"]);
+    for (const href of ["/ops/branches", "/ops/support", "/ops/students", "/ops/staff", "/ops/trials", "/ops/lcup", "/ops/shop", "/ops/events", "/ops/journals", "/ops/stories"]) {
       expect(seen).not.toContain(href);
     }
   });
@@ -222,8 +220,9 @@ describe("visibleNav / visibleCategories", () => {
   });
 
   it("goes to a category's first page the person may open", () => {
-    const centre = visibleCategories(OPS_CATEGORIES, TEACHER).find((c) => c.id === "centre")!;
-    expect(firstHref(centre)).toBe("/ops/support");
+    // An accountant's Centre starts at Finance: Trials and lc-up are not theirs.
+    const centre = visibleCategories(OPS_CATEGORIES, ACCOUNTANT).find((c) => c.id === "centre")!;
+    expect(firstHref(centre)).toBe("/ops/finance");
     expect(firstHref(OPS_CATEGORIES[3])).toBe("/ops/trials");
   });
 });

@@ -124,7 +124,7 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
           { href: "/ops/classrooms", label: "Classrooms", icon: "cap", requires: [P.viewPeople] },
           // Regions, branches, and which branch each classroom meets at. Without it the branch
           // leaderboard has nothing to group by.
-          { href: "/ops/branches", label: "Branches", icon: "ms-branch" },
+          { href: "/ops/branches", label: "Branches", icon: "ms-branch", requires: [P.manageGroups] },
         ],
       },
       {
@@ -206,7 +206,7 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
         id: "help",
         caption: "Help",
         // Who teaches support, and which hours they are available.
-        items: [{ href: "/ops/support", label: "Support hours", icon: "ms-support" }],
+        items: [{ href: "/ops/support", label: "Support hours", icon: "ms-support", requires: [P.manageGroups] }],
       },
     ],
   },

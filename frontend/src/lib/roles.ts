@@ -22,6 +22,7 @@ export const CANONICAL_ROLES = [
   "support_teacher",
   "test_admin",
   "test_auditor",
+  "accountant",
   "admin",
   "super_admin",
 ] as const;
@@ -53,8 +54,22 @@ export const ROLE_LABELS: Record<CanonicalRole, string> = {
   support_teacher: "Support teacher",
   test_admin: "Test admin",
   test_auditor: "Test auditor",
-  admin: "Admin",
-  super_admin: "Super admin",
+  accountant: "Accountant",
+  admin: "Administrator",
+  super_admin: "Owner",
+};
+
+/** One line on what each role does here: the role picker shows it under the choice. */
+export const ROLE_DESCRIPTIONS: Record<CanonicalRole, string> = {
+  student: "A learning-center student: classes, homework, mocks.",
+  public_student: "Signed up on the site: mock exams and events only.",
+  teacher: "Teaches classes in the teacher portal and writes tests in the Builder.",
+  support_teacher: "Helps students in booked support sessions.",
+  test_admin: "Writes and edits tests in the Builder.",
+  test_auditor: "Reviews tests in the Builder.",
+  accountant: "Money only: payments, voids, prices, the debt freeze, totals and debt SMS.",
+  admin: "Runs the desk: students, groups, seats, money, SMS, events and lc-up. Not staff.",
+  super_admin: "The owner: everything, and the only one who manages staff.",
 };
 
 const norm = (r: unknown) => String(r ?? "").trim().toLowerCase();

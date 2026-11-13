@@ -41,7 +41,10 @@ LEARNER_ENDPOINTS = frozenset({
 STAFF_BASES = ("shop.views._StaffView", "stories.views._StaffView", "events.views._StaffView",
                "telegram_posts.views._StaffView")
 #: Single CRM views in modules that are otherwise not the CRM's.
-CRM_VIEWS = frozenset({"rewards.views.WalletAdminView", "users.views_people_detail.PersonParentView"})
+CRM_VIEWS = frozenset({
+    "rewards.views.WalletAdminView", "users.views_people_detail.PersonParentView",
+    "users.views_people_detail.PersonPermissionsView", "users.views_people_detail.PersonAccessView",
+})
 
 
 def _dotted(cls) -> str:
@@ -107,7 +110,12 @@ class RolePresetTests(TestCase):
     #: The CRM permissions each role holds. ``*`` is everything.
     TABLE = {
         C.ROLE_SUPER_ADMIN: {C.WILDCARD},
-        C.ROLE_ADMIN: set(C.CRM_PERMISSION_CODENAMES),
+        # Every CRM permission but managing staff (PR 4: staff are the owner's).
+        C.ROLE_ADMIN: set(C.CRM_PERMISSION_CODENAMES) - {C.PERM_MANAGE_STAFF},
+        C.ROLE_ACCOUNTANT: {
+            C.PERM_VIEW_PEOPLE, C.PERM_VIEW_MONEY, C.PERM_TAKE_PAYMENT, C.PERM_VOID_PAYMENT, C.PERM_ADJUST_BALANCE,
+            C.PERM_SET_PRICES, C.PERM_DEBT_FREEZE, C.PERM_VIEW_REPORTS, C.PERM_SEND_DEBT_SMS,
+        },
         C.ROLE_TEACHER: set(),
         C.ROLE_SUPPORT_TEACHER: set(),
         C.ROLE_TEST_ADMIN: set(),
@@ -141,12 +149,19 @@ class RolePresetTests(TestCase):
             Requires(C.PERM_MANAGE_USERS)
 
 
-class SameRightsAsBeforeTests(TestCase):
-    """Every CRM endpoint, every role: the gate's answer is the old check's answer."""
+class RoleByEndpointTests(TestCase):
+    """Every CRM endpoint, every role: the gate lets in exactly whom the role table above says.
+
+    PR 2 proved the gates matched the old role check (super_admin and admin in, everyone else out). Since PR 4
+    the table differs from it in two places only: the accountant gets the money, and the administrator no longer
+    manages staff."""
 
     @staticmethod
-    def old_check(user) -> bool:  # classes.capabilities.is_global_admin, which these endpoints used
-        return user.is_superuser or user.role in ("super_admin", "admin")
+    def expected(user, cls) -> bool:
+        if user.is_superuser:
+            return True
+        held = RolePresetTests.TABLE[user.role]
+        return C.WILDCARD in held or all(any(code in held for code in gate.codenames) for gate in gates(cls))
 
     def setUp(self):
         self.people = []
@@ -160,16 +175,30 @@ class SameRightsAsBeforeTests(TestCase):
         superuser.save(update_fields=["is_superuser"])
         self.people.append(superuser)
 
-    def test_nobody_gains_or_loses_a_crm_endpoint(self):
-        changed = []
+    def test_every_role_gets_what_its_preset_says(self):
+        wrong = []
         for route, cls in sorted(crm_endpoints().items()):
             view = cls()
             for person in self.people:
-                request = SimpleNamespace(user=person)
-                now = all(p.has_permission(request, view) for p in gates(cls))
-                if now != self.old_check(person):
-                    changed.append(f"{route} {person.username}: {'gains' if now else 'loses'}")
-        self.assertEqual(changed, [])
+                now = all(p.has_permission(SimpleNamespace(user=person), view) for p in gates(cls))
+                if now != self.expected(person, cls):
+                    wrong.append(f"{route} {person.username}: {'in' if now else 'out'}")
+        self.assertEqual(wrong, [])
+
+    def test_against_the_old_rule_only_the_accountant_and_staff_management_differ(self):
+        old = lambda user: user.is_superuser or user.role in ("super_admin", "admin")  # noqa: E731 — PR 2's oracle
+        differ = set()
+        for route, cls in crm_endpoints().items():
+            view = cls()
+            for person in self.people:
+                if all(p.has_permission(SimpleNamespace(user=person), view) for p in gates(cls)) != old(person):
+                    differ.add((person.role, _dotted(cls)))
+        admin_lost = {name for role, name in differ if role == C.ROLE_ADMIN}
+        self.assertEqual(
+            admin_lost,
+            {"users.views_people_detail.PersonPermissionsView", "users.views_people_detail.PersonAccessView"},
+        )
+        self.assertFalse({role for role, _ in differ} - {C.ROLE_ADMIN, C.ROLE_ACCOUNTANT})
 
 
 class TickTests(EntryApiCase, TestCase):

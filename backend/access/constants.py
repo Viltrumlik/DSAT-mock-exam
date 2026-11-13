@@ -69,6 +69,10 @@ CRM_PERMISSION_CODENAMES = (
     PERM_LCUP_TOOLS,
 )
 
+#: What the owner may tick on or off for one staff person (the Staff page): every CRM permission but
+#: ``manage_staff``, which stays the owner's alone (owner, 2026-11-12, Q8).
+TICKABLE_PERMISSION_CODENAMES = tuple(c for c in CRM_PERMISSION_CODENAMES if c != PERM_MANAGE_STAFF)
+
 # ``authorize(..., subject=<platform>)`` MUST receive a valid platform subject for these
 # (MATH / READING_WRITING), except super_admin / Django superuser (wildcard).
 PERMISSIONS_REQUIRING_PLATFORM_SUBJECT = frozenset(
@@ -135,6 +139,9 @@ SUBJECT_MATH_PLATFORM = "MATH"
 # Canonical RBAC roles (lowercase, per spec)
 ROLE_SUPER_ADMIN = "super_admin"
 ROLE_ADMIN = "admin"
+#: The desk's money person (plan 2026-11-12-crm-roles, PR 4): payments, voids, adjustments, prices, the debt
+#: freeze, the totals and the debt SMS. No students, groups, campaigns or staff.
+ROLE_ACCOUNTANT = "accountant"
 ROLE_TEACHER = "teacher"
 ROLE_TEST_ADMIN = "test_admin"
 # Content reviewer / QA: a global-scope, subject-less staff role that may review ALL
@@ -158,6 +165,7 @@ CANONICAL_ROLES = frozenset(
     {
         ROLE_SUPER_ADMIN,
         ROLE_ADMIN,
+        ROLE_ACCOUNTANT,
         ROLE_TEACHER,
         ROLE_TEST_ADMIN,
         ROLE_TEST_AUDITOR,
@@ -181,8 +189,9 @@ ROLE_CHOICES = (
     (ROLE_SUPPORT_TEACHER, "Support teacher"),
     (ROLE_TEST_ADMIN, "Test admin"),
     (ROLE_TEST_AUDITOR, "Test auditor"),
-    (ROLE_ADMIN, "Admin"),
-    (ROLE_SUPER_ADMIN, "Super admin"),
+    (ROLE_ACCOUNTANT, "Accountant"),
+    (ROLE_ADMIN, "Administrator"),
+    (ROLE_SUPER_ADMIN, "Owner"),
 )
 
 #: Roles admitted to the teacher portal (``teacher.<domain>``). Intentionally role-based

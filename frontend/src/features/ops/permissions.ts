@@ -76,9 +76,17 @@ const ROLE_RANK: Record<CanonicalRole, number> = {
   support_teacher: 2,
   test_admin: 3,
   test_auditor: 3,
+  accountant: 3,
   admin: 3,
   super_admin: 4,
 };
+
+const LEARNER_ROLES: readonly string[] = ["student", "public_student"];
+
+/** Anyone but a learner: staff accounts are managed with `manage_staff`, which only the owner holds. */
+export function isStaffRole(role: unknown): boolean {
+  return !LEARNER_ROLES.includes(String(role ?? "").trim().toLowerCase());
+}
 
 function rankOfRole(role: unknown): number {
   return ROLE_RANK[String(role ?? "").trim().toLowerCase() as CanonicalRole] ?? 1;
@@ -90,17 +98,23 @@ function myRank(me: MeLike): number {
 
 /**
  * Whether `me` may change this account: edit it, freeze it, delete it, sign it out or give it a one-time
- * password. Mirrors `users/account_rank.py`: user management (`manage_users`), and the account ranked strictly
- * below yours unless you are the owner. So an administrator cannot touch another administrator's account or
- * the owner's.
+ * password. Mirrors `users/account_rank.py`: user management (`manage_users`); a staff account only with
+ * `manage_staff`; and the account ranked strictly below yours. The owner changes any. So an administrator
+ * manages learners, never staff.
  */
 export function mayChangeAccount(me: MeLike, targetRole: unknown): boolean {
   if (!holds(me, P.manageUsers)) return false;
-  return isOwner(me) || rankOfRole(targetRole) < myRank(me);
+  if (isOwner(me)) return true;
+  if (isStaffRole(targetRole) && !holds(me, P.manageStaff)) return false;
+  return rankOfRole(targetRole) < myRank(me);
 }
 
-/** The roles `me` may give: none ranked above their own (`UserSerializer.validate_role`). */
+/**
+ * The roles `me` may give: none ranked above their own (`UserSerializer.validate_role`), and a staff role only
+ * with `manage_staff`.
+ */
 export function rolesYouMayGive(me: MeLike): CanonicalRole[] {
   const mine = myRank(me);
-  return CANONICAL_ROLES.filter((role) => ROLE_RANK[role] <= mine);
+  const staff = holds(me, P.manageStaff);
+  return CANONICAL_ROLES.filter((role) => ROLE_RANK[role] <= mine && (staff || !isStaffRole(role)));
 }

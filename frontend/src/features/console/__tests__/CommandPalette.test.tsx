@@ -19,7 +19,7 @@ const SUPER_ADMIN = { role: "super_admin", permissions: ["*"] };
 /** What GET /users/me/ gives an administrator since the CRM permissions (PR 2). */
 const ADMIN = {
   role: "admin",
-  permissions: ["adjust_balance", "assign_access", "create_classroom", "debt_freeze", "edit_people", "enroll", "events_shop", "lcup_tools", "manage_groups", "manage_seats", "manage_staff", "manage_tests", "manage_users", "send_debt_sms", "send_sms", "set_prices", "submit_test", "take_payment", "view_dashboard", "view_money", "view_people", "view_reports", "void_payment"],
+  permissions: ["adjust_balance", "assign_access", "create_classroom", "debt_freeze", "edit_people", "enroll", "events_shop", "lcup_tools", "manage_groups", "manage_seats", "manage_tests", "manage_users", "send_debt_sms", "send_sms", "set_prices", "submit_test", "take_payment", "view_dashboard", "view_money", "view_people", "view_reports", "void_payment"],
 };
 
 let host: HTMLDivElement;

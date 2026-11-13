@@ -1,5 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/features/console/ui";
+import { useMe } from "@/hooks/useMe";
+import { P, holds } from "@/features/ops/permissions";
+import { NewStaffModal } from "@/features/ops/staff/NewStaffModal";
 import type { ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import type { StaffRow } from "@/features/ops/changelist/peopleApi";
 import { ROLE_LABELS, type CanonicalRole } from "@/lib/roles";
@@ -33,15 +39,26 @@ const COLUMNS: ChangeListColumn<StaffRow>[] = [
 ];
 
 export default function OpsStaffPage() {
+  const { me } = useMe();
+  const router = useRouter();
+  const [adding, setAdding] = useState(false);
+  // Staff accounts are the owner's to make (`manage_staff`).
+  const mayAdd = Boolean(me) && holds(me, P.manageStaff);
   return (
-    <PeopleList
-      section="staff"
-      title="Staff"
-      noun={{ singular: "staff member", plural: "staff" }}
-      columns={COLUMNS}
-      // No delete here: a staff account usually owns classrooms or question banks.
-      bulk={["freeze", "unfreeze"]}
-      searchPlaceholder="Search name, username, email or phone"
-    />
+    <>
+      <PeopleList
+        section="staff"
+        title="Staff"
+        noun={{ singular: "staff member", plural: "staff" }}
+        columns={COLUMNS}
+        // No delete here: a staff account usually owns classrooms or question banks.
+        bulk={["freeze", "unfreeze"]}
+        searchPlaceholder="Search name, username, email or phone"
+        headerAction={mayAdd ? <Button onClick={() => setAdding(true)}>New staff account</Button> : undefined}
+      />
+      {adding ? (
+        <NewStaffModal me={me} onClose={() => setAdding(false)} onCreated={(id) => router.push(`/ops/staff/${id}`)} />
+      ) : null}
+    </>
   );
 }

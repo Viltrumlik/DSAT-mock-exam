@@ -32,7 +32,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access import constants as C
-from access.permissions import Requires
+from access.permissions import Requires, require
 from classes.models import Branch, Classroom, ClassroomMembership
 from core.csv_download import csv_download_response
 from lcup.conf import debt_freeze_day, debt_freeze_enabled
@@ -819,11 +819,14 @@ def _apply_template(row, prefix, data) -> list[str]:
     return [id_key, f"{prefix}_pattern", slots_key]
 
 
-class SettingsView(_AdminView):
+class SettingsView(_JournalView):
+    """Read by whoever sends anything (the Debt-warnings tab shows them); changed with ``send_sms``."""
+
     def get(self, request):
         return Response(settings_row(switchboard.current()))
 
     def patch(self, request):
+        require(request.user, C.PERM_SEND_SMS)
         if refused := _not_an_object(request):
             return refused
         data = request.data
@@ -918,7 +921,9 @@ class DebtRunsView(_DebtView):
 # ── templates ─────────────────────────────────────────────────────────────
 
 
-class TemplateListView(_AdminView):
+class TemplateListView(_JournalView):
+    """Read by whoever sends anything (the debt warning picks its template here); added with ``send_sms``."""
+
     def get(self, request):
         usage = _template_usage()
         rows = sorted(
@@ -929,6 +934,7 @@ class TemplateListView(_AdminView):
         return Response({"templates": [template_row(t, usage) for t in rows], "synced_at": _iso(synced_at)})
 
     def post(self, request):
+        require(request.user, C.PERM_SEND_SMS)
         if refused := _not_an_object(request):
             return refused
         try:

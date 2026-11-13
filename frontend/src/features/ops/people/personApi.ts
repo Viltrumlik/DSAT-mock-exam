@@ -103,6 +103,8 @@ export type PersonCore = {
   /** `users.audience.kind_of` for learners; "active" | "frozen" for staff. */
   status: string;
   is_frozen: boolean;
+  /** False once the owner turned the account's access off. */
+  is_active?: boolean;
   /** Why the account is frozen: lc-up debt (lifts when paid) or an admin; null when it is not. */
   frozen_reason: "debt" | "admin" | null;
   date_joined: string | null;
