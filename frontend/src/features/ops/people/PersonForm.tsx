@@ -4,7 +4,7 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { UserRound } from "lucide-react";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
-import { CANONICAL_ROLES, ROLE_LABELS, requiresSubject, type CanonicalRole } from "@/lib/roles";
+import { CANONICAL_ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS, requiresSubject, type CanonicalRole } from "@/lib/roles";
 import { buttonClass, inputShell } from "@/features/console/ui";
 import { Fieldset } from "./Fieldset";
 import type { PersonCore } from "./personApi";
@@ -188,6 +188,9 @@ export function PersonForm({
                 </option>
               ))}
             </select>
+            {ROLE_DESCRIPTIONS[role as CanonicalRole] ? (
+              <p className="mt-1 text-[13px] text-ms-fg-3">{ROLE_DESCRIPTIONS[role as CanonicalRole]}</p>
+            ) : null}
           </Field>
           {/* There is no create-staff form in ops: an account becomes a (support) teacher by
               changing its role here, so this field appearing is the only way to give one a subject. */}

@@ -42,13 +42,19 @@ describe("isOwner and isDeskViewer", () => {
 });
 
 describe("mayChangeAccount", () => {
-  it("lets an administrator change only accounts ranked below theirs", () => {
-    for (const role of ["student", "public_student", "teacher", "support_teacher"]) {
+  it("lets an administrator change learners only: staff are the owner's", () => {
+    for (const role of ["student", "public_student"]) {
       expect(mayChangeAccount(ADMIN, role)).toBe(true);
     }
-    for (const role of ["admin", "test_admin", "super_admin"]) {
+    for (const role of ["teacher", "support_teacher", "accountant", "admin", "test_admin", "super_admin"]) {
       expect(mayChangeAccount(ADMIN, role)).toBe(false);
     }
+  });
+
+  it("lets whoever holds manage_staff change staff ranked below them", () => {
+    const withStaff = { ...ADMIN, permissions: [...ADMIN.permissions, "manage_staff"] };
+    expect(mayChangeAccount(withStaff, "teacher")).toBe(true);
+    expect(mayChangeAccount(withStaff, "admin")).toBe(false);
   });
 
   it("lets the owner change any account", () => {
@@ -62,19 +68,12 @@ describe("mayChangeAccount", () => {
 });
 
 describe("rolesYouMayGive", () => {
-  it("offers an administrator every role up to theirs, not the owner's", () => {
-    expect(rolesYouMayGive(ADMIN)).toEqual([
-      "student",
-      "public_student",
-      "teacher",
-      "support_teacher",
-      "test_admin",
-      "test_auditor",
-      "admin",
-    ]);
+  it("offers an administrator only the learner roles: a staff role is the owner's to give", () => {
+    expect(rolesYouMayGive(ADMIN)).toEqual(["student", "public_student"]);
   });
 
-  it("offers the owner every role", () => {
+  it("offers the owner every role, the accountant included", () => {
     expect(rolesYouMayGive(OWNER)).toContain("super_admin");
+    expect(rolesYouMayGive(OWNER)).toContain("accountant");
   });
 });

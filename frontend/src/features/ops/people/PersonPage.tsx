@@ -9,7 +9,8 @@ import { Icon } from "@/components/ui/Icon";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { useMe } from "@/hooks/useMe";
-import { P, holds, mayChangeAccount, rolesYouMayGive } from "@/features/ops/permissions";
+import { P, holds, isOwner, isStaffRole, mayChangeAccount, rolesYouMayGive } from "@/features/ops/permissions";
+import { StaffAccessCard } from "@/features/ops/staff/StaffAccessCard";
 import { peopleKeys, type PeopleSection } from "@/features/ops/changelist/peopleApi";
 import { listHrefFrom } from "@/features/ops/changelist/backLink";
 import { formatDate, formatLastSeen } from "@/features/ops/users/peopleColumns";
@@ -138,6 +139,9 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
   // What the viewer may do here (features/ops/permissions): change this account, edit the parent, read the money
   // and the SMS. The server refuses the rest; this keeps the page from offering it.
   const mayChange = mayChangeAccount(me, person.role);
+  // A staff person's permissions and access are the owner's (`manage_staff`); never the owner's own account.
+  const mayManageStaff =
+    holds(me, P.manageStaff) && isStaffRole(person.role) && !isOwner(person) && String(me?.id) !== String(person.id);
   const tabs = tabsFor(person).filter(
     (t) => (t.key !== "payments" || holds(me, P.viewMoney)) && (t.key !== "sms" || holds(me, P.sendSms, P.sendDebtSms)),
   );
@@ -232,6 +236,15 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
             <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               <div className="min-w-0 space-y-5">
                 <PersonForm key={person.id} person={person} onSaved={refresh} readOnly={!mayChange} roles={rolesYouMayGive(me)} />
+                {mayManageStaff ? (
+                  <StaffAccessCard
+                    key={`staff-${person.id}`}
+                    id={person.id}
+                    name={person.name || person.username}
+                    active={person.is_active !== false}
+                    onChanged={refresh}
+                  />
+                ) : null}
                 {person.parent ? (
                   <ParentCard
                     key={`parent-${person.id}`}

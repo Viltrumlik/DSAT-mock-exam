@@ -714,12 +714,11 @@ describe("what the viewer's permissions open", () => {
     expect(roleSelect()?.disabled).toBe(true);
   });
 
-  it("offers an administrator every role but the owner's", async () => {
+  it("offers an administrator only the learner roles: staff roles are the owner's to give", async () => {
     route(core());
     await renderPage();
     const values = [...(roleSelect()?.options ?? [])].map((o) => o.value);
-    expect(values).toContain("admin");
-    expect(values).not.toContain("super_admin");
+    expect(values).toEqual(["student", "public_student"]);
     expect(button(host, "Freeze")).toBeDefined();
     expect(host.textContent).toContain("Payments");
   });
@@ -730,5 +729,42 @@ describe("what the viewer's permissions open", () => {
     await renderPage();
     expect(host.textContent).not.toContain("Payments");
     expect(button(host, "Freeze")).toBeUndefined();
+  });
+});
+
+describe("a staff person's permissions and access (the owner's)", () => {
+  afterEach(() => {
+    session.me = undefined;
+  });
+
+  const accountant = () => core({ ...STAFF, role: "accountant", subject: "" });
+  const permissions = {
+    "/users/admin/people/7/permissions/": () =>
+      Promise.resolve({
+        data: { role: "accountant", tickable: ["view_money", "enroll"], preset: ["view_money"], ticks: {}, effective: ["view_money"] },
+      }),
+  };
+
+  it("shows the owner the role's permissions ticked, and turns access off after a confirm", async () => {
+    const { OWNER_ME } = await import("@/features/ops/testing/me");
+    session.me = OWNER_ME;
+    route(accountant(), permissions);
+    post.mockResolvedValue({ data: { active: false, revoked: 2 } });
+    await renderPage("staff");
+    const boxes = [...host.querySelectorAll<HTMLInputElement>('ul[aria-label="Permissions"] input')];
+    expect(boxes.map((b) => b.checked)).toEqual([true, false]);
+    await act(async () => button(host, "Turn off access")!.click());
+    await settle();
+    const confirm = [...document.body.querySelectorAll("button")].filter((b) => b.textContent === "Turn off access").pop()!;
+    await act(async () => confirm.click());
+    await settle();
+    expect(post).toHaveBeenCalledWith("/users/admin/people/7/access/", { active: false });
+  });
+
+  it("shows an administrator neither, since staff are the owner's", async () => {
+    route(accountant(), permissions);
+    await renderPage("staff");
+    expect(host.querySelector('ul[aria-label="Permissions"]')).toBeNull();
+    expect(button(host, "Turn off access")).toBeUndefined();
   });
 });

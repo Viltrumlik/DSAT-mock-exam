@@ -8,6 +8,7 @@ import { useMe } from "@/hooks/useMe";
 import { isPublicStudentPath, PUBLIC_STUDENT_HOME } from "@/lib/roles";
 import { FrozenOverlay } from "@/components/FrozenOverlay";
 import { ProfileCompletionGate } from "@/components/ProfileCompletionGate";
+import { CRM_PERMISSIONS } from "@/features/ops/permissions";
 
 const BOOT_TIMEOUT_MS = 12_000;
 const BOOT_SLOW_MS = 5_000;
@@ -42,6 +43,11 @@ function staffAccess(perms: string[]): boolean {
         perms.includes("assign_access") ||
         perms.includes("manage_tests")
     );
+}
+
+/** The admin console also opens to whoever holds a CRM permission (an accountant); the Builder does not. */
+function crmAccess(perms: string[]): boolean {
+    return CRM_PERMISSIONS.some((p) => perms.includes(p));
 }
 
 /**
@@ -95,7 +101,7 @@ export default function AuthGuard({
     // A public learner sees mock exams and events, plus their profile (owner, 2026-10-13). Any
     // other page is the learning center's: the API refuses it, so the screen does not try.
     const publicBlocked = isPublic && consoleMode === "main" && !isPublicStudentPath(pathname);
-    const hasStaff = staffAccess(perms);
+    const hasStaff = staffAccess(perms) || (consoleMode === "admin" && crmAccess(perms));
     // Teacher portal access is role-based (NOT permission-based): teacher, support_teacher
     // and super_admin. This deliberately excludes admin/test_admin, unlike the perm-based
     // admin console gate. Mirrors access.constants.TEACHER_PORTAL_ROLES — the server is the

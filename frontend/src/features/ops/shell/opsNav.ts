@@ -68,7 +68,7 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
       { href: "/ops/classrooms", label: "Classrooms", icon: "cap", requires: [P.viewPeople] },
       // Regions, branches, and which branch each classroom meets at. Without it the branch
       // leaderboard has nothing to group by.
-      { href: "/ops/branches", label: "Branches", icon: "ms-branch" },
+      { href: "/ops/branches", label: "Branches", icon: "ms-branch", requires: [P.manageGroups] },
       { href: "/ops/journals", label: "Journals", icon: "ms-journal", notForDesk: true },
       // Reports only — midterm authoring still lives in the Builder console.
       { href: "/ops/midterms", label: "Midterm results", icon: "ms-midterm", notForDesk: true },
@@ -94,7 +94,7 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
       // staff know, plus what it is.
       { href: "/ops/lcup", label: "lc-up (CRM link)", icon: "ms-sync", requires: [P.lcupTools] },
       // Who teaches support, and which hours they are available.
-      { href: "/ops/support", label: "Support hours", icon: "ms-support" },
+      { href: "/ops/support", label: "Support hours", icon: "ms-support", requires: [P.manageGroups] },
       // Stock, prices and the collection queue — a desk job, not super_admin-only.
       { href: "/ops/shop", label: "Reward shop", icon: "ms-coins", requires: [P.eventsShop] },
     ],

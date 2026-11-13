@@ -32,6 +32,8 @@ type PeopleListProps<S extends PeopleSection> = {
   /** Bulk actions offered, in menu order. */
   bulk: readonly BulkAction[];
   searchPlaceholder?: string;
+  /** Beside the list's title: the Staff page's "New staff account". */
+  headerAction?: ReactNode;
 };
 
 type Pending = {
@@ -135,6 +137,7 @@ function PeopleListInner<S extends PeopleSection>({
   columns,
   bulk,
   searchPlaceholder,
+  headerAction,
 }: PeopleListProps<S>) {
   const { params, queryString } = useChangeListParams(PEOPLE_FILTER_KEYS[section]);
   const query = usePeople(section, params);
@@ -222,6 +225,7 @@ function PeopleListInner<S extends PeopleSection>({
         actions={actions}
         rowHref={(row) => withListFilters(`/ops/${section}/${row.id}`, queryString)}
         searchPlaceholder={searchPlaceholder}
+        headerAction={headerAction}
         rowLabel={(row) => row.name || row.username}
       />
 

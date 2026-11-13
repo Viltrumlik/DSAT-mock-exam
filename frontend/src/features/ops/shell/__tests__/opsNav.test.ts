@@ -8,7 +8,7 @@ const DJANGO_SUPERUSER = { role: "admin", permissions: ["*"], is_superuser: true
 /** What GET /users/me/ gives an administrator: the old six, plus every CRM permission (PR 2). */
 const ADMIN = {
   role: "admin",
-  permissions: ["adjust_balance", "assign_access", "create_classroom", "debt_freeze", "edit_people", "enroll", "events_shop", "lcup_tools", "manage_groups", "manage_seats", "manage_staff", "manage_tests", "manage_users", "send_debt_sms", "send_sms", "set_prices", "submit_test", "take_payment", "view_dashboard", "view_money", "view_people", "view_reports", "void_payment"],
+  permissions: ["adjust_balance", "assign_access", "create_classroom", "debt_freeze", "edit_people", "enroll", "events_shop", "lcup_tools", "manage_groups", "manage_seats", "manage_tests", "manage_users", "send_debt_sms", "send_sms", "set_prices", "submit_test", "take_payment", "view_dashboard", "view_money", "view_people", "view_reports", "void_payment"],
 };
 /** An accountant as PR 4 will make one: money only. */
 const ACCOUNTANT = {
@@ -90,8 +90,9 @@ describe("visibleNav", () => {
   });
 
   it("drops a group whose items are all filtered out", () => {
-    // System has only super-admin items; Content only events_shop and super-admin ones.
-    expect(captions(visibleNav(OPS_NAV_GROUPS, TEACHER))).toEqual([null, "People", "Teaching", "Centre"]);
+    // System has only super-admin items; Content only events_shop and super-admin ones; the Centre's desks all
+    // need a CRM permission (Support hours and Branches are group desks, manage_groups).
+    expect(captions(visibleNav(OPS_NAV_GROUPS, TEACHER))).toEqual([null, "People", "Teaching"]);
   });
 
   it("shows an administrator exactly the school's sections, as before permissions", () => {
@@ -128,10 +129,12 @@ describe("visibleNav", () => {
   });
 
   it("shows an accountant the money, and none of the desk's other sections", () => {
-    // Branches and Support hours still go by role on the server; the accountant's role decides them (PR 4).
+    // Branches and Support hours are group desks (manage_groups), not money.
     const seen = hrefs(visibleNav(OPS_NAV_GROUPS, ACCOUNTANT));
-    for (const href of ["/ops", "/ops/finance", "/ops/sms", "/ops/classrooms"]) expect(seen).toContain(href);
+    expect(seen).toEqual(["/ops", "/ops/classrooms", "/ops/finance", "/ops/sms"]);
     for (const href of [
+      "/ops/branches",
+      "/ops/support",
       "/ops/students",
       "/ops/staff",
       "/ops/trials",
