@@ -19,7 +19,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from rewards.views import _is_reward_staff
+from rewards.views import REWARD_STAFF
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import services
@@ -146,16 +146,12 @@ class _StaffView(APIView):
     """The gate the stories console uses, copied rather than imported.
 
     `shop` and `stories` each carry their own byte-identical copy; a shared base class would
-    put three consoles' permissions in one file nobody owns.
+    put three consoles' permissions in one file nobody owns. The permission itself is shared:
+    ``rewards.views.REWARD_STAFF``.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [REWARD_STAFF]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
-
-    def _guard(self, request):
-        if not _is_reward_staff(request.user):
-            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
-        return None
 
 
 def _telegram_part(event, summaries=None) -> dict:
@@ -180,9 +176,6 @@ class AdminEventsView(_StaffView):
     """Every event, draft and cancelled included, and a way to create one."""
 
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         from telegram_posts import services as telegram_posts
 
         events = list(_with_counts(Event.objects.all()).order_by("-starts_at"))
@@ -190,9 +183,6 @@ class AdminEventsView(_StaffView):
         return Response({"events": [_ops_payload(e, request, summaries) for e in events]})
 
     def post(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         serializer = EventWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         event = serializer.save(created_by=request.user)
@@ -201,16 +191,10 @@ class AdminEventsView(_StaffView):
 
 class AdminEventDetailView(_StaffView):
     def get(self, request, event_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         event = get_object_or_404(_with_counts(Event.objects.all()), pk=event_id)
         return Response(_ops_payload(event, request))
 
     def patch(self, request, event_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         event = get_object_or_404(Event, pk=event_id)
         serializer = EventWriteSerializer(event, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -224,9 +208,6 @@ class AdminEventDetailView(_StaffView):
         return Response(_ops_payload(event, request))
 
     def delete(self, request, event_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         event = get_object_or_404(Event, pk=event_id)
         try:
             services.delete_draft(event)
@@ -237,9 +218,6 @@ class AdminEventDetailView(_StaffView):
 
 class AdminEventPublishView(_StaffView):
     def post(self, request, event_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         event = get_object_or_404(Event, pk=event_id)
         try:
             announced = services.publish_and_announce(event)
@@ -253,9 +231,6 @@ class AdminEventPublishView(_StaffView):
 
 class AdminEventCancelView(_StaffView):
     def post(self, request, event_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         event = get_object_or_404(Event, pk=event_id)
         try:
             event = services.cancel_and_announce(event, actor=request.user)
@@ -268,9 +243,6 @@ class AdminRegistrationsView(_StaffView):
     """Who signed up, and the four counters the desk reads at the door."""
 
     def get(self, request, event_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         event = get_object_or_404(Event, pk=event_id)
         rows = list(
             event.registrations.select_related("student").order_by("registered_at", "id")
@@ -292,9 +264,6 @@ class AdminRegistrationsView(_StaffView):
 
 class AdminAttendanceView(_StaffView):
     def post(self, request, registration_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         row = get_object_or_404(
             EventRegistration.objects.select_related("event", "student"), pk=registration_id
         )
@@ -350,9 +319,6 @@ class AdminTicketLookupView(_StaffView):
     """
 
     def get(self, request, code: str):
-        denied = self._guard(request)
-        if denied:
-            return denied
 
         row = services.find_by_ticket_code(code)
         if row is None:

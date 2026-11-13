@@ -13,11 +13,10 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from rewards.views import _is_reward_staff
+from rewards.views import REWARD_STAFF
 
 from . import audience, sender, services
 from .models import GroupPost
@@ -45,22 +44,14 @@ def _detail(post, request) -> dict:
 
 
 class _StaffView(APIView):
-    """The events console's gate, copied rather than imported (see events/views.py)."""
+    """The events console's base, copied rather than imported (see events/views.py)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [REWARD_STAFF]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
-
-    def _guard(self, request):
-        if not _is_reward_staff(request.user):
-            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
-        return None
 
 
 class AdminPostsView(_StaffView):
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         posts = list(GroupPost.objects.select_related("event").order_by("-created_at", "-id")[:200])
         counts = services.delivery_counts([p.pk for p in posts])
         return Response({
@@ -69,9 +60,6 @@ class AdminPostsView(_StaffView):
         })
 
     def post(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         serializer = PostWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -83,16 +71,10 @@ class AdminPostsView(_StaffView):
 
 class AdminPostDetailView(_StaffView):
     def get(self, request, post_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         post = get_object_or_404(GroupPost.objects.select_related("event"), pk=post_id)
         return Response(_detail(post, request))
 
     def patch(self, request, post_id: int):
-        denied = self._guard(request)
-        if denied:
-            return denied
         post = get_object_or_404(GroupPost.objects.select_related("event"), pk=post_id)
         try:
             # Before validation: "already sent" is the real answer for a sent post, not
@@ -109,9 +91,6 @@ class AdminPostDetailView(_StaffView):
 
 class AdminPostActionView(_StaffView):
     def post(self, request, post_id: int, action: str):
-        denied = self._guard(request)
-        if denied:
-            return denied
         if action not in ACTIONS:
             raise Http404
         post = get_object_or_404(GroupPost.objects.select_related("event"), pk=post_id)
@@ -136,7 +115,4 @@ class AdminPostActionView(_StaffView):
 
 class AdminGroupsView(_StaffView):
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         return Response({"enabled": sender.enabled(), "groups": audience.picker_rows()})
