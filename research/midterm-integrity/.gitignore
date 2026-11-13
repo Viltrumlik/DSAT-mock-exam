@@ -1,0 +1,12 @@
+# Extracts are student data: they never go into git.
+data/
+*.csv
+*.parquet
+*.xlsx
+*.salt
+*.dump
+*.sql.gz
+manifest.json
+__pycache__/
+.venv/
+results/
