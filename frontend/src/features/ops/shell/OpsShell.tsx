@@ -10,12 +10,12 @@ import { useAdminAttention, useBuilderAttention } from "@/features/console/atten
 import { consoleCommands } from "@/features/console/commands";
 import { entityScope } from "@/features/console/entitySearch";
 import { canOpenConsole, consoleHref } from "@/features/console/consoleHref";
-import { isScopedOpsAdmin } from "@/features/ops/adminScope";
+import { P, holds } from "@/features/ops/permissions";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
 import { cn } from "@/lib/cn";
 import { OpsSidebar } from "./OpsSidebar";
 import { OpsTopBar } from "./OpsTopBar";
-import { OPS_CONSOLE, isOpsSuperAdmin, type ConsoleConfig, type MeLike } from "./opsNav";
+import { OPS_CONSOLE, type ConsoleConfig, type MeLike } from "./opsNav";
 
 /**
  * The consoles' frame (design handoff v0.3, Shell board): a grouped menu stuck to the left edge, a
@@ -58,14 +58,14 @@ export function OpsShell({
 
   const groups = useMemo(() => config.visible(config.groups, me), [config, me]);
 
-  // The Trials count — for an administrator only, the one role its API answers.
+  // The Trials count — only for whoever holds `enroll`, the one permission its API answers.
   const wantsTrials = useMemo(() => groups.some((g) => g.items.some((i) => i.countKey === "trials")), [groups]);
-  const followups = useLcupFollowups({ enabled: wantsTrials && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)) });
+  const followups = useLcupFollowups({ enabled: wantsTrials && holds(me, P.enroll) });
   const counts = useMemo(() => ({ trials: followups.data?.pending ?? 0 }), [followups.data]);
 
-  // "Needs you" — the bell's items (and the dashboard's): Admin's only for super admins and admins,
-  // whom every one of its endpoints admits; the Builder's for everyone in it.
-  const adminAttention = useAdminAttention(config.temp === "admin" && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)));
+  // "Needs you" — the bell's items (and the dashboard's): Admin's asks each source only of whoever holds its
+  // permission; the Builder's for everyone in it.
+  const adminAttention = useAdminAttention(config.temp === "admin" ? me : null);
   // On Studio home the bell shares the page's summary (same key, recents included); elsewhere a stable one.
   const builderAttention = useBuilderAttention(config.temp === "builder" && Boolean(me), pathname === "/builder");
   const attention = config.temp === "builder" ? builderAttention : adminAttention;

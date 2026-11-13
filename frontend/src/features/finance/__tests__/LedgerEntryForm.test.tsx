@@ -7,6 +7,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The console reads permissions (plan 2026-11-12-crm-roles): an administrator's.
+const session = vi.hoisted(() => ({ me: undefined as Record<string, unknown> | undefined }));
+vi.mock("@/hooks/useMe", async (importOriginal) => {
+  const { ADMIN_ME } = await import("@/features/ops/testing/me");
+  return { ...(await importOriginal<typeof import("@/hooks/useMe")>()), useMe: () => ({ me: session.me ?? ADMIN_ME }) };
+});
+
 const get = vi.fn();
 const post = vi.fn();
 
@@ -383,5 +390,30 @@ describe("voiding", () => {
       rows: [{ ...ROW, id: 2, day: "2026-12-02", kind: "payment", label: "Payment", amount: 200000, running: 0, voided_at: "2026-12-02T12:00:00+05:00", void_reason: "Wrong student", voided_by: "boss" }],
     }));
     expect(document.body.textContent).toContain("Voided by boss: Wrong student");
+  });
+});
+
+describe("what the viewer's permissions open", () => {
+  afterEach(() => {
+    session.me = undefined;
+  });
+
+  const labels = () => [...document.querySelectorAll("button")].map((b) => b.textContent);
+
+  it("offers an adjustment without take_payment, and no void or personal price without theirs", async () => {
+    session.me = { role: "accountant", permissions: ["view_money", "adjust_balance"] };
+    await open();
+    expect(labels()).toContain("Enter an adjustment");
+    expect(labels()).not.toContain("Enter a payment");
+    expect(labels()).not.toContain("Enter a refund");
+    expect(labels()).not.toContain("Void");
+    expect(labels()).not.toContain("Personal price");
+  });
+
+  it("offers nothing to change to someone who only reads the money", async () => {
+    session.me = { role: "accountant", permissions: ["view_money"] };
+    await open();
+    expect(labels().filter((l) => l?.startsWith("Enter"))).toEqual([]);
+    expect(labels()).not.toContain("Void");
   });
 });

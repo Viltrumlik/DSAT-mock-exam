@@ -18,6 +18,8 @@ import { BellRing, FileText, Gauge, ScrollText, Send } from "lucide-react";
 import { Tabs } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { activeTab, panelId, tabId, type Tab } from "@/features/ops/detail/tabs";
+import { P } from "@/features/ops/permissions";
+import { useCan } from "@/features/ops/useCan";
 import { BalanceBanner } from "./BalanceBanner";
 import { CampaignsPanel } from "./CampaignsPanel";
 import { DebtPanel } from "./DebtPanel";
@@ -34,6 +36,14 @@ const TABS: Tab<SmsTab>[] = [
   { key: "debt", label: "Debt warnings", icon: BellRing },
   { key: "templates", label: "Templates", icon: FileText },
 ];
+/** What each tab needs: the overview and journal open to anyone who sends; the debt warnings are `send_debt_sms`'s. */
+const NEEDS: Record<SmsTab, readonly string[]> = {
+  overview: [P.sendSms, P.sendDebtSms],
+  journal: [P.sendSms, P.sendDebtSms],
+  campaigns: [P.sendSms],
+  debt: [P.sendDebtSms],
+  templates: [P.sendSms],
+};
 
 export function SmsPage() {
   // useSearchParams needs a Suspense boundary above it, or the production build's prerender fails.
@@ -47,7 +57,11 @@ export function SmsPage() {
 function SmsPageInner() {
   const search = useSearchParams();
   const router = useRouter();
-  const tab = activeTab(new URLSearchParams(search.toString()), TABS);
+  const can = useCan();
+  const allowed = TABS.filter((t) => can(...NEEDS[t.key]));
+  // The layout lets nobody here who holds neither; the fallback only keeps activeTab from an empty list.
+  const tabs = allowed.length ? allowed : TABS.slice(0, 1);
+  const tab = activeTab(new URLSearchParams(search.toString()), tabs);
   // The overview is one cached query: every tab reads it for the balance banner at no extra cost.
   const forecast = useSmsOverview().data?.forecast;
 
@@ -64,7 +78,7 @@ function SmsPageInner() {
         value={tab}
         onChange={(key) => router.replace(smsTabHref(key), { scroll: false })}
         ids={{ tab: (key) => tabId("sms", key), panel: (key) => panelId("sms", key) }}
-        tabs={TABS.map((t) => ({ id: t.key, label: t.label }))}
+        tabs={tabs.map((t) => ({ id: t.key, label: t.label }))}
       />
       {/* key={tab}: a new tab mounts afresh, so it eases in (sms-rise; still under reduced motion). */}
       <div key={tab} className="sms-rise" role="tabpanel" id={panelId("sms", tab)} aria-labelledby={tabId("sms", tab)}>

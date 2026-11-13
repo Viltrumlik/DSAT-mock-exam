@@ -8,6 +8,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The console reads permissions (plan 2026-11-12-crm-roles): an administrator's.
+vi.mock("@/hooks/useMe", async (importOriginal) => {
+  const { ADMIN_ME: me } = await import("@/features/ops/testing/me");
+  return { ...(await importOriginal<typeof import("@/hooks/useMe")>()), useMe: () => ({ me }) };
+});
+
 const get = vi.fn();
 const post = vi.fn();
 

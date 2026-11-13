@@ -11,6 +11,8 @@ import type { BadgeTone } from "@/features/console/ui";
 import { Pill } from "@/features/ops/people/Fieldset";
 import { NEW_CAMPAIGN_PATH } from "@/features/ops/sms/smsTabs";
 import { formatUzs, type Debtor, type MonthPayment } from "./financeApi";
+import { P } from "@/features/ops/permissions";
+import { useCan } from "@/features/ops/useCan";
 import { useDebtors, useFinanceSummary, useMonthPayments, useSetExempt } from "./financeHooks";
 
 /**
@@ -294,6 +296,8 @@ const COLUMNS = 7;
 
 function DebtorRow({ debtor }: { debtor: Debtor }) {
   const setExempt = useSetExempt();
+  // Exempting from the debt freeze is `debt_freeze`'s; everyone else on this tab only reads.
+  const mayExempt = useCan()(P.debtFreeze);
   const [confirming, setConfirming] = useState(false);
   const busy = setExempt.isPending;
 
@@ -336,7 +340,7 @@ function DebtorRow({ debtor }: { debtor: Debtor }) {
           )}
         </td>
         <td className={cn(TD, "text-right")}>
-          {debtor.exempt ? (
+          {!mayExempt ? null : debtor.exempt ? (
             <button
               type="button"
               className={TEXT_BUTTON}
@@ -359,7 +363,7 @@ function DebtorRow({ debtor }: { debtor: Debtor }) {
           )}
         </td>
       </tr>
-      {confirming && !debtor.exempt ? (
+      {mayExempt && confirming && !debtor.exempt ? (
         <tr>
           <td colSpan={COLUMNS} className="whitespace-normal border-b border-ms-line bg-ms-surface px-5 py-3 text-[14px]">
             <p>

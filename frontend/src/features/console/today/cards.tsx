@@ -12,7 +12,8 @@ import { lcupApi } from "@/features/lcup/lcupApi";
 import { lcupKeys } from "@/features/lcup/lcupHooks";
 import { mobileApi } from "@/features/mobile/mobileApi";
 import { mockSessionsApi, type MockSession } from "@/features/mockSessions/api";
-import { isAdminOpsPath } from "@/features/ops/adminScope";
+import { P, holds, type MeLike } from "@/features/ops/permissions";
+import { opsPathAllowed } from "@/features/ops/shell/opsNav";
 import { smsApi, type SmsStatsDay } from "@/features/ops/sms/smsApi";
 import { smsKeys } from "@/features/ops/sms/smsHooks";
 import api, { examsAdminApi } from "@/lib/api";
@@ -446,16 +447,22 @@ const SHORTCUTS: Shortcut[] = [
   { href: "/ops/journals", icon: "ms-journal", title: "Journals", cta: "open" },
 ];
 
-export function ShortcutsCard({ desk, scoped, delay }: { desk: boolean; scoped: boolean; delay: number }) {
-  const links = scoped ? SHORTCUTS.filter((l) => isAdminOpsPath(l.href)) : SHORTCUTS;
-  const pop = useQuery({ queryKey: ["users", "population"], queryFn: usersAdminApi.population, enabled: desk });
+/** The shortcuts this viewer may open (the sidebar's rules), each count asked only of whoever its API admits. */
+export function ShortcutsCard({ me, delay }: { me: MeLike; delay: number }) {
+  const links = SHORTCUTS.filter((l) => opsPathAllowed(l.href, me));
+  const shown = (href: string) => links.some((l) => l.href === href);
+  const pop = useQuery({
+    queryKey: ["users", "population"],
+    queryFn: usersAdminApi.population,
+    enabled: Boolean(me) && holds(me, P.manageUsers) && (shown("/ops/students") || shown("/ops/public")),
+  });
   const classes = useQuery({
     queryKey: ["console", "today", "classes-count"],
     queryFn: async () => (await api.get<{ count: number }>("/classes/admin/classrooms/", { params: { page_size: 1 } })).data.count,
-    enabled: desk,
+    enabled: shown("/ops/classrooms"),
     staleTime: 5 * 60_000,
   });
-  const events = useQuery({ queryKey: ["events", "admin"], queryFn: () => eventsApi.adminList(), enabled: desk && links.some((l) => l.href === "/ops/events"), staleTime: 5 * 60_000 });
+  const events = useQuery({ queryKey: ["events", "admin"], queryFn: () => eventsApi.adminList(), enabled: shown("/ops/events"), staleTime: 5 * 60_000 });
   const counts: Counts = {
     centre: pop.data?.centre,
     public: pop.data?.public,

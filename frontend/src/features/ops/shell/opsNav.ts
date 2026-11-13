@@ -1,5 +1,7 @@
 import type { IconName } from "@/components/ui/Icon";
-import { ADMIN_OPS_SECTIONS, isScopedOpsAdmin } from "@/features/ops/adminScope";
+import { P, holds, isDeskViewer, type MeLike } from "@/features/ops/permissions";
+
+export type { MeLike };
 
 /** The sections that can carry a waiting-work count beside their sidebar label. */
 export type OpsNavCountKey = "trials";
@@ -10,11 +12,12 @@ export type OpsNavCountKey = "trials";
  * Serves admin.mastersat.uz. The console is governance only — the teacher workspace lives on its
  * own subdomain (teacher.mastersat.uz) and is reached from there, not from here.
  *
- * Who sees what:
- * - `superAdminOnly` items are the super admin's alone (the API enforces it; this only avoids
- *   showing a page the server would refuse);
- * - an `admin` sees the school's sections and nothing else (features/ops/adminScope);
- * - teachers and test auditors who can open the console see the rest.
+ * Who sees what (plan 2026-11-12-crm-roles, PR 3), each rule only avoiding a page the server would refuse or
+ * the owner keeps off the desk:
+ * - `requires`: the permissions the page's API checks; the item shows to whoever holds one of them;
+ * - `superAdminOnly` items are the super admin's alone;
+ * - `notForDesk` items are kept off the desk's console (the owner's list for admins, 2026-10): hidden from
+ *   anyone who holds a CRM permission, unless they are the owner.
  * A group whose items are all filtered out is dropped, caption included.
  */
 export type OpsNavItem = {
@@ -25,6 +28,10 @@ export type OpsNavItem = {
   /** Match the path exactly rather than as a prefix — only the dashboard, since every ops page sits under `/ops`. */
   exact?: boolean;
   superAdminOnly?: boolean;
+  /** Shown only to a viewer holding one of these permissions: the ones the page's API checks. */
+  requires?: readonly string[];
+  /** The owner keeps this off the desk's console: hidden from desk viewers (`isDeskViewer`). */
+  notForDesk?: boolean;
   /** Work waiting behind this section — the shell fetches it and the sidebar draws it beside the label. */
   countKey?: OpsNavCountKey;
 };
@@ -48,27 +55,27 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
     id: "people",
     caption: "People",
     items: [
-      { href: "/ops/students", label: "Students", icon: "users" },
-      { href: "/ops/public", label: "Public users", icon: "user" },
-      { href: "/ops/staff", label: "Staff", icon: "shield" },
-      { href: "/ops/access", label: "Access", icon: "key" },
+      { href: "/ops/students", label: "Students", icon: "users", requires: [P.manageUsers, P.assignAccess] },
+      { href: "/ops/public", label: "Public users", icon: "user", requires: [P.manageUsers, P.assignAccess] },
+      { href: "/ops/staff", label: "Staff", icon: "shield", requires: [P.manageUsers, P.assignAccess] },
+      { href: "/ops/access", label: "Access", icon: "key", requires: [P.manageUsers, P.assignAccess] },
     ],
   },
   {
     id: "teaching",
     caption: "Teaching",
     items: [
-      { href: "/ops/classrooms", label: "Classrooms", icon: "cap" },
+      { href: "/ops/classrooms", label: "Classrooms", icon: "cap", requires: [P.viewPeople] },
       // Regions, branches, and which branch each classroom meets at. Without it the branch
       // leaderboard has nothing to group by.
       { href: "/ops/branches", label: "Branches", icon: "ms-branch" },
-      { href: "/ops/journals", label: "Journals", icon: "ms-journal" },
+      { href: "/ops/journals", label: "Journals", icon: "ms-journal", notForDesk: true },
       // Reports only — midterm authoring still lives in the Builder console.
-      { href: "/ops/midterms", label: "Midterm results", icon: "ms-midterm" },
+      { href: "/ops/midterms", label: "Midterm results", icon: "ms-midterm", notForDesk: true },
       // Invigilated full-mock sittings: mint the sitting + its code here, then a teacher runs
       // the room on the day.
-      { href: "/ops/mock-sessions", label: "Mock sittings", icon: "ms-room" },
-      { href: "/ops/exam-dates", label: "Exam dates", icon: "ms-examdate" },
+      { href: "/ops/mock-sessions", label: "Mock sittings", icon: "ms-room", notForDesk: true },
+      { href: "/ops/exam-dates", label: "Exam dates", icon: "ms-examdate", notForDesk: true },
     ],
   },
   {
@@ -78,18 +85,18 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
     items: [
       // Trial students and lc-up members missing from a class list (owner, 2026-10-20); the count is what
       // waits on the desk.
-      { href: "/ops/trials", label: "Trials", icon: "ms-trial", countKey: "trials" },
+      { href: "/ops/trials", label: "Trials", icon: "ms-trial", countKey: "trials", requires: [P.enroll] },
       // Money as lc-up keeps it. Its own page, not a tab of lc-up — the owner wanted them apart.
-      { href: "/ops/finance", label: "Finance", icon: "wallet" },
+      { href: "/ops/finance", label: "Finance", icon: "wallet", requires: [P.viewMoney, P.viewReports] },
       // The eskiz SMS account: balance, the journal of every SMS, campaigns, the debt warning, templates.
-      { href: "/ops/sms", label: "SMS", icon: "msg" },
+      { href: "/ops/sms", label: "SMS", icon: "msg", requires: [P.sendSms, P.sendDebtSms] },
       // The centre's CRM: pair lc-up groups with our classes, settle unmatched students. The name the
       // staff know, plus what it is.
-      { href: "/ops/lcup", label: "lc-up (CRM link)", icon: "ms-sync" },
+      { href: "/ops/lcup", label: "lc-up (CRM link)", icon: "ms-sync", requires: [P.lcupTools] },
       // Who teaches support, and which hours they are available.
       { href: "/ops/support", label: "Support hours", icon: "ms-support" },
       // Stock, prices and the collection queue — a desk job, not super_admin-only.
-      { href: "/ops/shop", label: "Reward shop", icon: "ms-coins" },
+      { href: "/ops/shop", label: "Reward shop", icon: "ms-coins", requires: [P.eventsShop] },
     ],
   },
   {
@@ -97,11 +104,11 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
     caption: "Content",
     items: [
       // Workshops, talks and open days: the desk publishes them and marks who came.
-      { href: "/ops/events", label: "Events", icon: "cal" },
+      { href: "/ops/events", label: "Events", icon: "cal", requires: [P.eventsShop] },
       // What the class bot posts into the class Telegram groups: event posts and written ones.
-      { href: "/ops/telegram-posts", label: "Telegram posts", icon: "ms-classpost" },
+      { href: "/ops/telegram-posts", label: "Telegram posts", icon: "ms-classpost", requires: [P.eventsShop] },
       // The ring of circles across the top of every student's dashboard.
-      { href: "/ops/stories", label: "Stories", icon: "ms-story" },
+      { href: "/ops/stories", label: "Stories", icon: "ms-story", requires: [P.eventsShop], notForDesk: true },
       { href: "/ops/surveys", label: "Surveys", icon: "clipboard", superAdminOnly: true },
     ],
   },
@@ -117,28 +124,38 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
   },
 ];
 
-/** `useMe` types the payload as an open record, so the fields are narrowed here. */
-export type MeLike = Record<string, unknown> | null | undefined;
-
 export function isOpsSuperAdmin(me: MeLike): boolean {
   if (!me) return false;
   const role = String(me.role ?? "").trim().toLowerCase();
   return role === "super_admin" || Boolean(me.is_superuser);
 }
 
+/** Whether this viewer may see one item (see "Who sees what" above). */
+export function canSeeItem(item: OpsNavItem, me: MeLike): boolean {
+  if (item.superAdminOnly && !isOpsSuperAdmin(me)) return false;
+  if (item.notForDesk && isDeskViewer(me)) return false;
+  return holds(me, ...(item.requires ?? []));
+}
+
 /** The groups and items this viewer may see, in nav order; empty groups are dropped. */
 export function visibleNav(groups: readonly OpsNavGroup[], me: MeLike): OpsNavGroup[] {
-  const superAdmin = isOpsSuperAdmin(me);
-  const scoped = isScopedOpsAdmin(me);
   return groups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => {
-        if (item.superAdminOnly && !superAdmin) return false;
-        return !scoped || ADMIN_OPS_SECTIONS.includes(item.href);
-      }),
-    }))
+    .map((group) => ({ ...group, items: group.items.filter((item) => canSeeItem(item, me)) }))
     .filter((group) => group.items.length > 0);
+}
+
+/**
+ * Whether this viewer may open a console path: the nav item it sits under decides. A path no item lists is
+ * kept off the desk like `notForDesk` items (the old Assignments notice, the design page), except
+ * `/ops/users`, which only redirects to Students.
+ */
+export function opsPathAllowed(pathname: string, me: MeLike, groups: readonly OpsNavGroup[] = OPS_NAV_GROUPS): boolean {
+  if (pathname === "/ops/users" || pathname.startsWith("/ops/users/")) {
+    return holds(me, P.manageUsers, P.assignAccess);
+  }
+  const item = activeNavItem(pathname, groups);
+  if (item) return canSeeItem(item, me);
+  return !isDeskViewer(me);
 }
 
 /**

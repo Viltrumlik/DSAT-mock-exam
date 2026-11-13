@@ -30,8 +30,9 @@ export function useDebtNotice(enabled: boolean): number | null {
   return enabled && data?.linked && data.debt_notice && data.debt ? data.debt : null;
 }
 
-export function useFinanceSummary(month: string) {
-  return useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month) });
+/** `enabled` false for a viewer without `view_reports`: the totals' endpoint refuses them. */
+export function useFinanceSummary(month: string, enabled = true) {
+  return useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month), enabled });
 }
 
 export function useDebtors() {

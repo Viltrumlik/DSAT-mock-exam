@@ -5,8 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
 import { useMe } from "@/hooks/useMe";
-import { isAdminOpsPath, isScopedOpsAdmin } from "@/features/ops/adminScope";
 import { OpsShell } from "@/features/ops/shell/OpsShell";
+import { opsPathAllowed } from "@/features/ops/shell/opsNav";
 
 /**
  * The operational console (admin.mastersat.uz) — see features/ops/shell for the sidebar, the top
@@ -24,12 +24,12 @@ function OpsConsole({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { me } = useMe();
 
-  // An admin sees the school's sections and nothing else — see features/ops/adminScope.
-  // Hiding the link alone would leave the page one typed address away, and every ops page
-  // renders inside this layout — so this is the one place that can close them all. The
-  // page is never mounted, so none of its requests go out either. AuthGuard renders nothing
-  // until `me` has loaded, so there is no first paint before the role is known.
-  const blocked = isScopedOpsAdmin(me) && !isAdminOpsPath(pathname);
+  // A page is open to whoever may see its sidebar item (features/ops/shell/opsNav: its permissions, and the
+  // owner's list of what stays off the desk). Hiding the link alone would leave the page one typed address
+  // away, and every ops page renders inside this layout — so this is the one place that can close them all.
+  // The page is never mounted, so none of its requests go out either. AuthGuard renders nothing until `me`
+  // has loaded, so there is no first paint before the permissions are known.
+  const blocked = Boolean(me) && !opsPathAllowed(pathname, me);
   useEffect(() => {
     if (blocked) router.replace("/ops");
   }, [blocked, router]);

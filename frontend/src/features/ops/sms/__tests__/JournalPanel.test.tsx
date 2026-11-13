@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The console reads permissions (plan 2026-11-12-crm-roles): an administrator's.
+vi.mock("@/hooks/useMe", async (importOriginal) => {
+  const { ADMIN_ME: me } = await import("@/features/ops/testing/me");
+  return { ...(await importOriginal<typeof import("@/hooks/useMe")>()), useMe: () => ({ me }) };
+});
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 

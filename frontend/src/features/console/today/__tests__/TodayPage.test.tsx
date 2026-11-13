@@ -7,6 +7,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ADMIN_ME, TEACHER_ME } from "@/features/ops/testing/me";
 
 const get = vi.fn();
 let me: Record<string, unknown> = {};
@@ -81,7 +82,7 @@ afterEach(() => {
 
 describe("TodayPage", () => {
   it("opens on what needs a desk admin now, most urgent first", async () => {
-    me = { id: 4, role: "admin", permissions: [], first_name: "Dilnoza" };
+    me = { id: 4, role: "admin", permissions: ADMIN_ME.permissions, first_name: "Dilnoza" };
     await render();
     const text = host.textContent ?? "";
     expect(text).toMatch(/Good (morning|afternoon|evening), Dilnoza/);
@@ -99,7 +100,7 @@ describe("TodayPage", () => {
   });
 
   it("says a failed source failed — never zero — and keeps the rest", async () => {
-    me = { id: 4, role: "admin", permissions: [], first_name: "Dilnoza" };
+    me = { id: 4, role: "admin", permissions: ADMIN_ME.permissions, first_name: "Dilnoza" };
     get.mockImplementation(async (url: string) => {
       if (url === "/lcup/finance/summary/") throw new Error("lc-up timed out");
       return { data: DATA[url] };
@@ -114,7 +115,7 @@ describe("TodayPage", () => {
   });
 
   it("asks a teacher only for what a teacher may read", async () => {
-    me = { id: 9, role: "teacher", permissions: [], first_name: "Kamola" };
+    me = { id: 9, role: "teacher", permissions: TEACHER_ME.permissions, first_name: "Kamola" };
     await render();
     const asked = get.mock.calls.map(([url]) => url);
     expect(asked).toEqual(["/users/admin/population/"]);

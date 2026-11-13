@@ -25,6 +25,8 @@ import {
   monthLabel,
 } from "./FinancePanels";
 import type { EnterableKind, LedgerComparison, LedgerEntry, LedgerProblem, LedgerScope, LedgerSeat } from "./billingApi";
+import { P } from "@/features/ops/permissions";
+import { useCan } from "@/features/ops/useCan";
 import { useLedgerAccount, useLedgerAccounts, useLedgerSummary } from "./billingHooks";
 
 /**
@@ -215,12 +217,16 @@ function voidedText(entry: LedgerEntry): string {
 }
 
 const ENTERABLE: EnterableKind[] = ["payment", "refund", "adjust"];
+/** What each kind of row needs: a payment or a refund is `take_payment`, an adjustment `adjust_balance`. */
+const ENTER_NEEDS: Record<EnterableKind, string> = { payment: P.takePayment, refund: P.takePayment, adjust: P.adjustBalance };
 
 function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
   const q = useLedgerAccount(id);
   const [entering, setEntering] = useState<EnterableKind | null>(null);
   const [voiding, setVoiding] = useState<number | null>(null);
   const [pricing, setPricing] = useState<number | null>(null);
+  const can = useCan();
+  const enterable = ENTERABLE.filter((kind) => can(ENTER_NEEDS[kind]));
   const back =<Btn onClick={onBack}>Back to the ledger</Btn>;
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) {
@@ -244,7 +250,7 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
           <div key={seat.id} className="text-[13px] text-ms-fg-3">
             <p>
               {seat.group_name} · {SEAT_STATE[seat.state] ?? seat.state} · {seatPrice(seat)}{" "}
-              {pricing === seat.id ? null : (
+              {pricing === seat.id || !can(P.setPrices) ? null : (
                 <button type="button" className={TEXT_BUTTON} onClick={() => setPricing(seat.id)}>
                   Personal price
                 </button>
@@ -259,12 +265,12 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
           </div>
         ))}
       </header>
-      {account.payments_open ? (
+      {account.payments_open && enterable.length > 0 ? (
         entering ? (
           <EntryForm accountId={account.id} balance={account.balance} kind={entering} onClose={() => setEntering(null)} />
         ) : (
           <div role="group" aria-label="Enter money" className="flex flex-wrap gap-1">
-            {ENTERABLE.map((kind) => (
+            {enterable.map((kind) => (
               <Btn key={kind} onClick={() => setEntering(kind)}>{ENTER_LABEL[kind]}</Btn>
             ))}
           </div>
@@ -299,7 +305,7 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
                     <td className={TD_R}>{money(entry.running)}</td>
                     <td className={cn(TD, "text-ms-fg-3")}>
                       {entry.voided_at ? voidedText(entry) : entryDetails(entry) || "—"}
-                      {account.payments_open && entry.can_void && voiding !== entry.id ? (
+                      {account.payments_open && entry.can_void && can(P.voidPayment) && voiding !== entry.id ? (
                         <>
                           {" "}
                           <button type="button" className={TEXT_BUTTON} onClick={() => setVoiding(entry.id)}>
