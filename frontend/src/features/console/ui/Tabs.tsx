@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, type KeyboardEvent, type ReactNode } fr
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { cn } from "@/lib/cn";
+import { usePublishTabs } from "../pageOutline";
 
 /**
  * Underline tabs (design handoff v0.3, Controls board · Chips and tabs): the open tab is kept in the
@@ -35,6 +36,7 @@ export function Tabs<T extends string>({
   onChange,
   idPrefix = "tab",
   ids,
+  tree = false,
   className,
 }: {
   /** The row's name for a screen reader: "Student sections". */
@@ -46,8 +48,18 @@ export function Tabs<T extends string>({
   idPrefix?: string;
   /** A page that already names its tabs and panels its own way (the detail pages' `person-tab-…`). */
   ids?: { tab: (id: T) => string; panel: (id: T) => string };
+  /** A page's top row: also drawn as a tree under the page in the console's panel (Shell v0.4). */
+  tree?: boolean;
   className?: string;
 }) {
+  usePublishTabs(
+    tree,
+    tabs
+      .filter((t) => !t.disabled)
+      .map((t) => ({ id: t.id, label: typeof t.label === "string" ? t.label : t.id, count: t.count, tone: t.tone })),
+    value,
+    onChange as (id: string) => void,
+  );
   const tabDom = (id: T) => (ids ? ids.tab(id) : `${idPrefix}-${id}`);
   const panelDom = (id: T) => (ids ? ids.panel(id) : `${idPrefix}-${id}-panel`);
   const row = useRef<HTMLDivElement | null>(null);

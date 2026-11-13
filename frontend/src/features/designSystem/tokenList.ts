@@ -29,6 +29,8 @@ export const COLOUR_GROUPS: { title: string; names: string[] }[] = [
   { title: "Subjects", names: ["rw", "rw-soft", "rw-fg", "math", "math-soft", "math-fg"] },
   { title: "Score bands", names: [1, 2, 3, 4].flatMap((n) => [`band${n}-bg`, `band${n}-fg`]) },
   { title: "Avatars", names: [1, 2, 3, 4, 5, 6].flatMap((n) => [`av${n}-bg`, `av${n}-fg`]) },
+  // The v0.4 category rail: ink-black in both themes (Shell board).
+  { title: "Rail", names: ["rail-bg", "rail-fg", "rail-fg-2", "rail-hover", "rail-line"] },
 ];
 
 /** [text, background, minimum ratio]. A `#hex` is a literal colour, anything else a token name. */
@@ -50,4 +52,6 @@ export const CONTRAST_PAIRS: [fg: string, bg: string, min: number][] = [
   ["math-fg", "math-soft", 4.5],
   ...[1, 2, 3, 4].map((n): [string, string, number] => [`band${n}-fg`, `band${n}-bg`, 4.5]),
   ...[1, 2, 3, 4, 5, 6].map((n): [string, string, number] => [`av${n}-fg`, `av${n}-bg`, 4.5]),
+  ["rail-fg", "rail-bg", 4.5],
+  ["rail-fg-2", "rail-bg", 4.5],
 ];

@@ -30,7 +30,8 @@ function section(): string {
 }
 
 /** Tokens that are the same in both themes: type, shape, size, motion and layout frames. */
-const UNTHEMED = /^--ms-(font-|r-|h-|fs-|dur-|ease-|sidebar|rail|topbar|filter-col|sheet|content-max)/;
+// `rail` is the rail's width; `rail-bg`, `rail-fg`… are its colours, themed like any other.
+const UNTHEMED = /^--ms-(font-|r-|h-|fs-|dur-|ease-|subnav|rail$|topbar|filter-col|sheet|content-max)/;
 const isColour = (name: string) => !UNTHEMED.test(name) && !name.startsWith("--ms-sh-");
 
 describe("contrastRatio", () => {

@@ -1976,10 +1976,17 @@ mark.ts-annot {
   --ms-ease-out: cubic-bezier(.2,.8,.2,1);
   --ms-ease-in: cubic-bezier(.4,0,1,1);
 
-  /* layout frames */
-  --ms-sidebar: 248px;
-  --ms-rail: 64px;
-  --ms-topbar: 56px;
+  /* the v0.4 category rail: ink-black in both themes, so it reads as "where", not as content (Shell board) */
+  --ms-rail-bg: #0f0f10;
+  --ms-rail-fg: #ffffff;
+  --ms-rail-fg-2: #b4b8bf;
+  --ms-rail-hover: rgba(255,255,255,.09);
+  --ms-rail-line: rgba(255,255,255,.10);
+
+  /* layout frames: the category rail, the sub-category panel beside it, the top bar */
+  --ms-rail: 84px;
+  --ms-subnav: 252px;
+  --ms-topbar: 64px;
   --ms-filter-col: 264px;
   --ms-sheet: 480px;
   --ms-sheet-wide: 640px;
@@ -1987,6 +1994,11 @@ mark.ts-annot {
 }
 
 .dark {
+  --ms-rail-bg: #050506;
+  --ms-rail-fg: #ffffff;
+  --ms-rail-fg-2: #a3a7ae;
+  --ms-rail-hover: rgba(255,255,255,.08);
+  --ms-rail-line: rgba(255,255,255,.08);
   --ms-bg: #0f0f10;
   --ms-surface: #161719;
   --ms-surface-2: #26272b;
@@ -2107,6 +2119,11 @@ mark.ts-annot {
   --color-ms-line: var(--ms-line);
   --color-ms-border-input: var(--ms-border-input);
   --color-ms-scrim: var(--ms-scrim);
+  --color-ms-rail-bg: var(--ms-rail-bg);
+  --color-ms-rail-fg: var(--ms-rail-fg);
+  --color-ms-rail-fg-2: var(--ms-rail-fg-2);
+  --color-ms-rail-hover: var(--ms-rail-hover);
+  --color-ms-rail-line: var(--ms-rail-line);
   --color-ms-inverse-bg: var(--ms-inverse-bg);
   --color-ms-inverse-fg: var(--ms-inverse-fg);
   --color-ms-inverse-link: var(--ms-inverse-link);
@@ -2244,6 +2261,9 @@ mark.ts-annot {
   --animate-ms-sheet-out-bottom: ms-sheet-out-bottom 160ms var(--ms-ease-in) forwards;
   --animate-ms-sheet-in-right: ms-sheet-in-right 280ms var(--ms-ease-out) backwards;
   --animate-ms-sheet-out-right: ms-sheet-out-right 160ms var(--ms-ease-in) forwards;
+  /* The tablet's sub-category sheet comes out of the rail, on the left (Shell v0.4). */
+  --animate-ms-sheet-in-left: ms-sheet-in-left 280ms var(--ms-ease-out) backwards;
+  --animate-ms-sheet-out-left: ms-sheet-out-left 160ms var(--ms-ease-in) forwards;
   --animate-ms-dialog-in: ms-dialog-in var(--ms-dur-slow) var(--ms-ease-out) backwards;
   --animate-ms-dialog-out: ms-dialog-out var(--ms-dur-exit) var(--ms-ease-in) forwards;
   --animate-ms-scrim-in: ms-scrim-in var(--ms-dur-slow) var(--ms-ease-out) backwards;
@@ -2276,6 +2296,8 @@ mark.ts-annot {
   @keyframes ms-sheet-out-bottom { to { translate: 0 100%; } }
   @keyframes ms-sheet-in-right { from { translate: 100% 0; } }
   @keyframes ms-sheet-out-right { to { translate: 100% 0; } }
+  @keyframes ms-sheet-in-left { from { translate: -100% 0; } }
+  @keyframes ms-sheet-out-left { to { translate: -100% 0; } }
   @keyframes ms-dialog-in { from { opacity: 0; scale: .96; } }
   @keyframes ms-dialog-out { to { opacity: 0; scale: .96; } }
   @keyframes ms-scrim-in { from { opacity: 0; } }

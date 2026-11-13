@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Burst } from "../Burst";
 import { fetchLessonsToday, lessonsTodayKey } from "../lessonsToday";
 import { LessonsTimeline, LiveDot } from "./LessonsTimeline";
+import { sectionMark } from "./parts";
 
 const BADGE = "inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-[9px] text-[13px] font-semibold leading-none";
 
@@ -53,7 +54,7 @@ export function LessonsTodayCard({ style }: { style?: CSSProperties }) {
   const allMarked = Boolean(c) && !c?.not_marked && ended.length > 0 && ended.every((l) => l.register.taken);
 
   return (
-    <section className="animate-ms-card-in flex flex-col gap-3.5 rounded-ms-card bg-ms-card px-5 py-5 shadow-ms-1 sm:px-[22px]" style={style}>
+    <section {...sectionMark("Lessons today")} className="animate-ms-card-in flex flex-col gap-3.5 rounded-ms-card bg-ms-card px-5 py-5 shadow-ms-1 sm:px-[22px]" style={style}>
       <div className="flex flex-wrap items-center gap-2.5">
         <h2 className="text-ms-h text-ms-fg">Lessons today</h2>
         {c?.now ? (

@@ -33,7 +33,7 @@ function ReadOnlyBadge() {
  * the first item, arrows move, Escape closes and focus returns to the button. An auditor sees a
  * "Read-only" badge beside their name.
  */
-export function UserMenu({ me }: { me: MeLike }) {
+export function UserMenu({ me, variant = "bar" }: { me: MeLike; variant?: "bar" | "rail" }) {
   const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
@@ -100,19 +100,27 @@ export function UserMenu({ me }: { me: MeLike }) {
         aria-controls={open ? menuId : undefined}
         aria-label={[name, role, readOnly ? "read-only" : ""].filter(Boolean).join(", ")}
         onClick={() => setOpen((o) => !o)}
-        className="ms-transition flex min-h-11 items-center gap-2.5 rounded-full py-1 pl-1 pr-1 hover:bg-ms-surface-2 md:pr-2.5"
+        className={
+          variant === "rail"
+            ? "grid size-11 place-items-center rounded-full outline-none focus-visible:shadow-[0_0_0_2px_#7ea6f2]"
+            : "ms-transition flex min-h-11 items-center gap-2.5 rounded-full py-1 pl-1 pr-1 hover:bg-ms-surface-2 md:pr-2.5"
+        }
       >
-        <Avatar name={name || initials(me)} tone={avatarTone(me)} className="size-9 text-[13px]" />
-        <span className="hidden min-w-0 flex-col text-left leading-tight md:flex">
+        <Avatar
+          name={name || initials(me)}
+          tone={avatarTone(me)}
+          className={variant === "rail" ? "size-10 text-[14px] shadow-[0_0_0_2px_var(--ms-rail-bg),0_0_0_3.5px_var(--ms-rail-line)]" : "size-9 text-[13px]"}
+        />
+        <span className={variant === "rail" ? "hidden" : "hidden min-w-0 flex-col text-left leading-tight md:flex"}>
           <span className="max-w-[14rem] truncate text-[14px] font-semibold text-ms-fg">{name}</span>
           <span className="text-[12px] text-ms-fg-3">{role}</span>
         </span>
-        {readOnly ? (
+        {readOnly && variant === "bar" ? (
           <span className="hidden lg:inline-flex">
             <ReadOnlyBadge />
           </span>
         ) : null}
-        <Icon name="down" size="sm" className="hidden text-ms-fg-3 md:block" />
+        {variant === "bar" ? <Icon name="down" size="sm" className="hidden text-ms-fg-3 md:block" /> : null}
       </button>
 
       {mounted ? (
@@ -122,7 +130,10 @@ export function UserMenu({ me }: { me: MeLike }) {
           role="menu"
           aria-label="Account"
           onKeyDown={onMenuKey}
-          className={`${closing ? "animate-ms-dialog-out pointer-events-none" : "animate-ms-dialog-in"} absolute right-0 top-full z-50 mt-2 w-72 origin-top-right rounded-ms-pop border border-ms-border bg-ms-card p-1.5 shadow-ms-2`}
+          className={`${closing ? "animate-ms-dialog-out pointer-events-none" : "animate-ms-dialog-in"} ${
+            // From the rail's bottom corner the menu opens to the right, its bottom on the avatar's.
+            variant === "rail" ? "bottom-0 left-full ml-3 origin-bottom-left" : "right-0 top-full mt-2 origin-top-right"
+          } absolute z-50 w-72 rounded-ms-pop border border-ms-border bg-ms-card p-1.5 text-ms-fg shadow-ms-2`}
         >
           <div role="none" className="flex flex-col gap-1 px-2.5 pb-2.5 pt-2">
             <span className="truncate text-[15px] font-semibold text-ms-fg">{name}</span>

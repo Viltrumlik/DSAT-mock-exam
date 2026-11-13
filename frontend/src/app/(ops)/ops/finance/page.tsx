@@ -10,6 +10,7 @@ import {
   currentMonth,
 } from "@/features/finance/FinancePanels";
 import { useFinanceSummary } from "@/features/finance/financeHooks";
+import { FINANCE_TAB_IDS, FINANCE_TAB_LABEL, FINANCE_TAB_NEEDS, type FinanceTab } from "@/features/finance/financeTabs";
 import { LedgerPanel } from "@/features/finance/LedgerPanel";
 import { P } from "@/features/ops/permissions";
 import { useCan } from "@/features/ops/useCan";
@@ -25,15 +26,13 @@ import { useCan } from "@/features/ops/useCan";
  * and Back land on the tab, and the month picker beside them where a tab belongs to a month.
  */
 
-type FinanceTab = "overview" | "debtors" | "payments" | "ledger";
-const TAB_IDS: readonly FinanceTab[] = ["overview", "debtors", "payments", "ledger"];
-const LABEL: Record<FinanceTab, string> = { overview: "Overview", debtors: "Debtors", payments: "Payments", ledger: "Ledger" };
-/** The overview is the month's totals (`view_reports`); the other tabs are the money itself (`view_money`). */
-const NEEDS: Record<FinanceTab, string> = { overview: P.viewReports, debtors: P.viewMoney, payments: P.viewMoney, ledger: P.viewMoney };
+const TAB_IDS = FINANCE_TAB_IDS;
+const LABEL = FINANCE_TAB_LABEL;
+const NEEDS = FINANCE_TAB_NEEDS;
 
 function FinancePage() {
   const can = useCan();
-  const tabIds = TAB_IDS.filter((id) => can(NEEDS[id]));
+  const tabIds = TAB_IDS.filter((id) => can(...NEEDS[id]));
   const [tab, setTab] = useTabParam(tabIds, tabIds[0] ?? "overview");
   const [month, setMonth] = useState(currentMonth);
   // The overview reads the same summary, so this is one request; it gives the Debtors tab its count.
@@ -54,6 +53,7 @@ function FinancePage() {
           idPrefix="finance"
           value={tab}
           onChange={setTab}
+          tree
           className="border-b-0"
           tabs={tabIds.map((id) => ({
             id,

@@ -14,7 +14,8 @@ export function openShortcuts(): void {
 const ROWS: { keys: string[]; what: string }[] = [
   { keys: ["⌘", "K"], what: "Search people, classes, questions and pages" },
   { keys: ["/"], what: "Search this list" },
-  { keys: ["["], what: "Collapse or expand the sidebar" },
+  { keys: ["["], what: "Collapse or pin the panel" },
+  { keys: ["G", "…"], what: "Jump to a category: G, then the letter the panel shows" },
   { keys: ["?"], what: "This list" },
   { keys: ["Esc"], what: "Close what is open" },
 ];
