@@ -130,6 +130,10 @@ def manageable_users_queryset(actor):
     scoped actor lacks a valid domain subject.
     """
     qs = User.objects.all().order_by("-date_joined")
+    # The desk reads the whole directory (``view_people``: the administrator, the accountant). Writes are
+    # gated apart: user management (``manage_users``) and the account-rank rule.
+    if authorize(actor, acc_const.PERM_VIEW_PEOPLE):
+        return _prefetch_user_directory(qs)
     probe = actor_subject_probe_for_domain_perm(actor)
     if not probe:
         return qs.none()
@@ -1442,6 +1446,13 @@ def _console_refusal_for(request, user):
     if console == "main" and role in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
         return Response(
             {"detail": "Teachers must sign in at the Teacher Portal: https://teacher.mastersat.uz"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    # The admin panel is the desk's (owner, 2026-11-12: teachers do not enter it). Their classes,
+    # homework and grading are all in the Teacher Portal.
+    if console == "admin" and role in acc_const.SUBJECT_SCOPED_STAFF_ROLES and not getattr(user, "is_superuser", False):
+        return Response(
+            {"detail": "The admin panel is for the desk. Teachers sign in at the Teacher Portal: https://teacher.mastersat.uz"},
             status=status.HTTP_403_FORBIDDEN,
         )
     if refused_on_native_app(request, user):

@@ -189,6 +189,20 @@ class SubdomainAPIGuardMiddleware:
             return JsonResponse(
                 {"detail": "You cannot access admin console."}, status=403
             )
+        # Teachers and support teachers work in the Teacher Portal, never the admin panel (owner,
+        # 2026-11-12). /api/users/me/ stays open so the console can see who they are and send them there;
+        # sign-in on this host refuses them too (users.views._console_refusal_for).
+        if (
+            kind == "admin"
+            and role in acc_const.SUBJECT_SCOPED_STAFF_ROLES
+            and not getattr(u, "is_superuser", False)
+            and path != "/api/users/me/"
+        ):
+            exams_metric_incr("forbidden_admin_route_total")
+            return JsonResponse(
+                {"detail": "The admin panel is for the desk. Your classes are in the Teacher Portal.", "code": "teacher_portal"},
+                status=403,
+            )
         if kind == "questions" and role in acc_const.LEARNER_ROLES:
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(

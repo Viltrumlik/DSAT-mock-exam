@@ -309,7 +309,8 @@ def person_core(user, request=None) -> dict:
         "groups": _groups(user) if learner else [],
         "past_groups": _past_groups(user) if learner else [],
         "open_classes": _open_classes(user) if learner else [],
-        "lcup": _lcup(user) if learner else None,
+        # lc-up's money (balance, monthly cost, payments): ``view_money``'s alone.
+        "lcup": _lcup(user) if learner and authorize(getattr(request, "user", None), C.PERM_VIEW_MONEY) else None,
         "duplicates": same_name_accounts(user) if learner else [],
         "staff": None if learner else _staff(user),
     }

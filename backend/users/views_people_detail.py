@@ -12,7 +12,7 @@ from django.db import transaction
 
 from access import constants as C
 from access.models import Permission, UserPermission
-from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess, Requires
+from access.permissions import HasManageUsers, Requires
 from access.services import get_effective_permission_codenames, normalized_role, role_permissions_matrix
 
 from . import admin_audit
@@ -29,7 +29,7 @@ def scoped_person(request, pk):
 
 
 class PersonDetailView(APIView):
-    permission_classes = [HasManageUsersOrAssignTestAccess]
+    permission_classes = [Requires(C.PERM_VIEW_PEOPLE)]
 
     def get(self, request, pk: int):
         user = scoped_person(request, pk)
@@ -71,7 +71,7 @@ class PersonParentView(APIView):
 
 
 class PersonPartView(APIView):
-    permission_classes = [HasManageUsersOrAssignTestAccess]
+    permission_classes = [Requires(C.PERM_VIEW_PEOPLE)]
 
     def get(self, request, pk: int, part: str):
         build = PARTS.get(part)

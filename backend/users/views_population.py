@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access import constants as C
-from access.permissions import HasManageUsersOrAssignTestAccess
+from access.permissions import Requires
 
 from . import audience as A
 from .models import RoleChange, User
@@ -18,7 +18,7 @@ from .models import RoleChange, User
 class PopulationView(APIView):
     """``GET /api/users/admin/population/`` — the same audience as the users list."""
 
-    permission_classes = [HasManageUsersOrAssignTestAccess]
+    permission_classes = [Requires(C.PERM_VIEW_PEOPLE)]
 
     def get(self, request):
         now = timezone.now()

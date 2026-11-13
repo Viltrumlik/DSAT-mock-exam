@@ -1102,11 +1102,25 @@ class ClassroomViewSet(ModelViewSet):
 
     # PATCH calls partial_update → UpdateModelMixin.update(partial=True). Override update only
     # (do not delegate update → partial_update or recursion occurs).
+    #: Archiving a class, moving it to another branch and changing its teacher are the desk's
+    #: (``manage_groups``, the console's governance endpoints); the class's teacher edits the rest here.
+    DESK_FIELDS = ("is_active", "branch", "teacher")
+
     def update(self, request, *args, **kwargs):
         classroom = self.get_object()
         denied = self._ensure_class_admin(classroom)
         if denied is not None:
             return denied
+        if not authorize(request.user, acc_const.PERM_MANAGE_GROUPS):
+            # A form may post these whole: only a value that would change is refused.
+            probe = self.get_serializer(classroom, data=request.data, partial=kwargs.get("partial", False))
+            probe.is_valid(raise_exception=True)
+            changed = [f for f in self.DESK_FIELDS if f in probe.validated_data and probe.validated_data[f] != getattr(classroom, f)]
+            if changed:
+                return Response(
+                    {"detail": "Archiving a class, its branch and its teacher are changed from the admin panel.", "fields": changed},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         response = super().update(request, *args, **kwargs)
         self._sync_teacher_membership(self.get_object())
         return response
