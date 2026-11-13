@@ -55,6 +55,33 @@ This document describes **who can do what** across subdomains. Frontend UI may h
   - If actor is `teacher`: must be teacher-owner of classroom and set subject must match teacher domain
 - **Canonical host**: `admin.*` (also callable from other hosts if not blocked by guard)
 
+### CRM (ops console) actions
+
+Each CRM endpoint names one permission with `access.permissions.Requires(...)` and never compares role names
+(`access/tests/test_crm_permissions.py` walks every URL and fails on a CRM view without one). The permissions
+take no subject. A role is a preset of them (`access.services._role_permissions_map`), and a per-person tick
+(`access.UserPermission`) adds or removes one for one person; a removal wins over the role.
+
+| Permission | Endpoints |
+|---|---|
+| `view_people` | `/api/classes/admin/classrooms/**` reads, `/api/classes/admin/lessons/today/`, parents' contacts on person pages |
+| `edit_people` | `/api/users/admin/people/<id>/parent/` |
+| `view_money` | `/api/billing/` reads, `/api/lcup/finance/debtors/` and `payments/` |
+| `take_payment` / `adjust_balance` | `/api/billing/accounts/<id>/entries/` (a payment or refund / an adjustment) |
+| `void_payment` | `/api/billing/entries/<id>/void/` |
+| `set_prices` | `/api/billing/seats/<id>/price/`, a class's `monthly_price` |
+| `debt_freeze` | `/api/lcup/finance/exempt/<id>/` |
+| `enroll` | seat add, new student, `activate`; `/api/lcup/followups/`; adding a student without a join code |
+| `manage_seats` | seat freeze, return, move, leave, fix-date |
+| `manage_groups` | a class's teacher, owner, support teachers, details, deletion, Telegram removal |
+| `send_sms` / `send_debt_sms` | `/api/sms/admin/**` / its `debt/` routes; the journal opens to either |
+| `view_reports` | `/api/lcup/finance/summary/` |
+| `events_shop` | staff views of shop, events, stories, Telegram posts; somebody else's coins |
+| `lcup_tools` | the rest of `/api/lcup/` except a learner's own claim and finance |
+| `manage_staff` | none yet (the Staff page) |
+
+Presets today: `super_admin` holds everything, `admin` every CRM permission, every other role none.
+
 ### Telemetry counters (Prometheus via `/api/exams/prometheus/`)
 - **`exams_wrong_staff_endpoint_total`**: increments when global staff on `admin/questions` consoles hits `GET /api/exams/` instead of `/api/exams/admin/tests/`.\n+- **`exams_forbidden_admin_route_total`**: increments when host guard blocks console-only routes (students hitting `admin/questions`, blocked assessments authoring on `admin.*`, etc.).
 

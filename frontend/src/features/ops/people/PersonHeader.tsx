@@ -170,6 +170,7 @@ function meta(person: PersonCore): ReactNode[] {
 export function PersonHeader({
   person,
   busy,
+  mayChange,
   onToggleFreeze,
   onOneTimePassword,
   onRevoke,
@@ -178,6 +179,8 @@ export function PersonHeader({
 }: {
   person: PersonCore;
   busy: boolean;
+  /** Whether the viewer may change this account (`mayChangeAccount`): without it the actions are not offered. */
+  mayChange: boolean;
   onToggleFreeze: () => void;
   onOneTimePassword: () => void;
   onRevoke: () => void;
@@ -193,24 +196,26 @@ export function PersonHeader({
       badges={badges(person)}
       meta={meta(person)}
       actions={
-        <>
-          {canOtp ? (
-            <Button icon="key" disabled={busy || !person.phone} title={person.phone ? undefined : "Add a phone number first"} onClick={onOneTimePassword}>
-              One-time password
+        !mayChange ? undefined : (
+          <>
+            {canOtp ? (
+              <Button icon="key" disabled={busy || !person.phone} title={person.phone ? undefined : "Add a phone number first"} onClick={onOneTimePassword}>
+                One-time password
+              </Button>
+            ) : null}
+            <Button variant={person.is_frozen ? "primary" : "secondary"} icon="snow" disabled={busy} onClick={onToggleFreeze}>
+              {person.is_frozen ? "Unfreeze" : "Freeze"}
             </Button>
-          ) : null}
-          <Button variant={person.is_frozen ? "primary" : "secondary"} icon="snow" disabled={busy} onClick={onToggleFreeze}>
-            {person.is_frozen ? "Unfreeze" : "Freeze"}
-          </Button>
-          <Menu
-            label="More actions"
-            disabled={busy}
-            items={[
-              { label: "Log out everywhere", icon: "logout", onSelect: onRevoke },
-              { label: "Delete account", icon: "trash", danger: true, onSelect: onDelete },
-            ]}
-          />
-        </>
+            <Menu
+              label="More actions"
+              disabled={busy}
+              items={[
+                { label: "Log out everywhere", icon: "logout", onSelect: onRevoke },
+                { label: "Delete account", icon: "trash", danger: true, onSelect: onDelete },
+              ]}
+            />
+          </>
+        )
       }
       facts={facts(person)}
       notice={notice(person)}

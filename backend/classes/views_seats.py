@@ -1,5 +1,6 @@
-"""The seat actions on a class's /ops page (``classes.seat_actions``). Admins only; under /api/classes/, which the
-admin console already allows. A refusal comes back in words, and while lc-up runs as its usual 409."""
+"""The seat actions on a class's /ops page (``classes.seat_actions``). Taking a seat and trial → paid need
+``enroll``; every other move needs ``manage_seats``. Under /api/classes/, which the admin console already allows.
+A refusal comes back in words, and while lc-up runs as its usual 409."""
 
 from __future__ import annotations
 
@@ -11,7 +12,8 @@ from rest_framework import status as http
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from billing.views import IsGlobalAdmin
+from access import constants as C
+from access.permissions import Requires, require
 from users.changelist import to_int
 from users.people_detail import _live_seats, display_name, iso, section_of
 
@@ -61,7 +63,7 @@ def _answer(call, *, status=http.HTTP_200_OK, **extra) -> Response:
 class SeatAddView(APIView):
     """``POST …/seats/`` {user_id, status, date}: an existing student takes a seat."""
 
-    permission_classes = [IsGlobalAdmin]
+    permission_classes = [Requires(C.PERM_ENROLL)]
 
     def post(self, request, pk: int):
         room = get_object_or_404(Classroom, pk=pk)
@@ -88,7 +90,7 @@ class SeatNewStudentView(APIView):
     """``POST …/seats/new-student/`` {full_name, phone, parent_name?, parent_phone?, status, date}: someone new to the
     centre. A phone that is someone else's stops it with a 409 naming them."""
 
-    permission_classes = [IsGlobalAdmin]
+    permission_classes = [Requires(C.PERM_ENROLL)]
 
     def post(self, request, pk: int):
         from lcup.accounts import PhoneTaken
@@ -119,15 +121,17 @@ class SeatNewStudentView(APIView):
 
 
 class SeatActionView(APIView):
-    """``POST …/seats/<user_id>/<action>/`` {date, to_classroom?}: activate, freeze, return, move, leave, fix-date."""
+    """``POST …/seats/<user_id>/<action>/`` {date, to_classroom?}: activate, freeze, return, move, leave, fix-date.
+    Activate (trial → paid) is enrolling; the rest need ``manage_seats``."""
 
-    permission_classes = [IsGlobalAdmin]
+    permission_classes = [Requires(C.PERM_ENROLL, C.PERM_MANAGE_SEATS)]
 
     ACTIONS = {
         "activate": S.activate, "freeze": S.freeze, "return": S.return_seat, "leave": S.leave, "fix-date": S.fix_date,
     }
 
     def post(self, request, pk: int, user_id: int, action: str):
+        require(request.user, C.PERM_ENROLL if action == "activate" else C.PERM_MANAGE_SEATS)
         room = get_object_or_404(Classroom, pk=pk)
         user = get_object_or_404(User, pk=user_id)
         today, data = _today(), request.data

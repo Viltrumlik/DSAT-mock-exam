@@ -7,6 +7,8 @@ import { Drawer } from "./consoleKit";
 import { dateTime, kindLabel, money } from "./format";
 import { OperatorDot, StatusPill, TONE_COLOR, toneOf } from "./look";
 import { CAPTION_TEXT, TEXT_BUTTON } from "./panelKit";
+import { P } from "@/features/ops/permissions";
+import { useCan } from "@/features/ops/useCan";
 import type { SmsMessage } from "./smsApi";
 import { campaignHref } from "./smsTabs";
 import { useConfirmedResend } from "./UndeliveredList";
@@ -43,6 +45,7 @@ function Step({ label, at, done, color }: { label: string; at: string | null; do
 
 export function MessageDrawer({ m, pricePerPart, onClose }: { m: SmsMessage; pricePerPart: number; onClose: () => void }) {
   const resend = useConfirmedResend(pricePerPart);
+  const mayResend = useCan()(P.sendSms);
   const tone = toneOf(m.status);
   // The step says how it ended; the pill under the timeline says why.
   const ending = tone === "delivered" ? "Delivered" : tone === "pending" ? "Waiting for the operator" : "Not delivered";
@@ -66,7 +69,7 @@ export function MessageDrawer({ m, pricePerPart, onClose }: { m: SmsMessage; pri
 
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill message={m} />
-          {m.can_resend ? (
+          {mayResend && m.can_resend ? (
             <button
               type="button"
               className={TEXT_BUTTON}

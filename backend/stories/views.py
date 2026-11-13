@@ -2,7 +2,7 @@
 
 Staff-only endpoints carry their guard in the view, not on the nav item that reaches them —
 the codebase has no per-nav-item role gating, so hiding an ops page is decoration. This is the
-same `_StaffView` shape `shop.views` uses, and it reuses `rewards.views._is_reward_staff`
+same `_StaffView` shape `shop.views` uses, and it reuses `rewards.views.REWARD_STAFF`
 rather than restating who counts as staff: whoever may retune the shop and move a student's
 coins is exactly who may put a notice on the school's front page. A teacher is deliberately
 not on that list — a story is school-wide, and a classroom teacher publishing to every student
@@ -22,7 +22,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from rewards.views import _is_reward_staff
+from rewards.views import REWARD_STAFF
 
 from .models import Story
 from .serializers import StorySerializer, StoryWriteSerializer
@@ -33,13 +33,8 @@ RAIL_LIMIT = 30
 
 
 class _StaffView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [REWARD_STAFF]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
-
-    def _guard(self, request):
-        if not _is_reward_staff(request.user):
-            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
-        return None
 
 
 class StoriesView(APIView):
@@ -67,9 +62,6 @@ class AdminStoriesView(_StaffView):
     """Every story including the hidden, the scheduled and the expired — and a way to post one."""
 
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         stories = list(Story.objects.all())
         # One query answers "which of these is up right now?" for the whole page, so the
         # console can label each row without the serializer re-deriving the publish window
@@ -82,9 +74,6 @@ class AdminStoriesView(_StaffView):
         })
 
     def post(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         serializer = StoryWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         story = serializer.save(created_by=request.user)
@@ -96,9 +85,6 @@ class AdminStoriesView(_StaffView):
 
 class AdminStoryDetailView(_StaffView):
     def patch(self, request, story_id):
-        denied = self._guard(request)
-        if denied:
-            return denied
         story = get_object_or_404(Story, pk=story_id)
         serializer = StoryWriteSerializer(story, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -112,9 +98,6 @@ class AdminStoryDetailView(_StaffView):
         )
 
     def delete(self, request, story_id):
-        denied = self._guard(request)
-        if denied:
-            return denied
         story = get_object_or_404(Story, pk=story_id)
         # A hard delete, unlike `shop.AdminItemDetailView.delete`, which has to hide an item
         # instead because orders point at it. Nothing points at a story: there is no per-

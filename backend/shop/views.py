@@ -2,7 +2,7 @@
 
 Staff-only endpoints carry their guard in the view, not on the nav item that reaches them —
 the codebase has no per-nav-item role gating, so hiding an ops page is decoration. Same shape
-as `rewards.views._is_reward_staff`, and it reuses that function rather than restating who
+as `rewards.views.REWARD_STAFF`, and it reuses that gate rather than restating who
 counts as staff: whoever may move a student's coins is exactly who may run the shop those
 coins are spent in.
 """
@@ -19,7 +19,7 @@ from rest_framework.views import APIView
 
 from rewards import coins as coins_service
 from rewards import strikes as strikes_service
-from rewards.views import _is_reward_staff
+from rewards.views import REWARD_STAFF
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import services
@@ -31,13 +31,8 @@ HISTORY_LIMIT = 50
 
 
 class _StaffView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [REWARD_STAFF]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
-
-    def _guard(self, request):
-        if not _is_reward_staff(request.user):
-            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
-        return None
 
 
 class ShopView(APIView):
@@ -107,18 +102,12 @@ class AdminItemsView(_StaffView):
     """List every item including the hidden ones, and add new ones."""
 
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         items = ShopItem.objects.all()
         return Response({
             "items": ShopItemSerializer(items, many=True, context={"request": request}).data
         })
 
     def post(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         serializer = ShopItemWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         item = serializer.save(created_by=request.user)
@@ -130,9 +119,6 @@ class AdminItemsView(_StaffView):
 
 class AdminItemDetailView(_StaffView):
     def patch(self, request, item_id):
-        denied = self._guard(request)
-        if denied:
-            return denied
         item = get_object_or_404(ShopItem, pk=item_id)
         serializer = ShopItemWriteSerializer(item, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -140,9 +126,6 @@ class AdminItemDetailView(_StaffView):
         return Response(ShopItemSerializer(item, context={"request": request}).data)
 
     def delete(self, request, item_id):
-        denied = self._guard(request)
-        if denied:
-            return denied
         item = get_object_or_404(ShopItem, pk=item_id)
         if item.orders.exists():
             # PROTECT would raise anyway; this turns a 500 into an answer. Delisting keeps
@@ -161,9 +144,6 @@ class AdminOrdersView(_StaffView):
     """The fulfilment queue. Defaults to what still needs handing over."""
 
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
         status_filter = (request.query_params.get("status") or ShopOrder.STATUS_PENDING).upper()
         orders = ShopOrder.objects.select_related("item", "student")
         if status_filter != "ALL":
@@ -177,9 +157,6 @@ class AdminOrdersView(_StaffView):
 
 class AdminOrderSettleView(_StaffView):
     def post(self, request, order_id):
-        denied = self._guard(request)
-        if denied:
-            return denied
         action = str(request.data.get("action") or "fulfil").lower()
         note = (request.data.get("note") or "").strip()
         try:

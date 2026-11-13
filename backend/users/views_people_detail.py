@@ -9,8 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access import constants as C
-from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess
-from billing.views import IsGlobalAdmin
+from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess, Requires
 
 from . import admin_audit
 from .account_rank import OWNER_ONLY, may_change_account
@@ -36,11 +35,11 @@ class PersonDetailView(APIView):
 
 
 class PersonParentView(APIView):
-    """PATCH {parent_name?, parent_phone?} — whom to call about this learner. Admins only, unlike the rest of the
-    page. Its own endpoint because ``UserUpdateView``'s serializer also answers teachers. The log names the fields
-    and not the values, since the person's History is read more widely than the details are."""
+    """PATCH {parent_name?, parent_phone?} — whom to call about this learner. ``edit_people`` only, unlike the rest
+    of the page. Its own endpoint because ``UserUpdateView``'s serializer also answers teachers. The log names the
+    fields and not the values, since the person's History is read more widely than the details are."""
 
-    permission_classes = [IsGlobalAdmin]
+    permission_classes = [Requires(C.PERM_EDIT_PEOPLE)]
 
     def patch(self, request, pk: int):
         user = scoped_person(request, pk)

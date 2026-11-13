@@ -7,6 +7,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ADMIN_ME, TEACHER_ME } from "@/features/ops/testing/me";
 
 import type { ClassroomCore } from "../classroomsApi";
 
@@ -25,7 +26,7 @@ const classes = {
   removeSupportTeacher: vi.fn(),
 };
 let search = "";
-let me: Record<string, unknown> | null = { role: "admin", permissions: [] };
+let me: Record<string, unknown> | null = { role: "admin", permissions: ADMIN_ME.permissions };
 
 vi.mock("@/lib/api", () => ({
   default: { get: (...a: unknown[]) => get(...a) },
@@ -162,7 +163,7 @@ beforeEach(() => {
   routerPush.mockReset();
   for (const fn of Object.values(classes)) fn.mockReset();
   search = "";
-  me = { role: "admin", permissions: [] };
+  me = { role: "admin", permissions: ADMIN_ME.permissions };
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -352,7 +353,7 @@ describe("the header", () => {
     expect(link?.getAttribute("href")).toBe("/ops/sms/campaigns/new?classroom=45");
     act(() => root.unmount());
     root = createRoot(host);
-    me = { role: "teacher", permissions: [] };
+    me = { role: "teacher", permissions: TEACHER_ME.permissions };
     route(core());
     await renderPage();
     expect([...header().querySelectorAll("a")].some((a) => a.textContent === "Message class")).toBe(false);

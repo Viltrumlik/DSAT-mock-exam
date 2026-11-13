@@ -28,6 +28,47 @@ ALL_PERMISSION_CODENAMES = (
     PERM_VIEW_DASHBOARD,
 )
 
+# The CRM's permissions: one per desk action (plan 2026-11-12-crm-roles §1). None of them takes a subject, so
+# ``authorize(user, PERM_…)`` needs no ``subject=``. CRM endpoints check them with
+# ``access.permissions.Requires`` and never compare role names.
+PERM_VIEW_PEOPLE = "view_people"  # groups and their lessons, parents' contacts; no money
+PERM_EDIT_PEOPLE = "edit_people"  # a learner's details and parent contact
+PERM_VIEW_MONEY = "view_money"  # balances, debtors, payments, the ledger
+PERM_TAKE_PAYMENT = "take_payment"  # enter a payment or a refund
+PERM_VOID_PAYMENT = "void_payment"  # void an entered row; the reason stays
+PERM_ADJUST_BALANCE = "adjust_balance"  # adjustment rows
+PERM_SET_PRICES = "set_prices"  # group price, personal price
+PERM_DEBT_FREEZE = "debt_freeze"  # never freeze this student for debt, or freeze as usual again
+PERM_ENROLL = "enroll"  # new student, add to a group, trial → paid, the trials list
+PERM_MANAGE_SEATS = "manage_seats"  # freeze, return, move, leave, fix a date
+PERM_MANAGE_GROUPS = "manage_groups"  # a class's teacher, details, archive, delete, Telegram group
+PERM_SEND_SMS = "send_sms"  # campaigns, resend, templates, settings
+PERM_SEND_DEBT_SMS = "send_debt_sms"  # debt reminders only
+PERM_VIEW_REPORTS = "view_reports"  # money totals
+PERM_EVENTS_SHOP = "events_shop"  # events, shop, Telegram posts, stories, somebody else's coins
+PERM_MANAGE_STAFF = "manage_staff"  # staff accounts, roles, per-person ticks (the Staff page uses it)
+PERM_LCUP_TOOLS = "lcup_tools"  # lc-up pairing, sync, review; goes at the cutover
+
+CRM_PERMISSION_CODENAMES = (
+    PERM_VIEW_PEOPLE,
+    PERM_EDIT_PEOPLE,
+    PERM_VIEW_MONEY,
+    PERM_TAKE_PAYMENT,
+    PERM_VOID_PAYMENT,
+    PERM_ADJUST_BALANCE,
+    PERM_SET_PRICES,
+    PERM_DEBT_FREEZE,
+    PERM_ENROLL,
+    PERM_MANAGE_SEATS,
+    PERM_MANAGE_GROUPS,
+    PERM_SEND_SMS,
+    PERM_SEND_DEBT_SMS,
+    PERM_VIEW_REPORTS,
+    PERM_EVENTS_SHOP,
+    PERM_MANAGE_STAFF,
+    PERM_LCUP_TOOLS,
+)
+
 # ``authorize(..., subject=<platform>)`` MUST receive a valid platform subject for these
 # (MATH / READING_WRITING), except super_admin / Django superuser (wildcard).
 PERMISSIONS_REQUIRING_PLATFORM_SUBJECT = frozenset(

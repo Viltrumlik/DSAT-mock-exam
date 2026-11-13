@@ -22,7 +22,8 @@ from rest_framework.response import Response
 
 from access import constants as acc_const
 from access.models import UserAccess
-from .capabilities import classroom_capabilities, is_global_admin
+from access.services import authorize
+from .capabilities import classroom_capabilities
 from .models import Classroom, ClassroomMembership
 from .serializers import ClassroomMembershipSerializer
 from .views_rankings import _ClassroomScopedView, _display_name
@@ -114,9 +115,9 @@ class ClassroomRosterView(_ClassroomScopedView):
 
     def post(self, request, classroom_pk):
         classroom = self.get_classroom()
-        # Code-less enrollment is an admin governance action. Teachers still use the join code,
+        # Code-less enrollment is the desk's (``enroll``). Teachers still use the join code,
         # matching the existing People-page UX (no teacher-side add-student control exists).
-        if not is_global_admin(request.user):
+        if not authorize(request.user, acc_const.PERM_ENROLL):
             return Response(
                 {"detail": "Only administrators can add a student without a join code."},
                 status=http.HTTP_403_FORBIDDEN,

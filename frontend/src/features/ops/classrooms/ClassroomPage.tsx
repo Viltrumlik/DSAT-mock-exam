@@ -27,8 +27,7 @@ import { listHrefFrom } from "@/features/ops/changelist/backLink";
 import { peopleKeys } from "@/features/ops/changelist/peopleApi";
 import { activeTab, panelId, tabHref, tabId, type Tab } from "@/features/ops/detail/tabs";
 import { Tabs } from "@/features/console/ui";
-import { isScopedOpsAdmin } from "@/features/ops/adminScope";
-import { isOpsSuperAdmin } from "@/features/ops/shell/opsNav";
+import { P, holds } from "@/features/ops/permissions";
 import { useMe } from "@/hooks/useMe";
 import { ConfirmDialog } from "@/features/ops/people/ConfirmDialog";
 import { Fieldset, LINK_CLASS, Pill, Row } from "@/features/ops/people/Fieldset";
@@ -131,7 +130,8 @@ export function ClassroomPage({ id }: { id: number }) {
   const queryClient = useQueryClient();
   const { push } = useToast();
   const { me } = useMe();
-  const canMessage = isOpsSuperAdmin(me) || isScopedOpsAdmin(me);
+  const canMessage = holds(me, P.sendSms);
+  const canManage = holds(me, P.manageGroups);
   const query = useClassroom(id);
   const room = query.data;
   const backHref = listHrefFrom(search, "/ops/classrooms");
@@ -227,6 +227,7 @@ export function ClassroomPage({ id }: { id: number }) {
         room={room}
         busy={busy}
         canMessage={canMessage}
+        canManage={canManage}
         onToggleActive={() => void setActive(!room.is_active)}
         onDelete={() => setConfirmDelete(true)}
       >
@@ -249,7 +250,7 @@ export function ClassroomPage({ id }: { id: number }) {
           </div>
         ) : null}
         {tab === "students" ? <StudentsSection room={room} onChanged={refresh} /> : null}
-        {tab === "staff" ? <StaffSection room={room} onChanged={refresh} /> : null}
+        {tab === "staff" ? <StaffSection room={room} onChanged={refresh} canManage={canManage} /> : null}
         {tab === "attendance" ? <ClassAttendanceSection id={id} /> : null}
         {tab === "homework" ? <ClassHomeworkSection id={id} /> : null}
         {tab === "history" ? <ClassHistorySection id={id} /> : null}

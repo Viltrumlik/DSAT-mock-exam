@@ -16,7 +16,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
 }));
 vi.mock("@/components/AuthGuard", () => ({ default: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
-vi.mock("@/hooks/useMe", () => ({ useMe: () => ({ me: { role: "super_admin" } }) }));
+vi.mock("@/hooks/useMe", () => ({ useMe: () => ({ me: { role: "super_admin", permissions: ["*"] } }) }));
 vi.mock("@/features/ops/shell/OpsShell", () => ({
   OpsShell: ({ children }: { children: React.ReactNode }) => <div className="ms">{children}</div>,
 }));

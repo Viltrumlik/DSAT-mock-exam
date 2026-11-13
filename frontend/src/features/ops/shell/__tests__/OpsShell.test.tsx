@@ -7,6 +7,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ADMIN_ME, TEACHER_ME } from "@/features/ops/testing/me";
 
 const logout = vi.fn();
 const get = vi.fn();
@@ -27,8 +28,9 @@ const { BUILDER_CONSOLE } = await import("@/features/builderShell/builderNav");
 const { Tabs } = await import("@/features/console/ui");
 
 const SUPER_ADMIN = { id: 1, role: "super_admin", permissions: ["*"], first_name: "Aziza", last_name: "Karimova" };
-const ADMIN = { id: 2, role: "admin", permissions: [], username: "desk1" };
-const TEACHER = { id: 3, role: "teacher", permissions: [], username: "t1" };
+// As GET /users/me/ gives them since the CRM permissions: the administrator holds every CRM permission, a teacher none.
+const ADMIN = { id: 2, role: "admin", permissions: ADMIN_ME.permissions, username: "desk1" };
+const TEACHER = { id: 3, role: "teacher", permissions: TEACHER_ME.permissions, username: "t1" };
 
 const FOLLOWUPS_URL = "/lcup/followups/";
 const followups = (pending: number) => ({
@@ -530,10 +532,10 @@ describe("the Trials count's request", () => {
     expect(get).toHaveBeenCalledWith(FOLLOWUPS_URL);
   });
 
-  it("does not go out for a teacher, who sees the page but not the API", async () => {
-    render("/ops/trials", TEACHER);
+  it("neither shows nor fetches it for a teacher, who holds no enroll", async () => {
+    render("/ops", TEACHER);
     await settle();
-    expect(panel()!.querySelector('a[href="/ops/trials"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/ops/trials"]')).toBeNull();
     expect(followupCalls()).toHaveLength(0);
   });
 

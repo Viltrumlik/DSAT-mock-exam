@@ -24,7 +24,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status as http
 
 from access import constants as acc_const
-from access.services import is_global_scope_staff, normalized_role
+from access.permissions import Requires
+from access.services import is_global_scope_staff
 # Reused rather than re-implemented: it already handles the nullable username/email pair
 # that made the classroom board's sort blow up on two not-started students.
 from classes.views_rankings import _display_name
@@ -91,12 +92,9 @@ class RewardRulesView(APIView):
         return Response({"rules": RewardRuleSerializer(rules, many=True).data})
 
 
-def _is_reward_staff(user) -> bool:
-    """Who may move somebody else's coins: global staff only, never a teacher."""
-    return bool(getattr(user, "is_superuser", False)) or normalized_role(user) in (
-        acc_const.ROLE_SUPER_ADMIN,
-        acc_const.ROLE_ADMIN,
-    )
+#: Who may move somebody else's coins, and run the shop, events, stories and Telegram posts those coins and
+#: notices belong to: ``events_shop``, which no teacher holds. Shared by those consoles' staff views.
+REWARD_STAFF = Requires(acc_const.PERM_EVENTS_SHOP, message="Staff only.")
 
 
 class MyWalletView(APIView):
@@ -327,11 +325,9 @@ class WalletAdminView(APIView):
     thing a member of staff chose and the ledger recorded.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [REWARD_STAFF]
 
     def get(self, request, student_id):
-        if not _is_reward_staff(request.user):
-            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
         student = get_object_or_404(get_user_model(), pk=student_id)
         wallet = coins_service.wallet_for(student)
         return Response({
@@ -349,8 +345,6 @@ class WalletAdminView(APIView):
         })
 
     def post(self, request, student_id):
-        if not _is_reward_staff(request.user):
-            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
         student = get_object_or_404(get_user_model(), pk=student_id)
 
         if str(request.data.get("action") or "").lower() == "convert":

@@ -9,6 +9,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The console reads permissions (plan 2026-11-12-crm-roles): an administrator's.
+const session = vi.hoisted(() => ({ me: undefined as Record<string, unknown> | undefined }));
+vi.mock("@/hooks/useMe", async (importOriginal) => {
+  const { ADMIN_ME } = await import("@/features/ops/testing/me");
+  return { ...(await importOriginal<typeof import("@/hooks/useMe")>()), useMe: () => ({ me: session.me ?? ADMIN_ME }) };
+});
+
 import type { PersonCore } from "../personApi";
 
 const get = vi.fn();
@@ -688,5 +695,40 @@ describe("the header", () => {
     route(core({ one_time_password: { expires_at: "2026-10-29T10:00:00+05:00", used: false, locked: false } }));
     await renderPage();
     expect(host.textContent).toContain("One-time password · until Oct 29, 2026");
+  });
+});
+
+describe("what the viewer's permissions open", () => {
+  afterEach(() => {
+    session.me = undefined;
+  });
+
+  const roleSelect = () =>
+    [...host.querySelectorAll("select")].find((sel) => [...sel.options].some((o) => o.value === "student"));
+
+  it("gives an administrator no way to change another administrator's account", async () => {
+    route(core({ ...STAFF, role: "admin", subject: "" }));
+    await renderPage("staff");
+    expect(button(host, "Freeze")).toBeUndefined();
+    expect(button(host, "Save")).toBeUndefined();
+    expect(roleSelect()?.disabled).toBe(true);
+  });
+
+  it("offers an administrator every role but the owner's", async () => {
+    route(core());
+    await renderPage();
+    const values = [...(roleSelect()?.options ?? [])].map((o) => o.value);
+    expect(values).toContain("admin");
+    expect(values).not.toContain("super_admin");
+    expect(button(host, "Freeze")).toBeDefined();
+    expect(host.textContent).toContain("Payments");
+  });
+
+  it("shows a viewer without view_money no Payments tab, and a teacher no account actions", async () => {
+    session.me = { role: "teacher", permissions: ["assign_access", "view_dashboard"] };
+    route(core());
+    await renderPage();
+    expect(host.textContent).not.toContain("Payments");
+    expect(button(host, "Freeze")).toBeUndefined();
   });
 });

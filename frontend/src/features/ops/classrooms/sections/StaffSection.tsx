@@ -40,7 +40,8 @@ function PersonCard({ id, name, badge, children }: { id: number; name: string; b
   );
 }
 
-export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChanged: () => void }) {
+/** `canManage`: whoever holds `manage_groups` changes the teacher and the support teachers; others only read. */
+export function StaffSection({ room, onChanged, canManage }: { room: ClassroomCore; onChanged: () => void; canManage: boolean }) {
   const managed = room.lcup?.managed ?? false;
   const { push } = useToast();
   const [busy, setBusy] = useState(false);
@@ -53,6 +54,7 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
     queryFn: async () =>
       (await api.get<PeoplePage<StaffRow>>("/users/admin/people/", { params: { section: "staff", page_size: 100 } })).data
         .results,
+    enabled: canManage,
   });
   const teachers = (staff.data ?? []).filter(
     (s) => s.role === "teacher" && coversSubject(s.subject, domain) && s.id !== room.teacher?.id,
@@ -98,7 +100,7 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
           No teacher{managed ? " — Set in lc-up" : ""}
         </p>
       )}
-      {managed ? null : (
+      {managed || !canManage ? null : (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[16px] border border-dashed border-ms-border-strong p-3">
           <label htmlFor={`teacher-${room.id}`} className="text-[14px] text-ms-fg-2">
             Change teacher
@@ -154,25 +156,27 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
         <ul className="grid gap-3 sm:grid-cols-2">
           {room.tas.map((t) => (
             <PersonCard key={t.id} id={t.id} name={t.name} badge={<Pill>Support teacher</Pill>}>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void act(
-                    () => classesApi.removeSupportTeacher(room.id, t.id),
-                    `Removed ${t.name} from ${room.name}.`,
-                    "Could not remove the support teacher.",
-                  )
-                }
-                className={SMALL_BUTTON}
-              >
-                Remove
-              </button>
+              {canManage ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void act(
+                      () => classesApi.removeSupportTeacher(room.id, t.id),
+                      `Removed ${t.name} from ${room.name}.`,
+                      "Could not remove the support teacher.",
+                    )
+                  }
+                  className={SMALL_BUTTON}
+                >
+                  Remove
+                </button>
+              ) : null}
             </PersonCard>
           ))}
         </ul>
       )}
-      {supports.length > 0 ? (
+      {canManage && supports.length > 0 ? (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[16px] border border-dashed border-ms-border-strong p-3">
           <label htmlFor={`support-${room.id}`} className="inline-flex items-center gap-2 text-[14px] text-ms-fg-2">
             <UserPlus aria-hidden className="h-4 w-4 text-ms-primary-text" />

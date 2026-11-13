@@ -10,8 +10,10 @@ import {
   currentMonth,
 } from "@/features/finance/FinancePanels";
 import { useFinanceSummary } from "@/features/finance/financeHooks";
-import { FINANCE_TAB_IDS, FINANCE_TAB_LABEL, type FinanceTab } from "@/features/finance/financeTabs";
+import { FINANCE_TAB_IDS, FINANCE_TAB_LABEL, FINANCE_TAB_NEEDS, type FinanceTab } from "@/features/finance/financeTabs";
 import { LedgerPanel } from "@/features/finance/LedgerPanel";
+import { P } from "@/features/ops/permissions";
+import { useCan } from "@/features/ops/useCan";
 
 /**
  * Money as lc-up keeps it: who owes and how much, who is frozen for it (or exempt from the
@@ -26,12 +28,15 @@ import { LedgerPanel } from "@/features/finance/LedgerPanel";
 
 const TAB_IDS = FINANCE_TAB_IDS;
 const LABEL = FINANCE_TAB_LABEL;
+const NEEDS = FINANCE_TAB_NEEDS;
 
 function FinancePage() {
-  const [tab, setTab] = useTabParam(TAB_IDS, "overview");
+  const can = useCan();
+  const tabIds = TAB_IDS.filter((id) => can(...NEEDS[id]));
+  const [tab, setTab] = useTabParam(tabIds, tabIds[0] ?? "overview");
   const [month, setMonth] = useState(currentMonth);
   // The overview reads the same summary, so this is one request; it gives the Debtors tab its count.
-  const summary = useFinanceSummary(month);
+  const summary = useFinanceSummary(month, can(P.viewReports));
   const debtors = summary.data?.debtors;
   return (
     <div className="flex flex-col gap-4">
@@ -50,7 +55,7 @@ function FinancePage() {
           onChange={setTab}
           tree
           className="border-b-0"
-          tabs={TAB_IDS.map((id) => ({
+          tabs={tabIds.map((id) => ({
             id,
             label: LABEL[id],
             count: id === "debtors" && debtors ? debtors : undefined,

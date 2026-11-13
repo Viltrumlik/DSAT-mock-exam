@@ -14,7 +14,7 @@ import { canOpenConsole, consoleHref } from "@/features/console/consoleHref";
 import { PageOutlineProvider, usePublishedTabs } from "@/features/console/pageOutline";
 import { displayName, roleLabel } from "@/features/console/person";
 import { useRecent } from "@/features/console/recent";
-import { isScopedOpsAdmin } from "@/features/ops/adminScope";
+import { P, holds } from "@/features/ops/permissions";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
 import { cn } from "@/lib/cn";
 import { OpsTopBar } from "./OpsTopBar";
@@ -26,7 +26,6 @@ import {
   categoryOf,
   crumbsFor,
   firstHref,
-  isOpsSuperAdmin,
   visibleCategories,
   type ConsoleCategory,
   type ConsoleConfig,
@@ -118,11 +117,12 @@ function Frame({
   const recent = useRecent(scope);
 
   // ── Numbers: the Trials count, and "Needs you" (the bell's) for the flags and the page counts ───────────────────
+  // The Trials count — only for whoever holds `enroll`, the one permission its API answers.
   const wantsTrials = useMemo(() => categories.some((c) => c.groups.some((g) => g.items.some((i) => i.countKey === "trials"))), [categories]);
-  const followups = useLcupFollowups({ enabled: wantsTrials && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)) });
+  const followups = useLcupFollowups({ enabled: wantsTrials && holds(me, P.enroll) });
   const keyed = useMemo(() => ({ trials: followups.data?.pending ?? 0 }), [followups.data]);
-  // Admin's only for super admins and admins, whom every one of its endpoints admits; the Builder's for everyone in it.
-  const adminAttention = useAdminAttention(config.temp === "admin" && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)));
+  // Admin's asks each source only of whoever holds its permission; the Builder's for everyone in it.
+  const adminAttention = useAdminAttention(config.temp === "admin" ? me : null);
   // On Studio home the bell shares the page's summary (same key, recents included); elsewhere a stable one.
   const builderAttention = useBuilderAttention(config.temp === "builder" && Boolean(me), pathname === "/builder");
   const attention = config.temp === "builder" ? builderAttention : adminAttention;

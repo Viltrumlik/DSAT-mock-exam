@@ -28,7 +28,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from access import constants as acc_const
-from access.services import covers_domain_subject, normalized_role
+from access.permissions import require
+from access.services import authorize, covers_domain_subject, normalized_role
 from access.engine.classroom_service import ClassroomAccessService
 from access.resources import RT_MIDTERM
 from exams.models import MockExam
@@ -195,22 +196,15 @@ class AssignMidtermView(_ClassroomScopedView):
 
 
 class _AdminClassroomGovernanceView(APIView):
-    """Base for admin-only governance actions on a classroom."""
+    """Base for the desk's governance actions on a classroom: its teacher, owner, support teachers, details
+    and deletion. They need ``manage_groups``, which no teacher holds: a classroom role never opens them, or
+    teachers could reassign each other's classes. Checked in the handler rather than in
+    ``permission_classes`` because the support-teacher list is also read by the class's teaching team."""
 
     permission_classes = [IsAuthenticated]
 
     def _guard(self, request) -> bool:
-        # Governance (assign-teacher / transfer-ownership) is ADMIN-only by spec.
-        # NOTE: do NOT use ``is_global_admin`` here — it treats any LMS-staff user
-        # (including ordinary teachers, whose ``is_admin`` is permission-based) as a
-        # global admin, which would let teachers reassign/transfer each other's
-        # classrooms. Restrict strictly to super_admin / admin / Django superuser.
-        u = request.user
-        if not u or not getattr(u, "is_authenticated", False):
-            return False
-        if getattr(u, "is_superuser", False):
-            return True
-        return str(getattr(u, "role", "") or "").strip().lower() in ("super_admin", "admin")
+        return authorize(request.user, acc_const.PERM_MANAGE_GROUPS)
 
     def _teacher_user(self, user_id):
         user = get_object_or_404(User, pk=user_id)
@@ -504,6 +498,10 @@ class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
         terms = (classroom.monthly_price, classroom.lesson_days)
         serializer = ClassroomAdminSerializer(classroom, data=payload, partial=True)
         serializer.is_valid(raise_exception=True)
+        # The form posts every field whole, so only a price that would change asks for ``set_prices``.
+        new_price = serializer.validated_data.get("monthly_price", classroom.monthly_price)
+        if new_price != classroom.monthly_price:
+            require(request.user, acc_const.PERM_SET_PRICES)
         serializer.save()
         classroom.refresh_from_db()
         if terms != (classroom.monthly_price, classroom.lesson_days):

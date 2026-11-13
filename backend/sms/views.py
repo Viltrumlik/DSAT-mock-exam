@@ -28,12 +28,11 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework import status as http
-from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access import constants as C
-from classes.capabilities import is_global_admin
+from access.permissions import Requires
 from classes.models import Branch, Classroom, ClassroomMembership
 from core.csv_download import csv_download_response
 from lcup.conf import debt_freeze_day, debt_freeze_enabled
@@ -67,13 +66,21 @@ MESSAGE_SEARCH = [
 _iso_field = serializers.DateTimeField()
 
 
-class IsGlobalAdmin(BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and is_global_admin(request.user))
-
-
 class _AdminView(APIView):
-    permission_classes = [IsGlobalAdmin]
+    """Campaigns, resend, templates, settings: ``send_sms``. The debt reminders need ``send_debt_sms``, and
+    the journal opens to either (``_JournalView``)."""
+
+    permission_classes = [Requires(C.PERM_SEND_SMS)]
+
+
+class _JournalView(APIView):
+    """What was sent and how it went: whoever sends anything reads it."""
+
+    permission_classes = [Requires(C.PERM_SEND_SMS, C.PERM_SEND_DEBT_SMS)]
+
+
+class _DebtView(APIView):
+    permission_classes = [Requires(C.PERM_SEND_DEBT_SMS)]
 
 
 def _refused(code: str, detail: str, status=http.HTTP_400_BAD_REQUEST) -> Response:
@@ -348,7 +355,7 @@ def _start_of_today(now):
     return timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-class OverviewView(_AdminView):
+class OverviewView(_JournalView):
     def get(self, request):
         now = timezone.now()
         row = switchboard.current()
@@ -401,7 +408,7 @@ class OverviewView(_AdminView):
         })
 
 
-class StatsView(_AdminView):
+class StatsView(_JournalView):
     """Delivery, cost and the debt warning's effect over ``from``..``to`` (``stats``); with
     ``campaign``, only that campaign's messages, and no debt warning's effect."""
 
@@ -563,7 +570,7 @@ def _journal(params):
     return qs.order_by("-created_at", "-id"), filters
 
 
-class MessageListView(_AdminView):
+class MessageListView(_JournalView):
     def get(self, request):
         params = request.query_params
         qs, filters = _journal(params)
@@ -606,7 +613,7 @@ def _reason(msg) -> str:
     return f"{text} · try {msg.attempts}" if msg.attempts > 1 else text
 
 
-class MessageExportView(_AdminView):
+class MessageExportView(_JournalView):
     """The journal as the address filters it — every page, at most EXPORT_MAX rows — as a CSV Excel opens."""
 
     def get(self, request):
@@ -677,7 +684,7 @@ class ResendView(_AdminView):
 STUDENT_MESSAGES_MAX = 200
 
 
-class StudentMessagesView(_AdminView):
+class StudentMessagesView(_JournalView):
     """One student's SMS, newest first (the person page's SMS tab), with a count by status of all of them."""
 
     def get(self, request, user_id):
@@ -847,7 +854,7 @@ class SettingsView(_AdminView):
 # ── the debt warning ──────────────────────────────────────────────────────
 
 
-class DebtPreviewView(_AdminView):
+class DebtPreviewView(_DebtView):
     def get(self, request):
         now = timezone.now()
         raw = (request.query_params.get("day") or "").strip()
@@ -891,7 +898,7 @@ def _queue_send_now():
     tasks.debt_warnings_now.delay()
 
 
-class DebtSendNowView(_AdminView):
+class DebtSendNowView(_DebtView):
     def post(self, request):
         if not warnings.switched_on():
             return _refused("disabled", "The debt warning is switched off (here, in the server's settings or the freeze).")
@@ -903,7 +910,7 @@ class DebtSendNowView(_AdminView):
         return Response({"queued": True}, status=http.HTTP_202_ACCEPTED)
 
 
-class DebtRunsView(_AdminView):
+class DebtRunsView(_DebtView):
     def get(self, request):
         return Response({"runs": warnings.runs()})
 

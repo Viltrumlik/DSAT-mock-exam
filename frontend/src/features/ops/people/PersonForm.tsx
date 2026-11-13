@@ -4,7 +4,7 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { UserRound } from "lucide-react";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
-import { CANONICAL_ROLES, ROLE_LABELS, requiresSubject } from "@/lib/roles";
+import { CANONICAL_ROLES, ROLE_LABELS, requiresSubject, type CanonicalRole } from "@/lib/roles";
 import { buttonClass, inputShell } from "@/features/console/ui";
 import { Fieldset } from "./Fieldset";
 import type { PersonCore } from "./personApi";
@@ -61,7 +61,19 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: () => void }) {
+/** `readOnly`: the viewer may not change this account (features/ops/permissions `mayChangeAccount`); the details still show. */
+export function PersonForm({
+  person,
+  onSaved,
+  readOnly = false,
+  roles = CANONICAL_ROLES,
+}: {
+  person: PersonCore;
+  onSaved: () => void;
+  readOnly?: boolean;
+  /** The roles this viewer may give (`rolesYouMayGive`); the account's own role is always listed. */
+  roles?: readonly CanonicalRole[];
+}) {
   const uid = useId();
   const { push } = useToast();
   const [firstName, setFirstName] = useState(person.first_name);
@@ -119,16 +131,17 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
       <form onSubmit={(e) => void save(e)} className="space-y-6" noValidate>
         <Group title="Name">
           <Field id={id("first")} label="First name" hint={locked.has("first_name") ? FROM_LCUP : undefined}>
-            <input id={id("first")} value={firstName} disabled={locked.has("first_name")} onChange={(e) => setFirstName(e.target.value)} className={input(locked.has("first_name"))} />
+            <input id={id("first")} value={firstName} disabled={readOnly || locked.has("first_name")} onChange={(e) => setFirstName(e.target.value)} className={input(locked.has("first_name"))} />
           </Field>
           <Field id={id("last")} label="Last name" hint={locked.has("last_name") ? FROM_LCUP : undefined}>
-            <input id={id("last")} value={lastName} disabled={locked.has("last_name")} onChange={(e) => setLastName(e.target.value)} className={input(locked.has("last_name"))} />
+            <input id={id("last")} value={lastName} disabled={readOnly || locked.has("last_name")} onChange={(e) => setLastName(e.target.value)} className={input(locked.has("last_name"))} />
           </Field>
         </Group>
 
         <Group title="Sign-in and contact">
           <Field id={id("username")} label="Username">
             <input
+              disabled={readOnly}
               id={id("username")}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -144,7 +157,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
             <input
               id={id("phone")}
               type="tel"
-              disabled={locked.has("phone_number")}
+              disabled={readOnly || locked.has("phone_number")}
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               autoComplete="off"
@@ -154,6 +167,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
           <div className="sm:col-span-2">
             <Field id={id("email")} label="Email">
               <input
+                disabled={readOnly}
                 id={id("email")}
                 type="email"
                 value={email}
@@ -167,8 +181,8 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
 
         <Group title="Role">
           <Field id={id("role")} label="Role">
-            <select id={id("role")} value={role} onChange={(e) => setRole(e.target.value)} className={input()}>
-              {CANONICAL_ROLES.map((r) => (
+            <select disabled={readOnly} id={id("role")} value={role} onChange={(e) => setRole(e.target.value)} className={input()}>
+              {(roles.includes(person.role as CanonicalRole) ? roles : [...roles, person.role as CanonicalRole]).map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABELS[r]}
                 </option>
@@ -179,7 +193,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
               changing its role here, so this field appearing is the only way to give one a subject. */}
           {needsSubject ? (
             <Field id={id("subject")} label="Subject">
-              <select id={id("subject")} value={subject} onChange={(e) => setSubject(e.target.value)} className={input()}>
+              <select disabled={readOnly} id={id("subject")} value={subject} onChange={(e) => setSubject(e.target.value)} className={input()}>
                 <option value="">— select —</option>
                 <option value="math">Mathematics</option>
                 <option value="english">English / Reading & Writing</option>
@@ -199,13 +213,11 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
           ) : (
             <span />
           )}
-          <button
-            type="submit"
-            disabled={saving}
-            className={buttonClass({ variant: "primary" })}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
+          {readOnly ? null : (
+            <button type="submit" disabled={saving} className={buttonClass({ variant: "primary" })}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          )}
         </div>
       </form>
     </Fieldset>
