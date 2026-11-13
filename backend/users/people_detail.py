@@ -292,6 +292,8 @@ def person_core(user, request=None) -> dict:
         "subject": user.subject or "",
         "status": status_of(user, section),
         "is_frozen": user.is_frozen,
+        # False once the owner turned the account's access off (an employee who left).
+        "is_active": user.is_active,
         "frozen_reason": _freeze_reason(user),
         "date_joined": iso(user.date_joined),
         "last_seen": iso(last_seen_map([user.pk]).get(user.pk)),

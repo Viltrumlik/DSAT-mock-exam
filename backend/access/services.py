@@ -93,9 +93,24 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
                 constants.PERM_CREATE_CLASSROOM,
                 constants.PERM_MANAGE_TESTS,
                 constants.PERM_SUBMIT_TEST,
-                # Every CRM permission: exactly what the role-name checks gave an admin before
-                # (plan 2026-11-12-crm-roles, PR 2). No other role holds one.
-                *constants.CRM_PERMISSION_CODENAMES,
+                # Every CRM permission but managing staff, which is the owner's alone
+                # (plan 2026-11-12-crm-roles: PR 2 gave the set, PR 4 took manage_staff away).
+                *constants.TICKABLE_PERMISSION_CODENAMES,
+            }
+        ),
+        constants.ROLE_ACCOUNTANT: frozenset(
+            {
+                # Staff (is_admin), so the console treats them as staff; nothing else outside the CRM.
+                constants.PERM_VIEW_DASHBOARD,
+                constants.PERM_VIEW_PEOPLE,
+                constants.PERM_VIEW_MONEY,
+                constants.PERM_TAKE_PAYMENT,
+                constants.PERM_VOID_PAYMENT,
+                constants.PERM_ADJUST_BALANCE,
+                constants.PERM_SET_PRICES,
+                constants.PERM_DEBT_FREEZE,
+                constants.PERM_VIEW_REPORTS,
+                constants.PERM_SEND_DEBT_SMS,
             }
         ),
         constants.ROLE_TEACHER: frozenset(

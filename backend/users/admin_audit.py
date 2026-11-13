@@ -14,7 +14,19 @@ ADMIN_FREEZE = "admin_freeze"
 ADMIN_UNFREEZE = "admin_unfreeze"
 ADMIN_REVOKE_SESSIONS = "admin_revoke_sessions"
 ADMIN_ONE_TIME_PASSWORD = "admin_one_time_password"
-ADMIN_EVENT_TYPES = (ADMIN_UPDATE, ADMIN_FREEZE, ADMIN_UNFREEZE, ADMIN_REVOKE_SESSIONS, ADMIN_ONE_TIME_PASSWORD)
+ADMIN_PERMISSIONS = "admin_permissions"
+ADMIN_ACCESS_OFF = "admin_access_off"
+ADMIN_ACCESS_ON = "admin_access_on"
+ADMIN_EVENT_TYPES = (
+    ADMIN_UPDATE,
+    ADMIN_FREEZE,
+    ADMIN_UNFREEZE,
+    ADMIN_REVOKE_SESSIONS,
+    ADMIN_ONE_TIME_PASSWORD,
+    ADMIN_PERMISSIONS,
+    ADMIN_ACCESS_OFF,
+    ADMIN_ACCESS_ON,
+)
 
 #: The fields whose before and after are kept.
 TRACKED = ("first_name", "last_name", "username", "email", "phone_number", "role", "subject", "is_frozen")

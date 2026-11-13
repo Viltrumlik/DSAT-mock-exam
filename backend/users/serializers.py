@@ -692,6 +692,7 @@ class UserSerializer(serializers.ModelSerializer):
         acc_const.ROLE_TEST_ADMIN: 3,
         acc_const.ROLE_TEST_AUDITOR: 3,
         acc_const.ROLE_ADMIN: 3,
+        acc_const.ROLE_ACCOUNTANT: 3,
         acc_const.ROLE_SUPER_ADMIN: 4,
     }
 
@@ -724,6 +725,11 @@ class UserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"role": "You cannot assign a role higher than your own."}
                 )
+            # Giving a staff role, or taking one away, is managing staff: the owner's (``manage_staff``).
+            current = normalized_role(instance) if instance is not None else None
+            touches_staff = rc not in acc_const.LEARNER_ROLES or (current and current not in acc_const.LEARNER_ROLES)
+            if rc != current and touches_staff and not authorize(actor, acc_const.PERM_MANAGE_STAFF):
+                raise serializers.ValidationError({"role": "Only the owner gives or takes away a staff role."})
             adom = user_domain_subject(actor)
             if adom and normalized_role(actor) == acc_const.ROLE_TEACHER:
                 incoming = (self.initial_data or {}).get("subject")

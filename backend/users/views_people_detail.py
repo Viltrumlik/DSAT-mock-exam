@@ -8,11 +8,15 @@ from __future__ import annotations
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.db import transaction
+
 from access import constants as C
+from access.models import Permission, UserPermission
 from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess, Requires
+from access.services import get_effective_permission_codenames, normalized_role, role_permissions_matrix
 
 from . import admin_audit
-from .account_rank import OWNER_ONLY, may_change_account
+from .account_rank import OWNER_ONLY, account_rank, is_staff_account, may_change_account
 from .models import RefreshSession
 from .people_detail import person_core
 from .people_parts import PARTS
@@ -137,3 +141,120 @@ class PersonOneTimePasswordView(APIView):
         # The code is the phone's last four digits — on the admin's screen already; returned so the
         # page can say exactly what to tell the student.
         return Response({"login": claim.phone, "code": claim.phone[-4:], "expires_at": iso(claim.expires_at)})
+
+
+# ── staff: per-person permissions and access (plan 2026-11-12-crm-roles, PR 4; the owner's alone) ──────────
+
+
+def _is_owner_account(user) -> bool:
+    return account_rank(user) >= account_rank_of_owner()
+
+
+def account_rank_of_owner() -> int:
+    from .serializers import UserSerializer
+
+    return UserSerializer._ROLE_RANK[C.ROLE_SUPER_ADMIN]
+
+
+def permissions_state(user) -> dict:
+    """The role's preset and the owner's ticks, over the permissions a tick may move."""
+    preset = role_permissions_matrix().get(normalized_role(user), frozenset())
+    ticks = {
+        row.permission.codename: row.granted
+        for row in UserPermission.objects.filter(user=user, permission__codename__in=C.TICKABLE_PERMISSION_CODENAMES)
+        .select_related("permission")
+    }
+    effective = get_effective_permission_codenames(user)
+    return {
+        "role": user.role,
+        "tickable": list(C.TICKABLE_PERMISSION_CODENAMES),
+        "preset": [code for code in C.TICKABLE_PERMISSION_CODENAMES if code in preset],
+        "ticks": ticks,
+        "effective": [code for code in C.TICKABLE_PERMISSION_CODENAMES if code in effective or C.WILDCARD in effective],
+    }
+
+
+class PersonPermissionsView(APIView):
+    """GET / PUT a staff person's permissions. PUT ``{"ticks": {codename: true | false | null}}``: true gives one the
+    role does not, false takes one the role gives, null goes back to the role's preset. A tick equal to the preset
+    is not stored. Never the owner's account, a learner's, or ``manage_staff``."""
+
+    permission_classes = [Requires(C.PERM_MANAGE_STAFF)]
+
+    def _target(self, request, pk):
+        user = scoped_person(request, pk)
+        if user is None:
+            return None, Response({"detail": "Not found."}, status=404)
+        if not is_staff_account(user) or _is_owner_account(user):
+            return None, Response({"detail": "Permissions are ticked for staff other than the owner."}, status=400)
+        return user, None
+
+    def get(self, request, pk: int):
+        user, refused = self._target(request, pk)
+        return refused or Response(permissions_state(user))
+
+    def put(self, request, pk: int):
+        user, refused = self._target(request, pk)
+        if refused:
+            return refused
+        ticks = request.data.get("ticks") if isinstance(request.data, dict) else None
+        if not isinstance(ticks, dict) or not ticks:
+            return Response({"detail": "Send ticks: {permission: true, false or null}."}, status=400)
+        unknown = sorted(code for code in ticks if code not in C.TICKABLE_PERMISSION_CODENAMES)
+        if unknown:
+            return Response({"detail": f"These cannot be ticked: {', '.join(unknown)}."}, status=400)
+        if any(value not in (True, False, None) for value in ticks.values()):
+            return Response({"detail": "Each tick is true, false or null."}, status=400)
+        preset = role_permissions_matrix().get(normalized_role(user), frozenset())
+        before = permissions_state(user)["ticks"]
+        with transaction.atomic():
+            for code, value in ticks.items():
+                permission, _ = Permission.objects.get_or_create(codename=code, defaults={"name": code})
+                if value is None or value == (code in preset):
+                    UserPermission.objects.filter(user=user, permission=permission).delete()
+                else:
+                    UserPermission.objects.update_or_create(user=user, permission=permission, defaults={"granted": value})
+        state = permissions_state(user)
+        changed = {code: state["ticks"].get(code) for code in ticks if before.get(code) != state["ticks"].get(code)}
+        if changed:
+            admin_audit.log_admin_action(
+                request=request, user_id=user.pk, event_type=admin_audit.ADMIN_PERMISSIONS, ticks=changed
+            )
+        return Response(state)
+
+
+class PersonAccessView(APIView):
+    """POST ``{"active": false}`` — turn off an employee's access: the account can no longer sign in, and every
+    device is signed out at once. ``{"active": true}`` turns it back on. Staff accounts only (a learner is frozen
+    instead), never your own."""
+
+    permission_classes = [Requires(C.PERM_MANAGE_STAFF)]
+
+    def post(self, request, pk: int):
+        from .views import _revoke_session_rows
+
+        user = scoped_person(request, pk)
+        if user is None:
+            return Response({"detail": "Not found."}, status=404)
+        active = request.data.get("active") if isinstance(request.data, dict) else None
+        if not isinstance(active, bool):
+            return Response({"detail": "Send active: true or false."}, status=400)
+        if user.pk == request.user.pk:
+            return Response({"detail": "Not your own account."}, status=400)
+        if not is_staff_account(user):
+            return Response({"detail": "A learner is frozen, not turned off."}, status=400)
+        if not may_change_account(request.user, user):
+            return Response({"detail": OWNER_ONLY}, status=403)
+        revoked = 0
+        if user.is_active != active:
+            user.is_active = active
+            user.save(update_fields=["is_active"])
+            if not active:
+                revoked = _revoke_session_rows(RefreshSession.objects.filter(user=user, revoked_at__isnull=True))
+            admin_audit.log_admin_action(
+                request=request,
+                user_id=user.pk,
+                event_type=admin_audit.ADMIN_ACCESS_ON if active else admin_audit.ADMIN_ACCESS_OFF,
+                sessions=revoked,
+            )
+        return Response({"active": user.is_active, "revoked": revoked})

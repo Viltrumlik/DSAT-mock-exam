@@ -1,8 +1,9 @@
 """Whose account an actor may change from the admin console (CRM roles, PR 1).
 
 The serializer already refuses to GIVE a role above the actor's own. These tests pin the other half:
-the account being CHANGED. An admin may change accounts ranked below their own (learners, teachers);
-only the owner (super admin or Django superuser) changes an owner's or another admin's account.
+the account being CHANGED. An admin may change accounts ranked below their own that are learners; staff
+(teachers included, since PR 4 of the CRM roles plan) and an owner's or another admin's account are the
+owner's (super admin or Django superuser) to change.
 """
 from __future__ import annotations
 
@@ -132,9 +133,8 @@ class AccountRankTests(TestCase):
         self.assertTrue(RefreshSession.objects.filter(refresh_jti="rank-owner-jti", revoked_at__isnull=True).exists())
 
     # ── What still works ──────────────────────────────────────────────────────────────────────────
-    def test_admin_still_manages_learners_and_teachers(self):
+    def test_admin_still_manages_learners(self):
         self.assertEqual(self._patch(self.admin, self.student, {"first_name": "Okay"}).status_code, 200)
-        self.assertEqual(self._patch(self.admin, self.teacher, {"first_name": "Okay"}).status_code, 200)
         self.client.force_authenticate(self.admin)
         res = self.client.post(reverse("users-admin-person-revoke", args=[self.student.pk]))
         self.assertEqual(res.status_code, 200, res.content)

@@ -5,9 +5,10 @@ account being CHANGED. Without it an admin could set the owner's password or pho
 delete them, or sign them out everywhere — any admin could make themselves owner.
 
 The rule: the owner (a super admin, or a Django superuser whatever its role string says) may change any
-account. Everyone else may change only accounts ranked strictly below their own — so an admin manages
-learners and teachers, never another admin, an owner, or their own account from the console (their own
-details live on their profile).
+account. Everyone else may change only accounts ranked strictly below their own, and a staff account only with
+``manage_staff`` (the owner's alone since PR 4 of plan 2026-11-12-crm-roles) — so an administrator manages
+learners, never staff, an owner, or their own account from the console (their own details live on their
+profile).
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from __future__ import annotations
 from rest_framework.exceptions import PermissionDenied
 
 from access import constants as C
-from access.services import normalized_role
+from access.services import authorize, normalized_role
 
 OWNER_ONLY = "Only the owner can change this account."
 
@@ -33,10 +34,17 @@ def account_rank(user) -> int:
     return ranks.get(normalized_role(user), 1)
 
 
+def is_staff_account(user) -> bool:
+    """Anyone but a learner. Staff accounts are managed by whoever holds ``manage_staff`` (the owner)."""
+    return bool(getattr(user, "is_superuser", False)) or normalized_role(user) not in C.LEARNER_ROLES
+
+
 def may_change_account(actor, target) -> bool:
     mine = account_rank(actor)
     if mine >= _ranks()[C.ROLE_SUPER_ADMIN]:
         return True
+    if is_staff_account(target) and not authorize(actor, C.PERM_MANAGE_STAFF):
+        return False  # staff are the owner's to manage (plan 2026-11-12-crm-roles, Q8)
     return account_rank(target) < mine
 
 
