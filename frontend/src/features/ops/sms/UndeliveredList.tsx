@@ -6,6 +6,8 @@ import { useToast } from "@/components/ui";
 import { dateTime, money } from "./format";
 import { OperatorDot, StatusPill } from "./look";
 import { LoadError, Loading, Section, TABLE, TD, TEXT_BUTTON, TH, TR, paidErrorText } from "./panelKit";
+import { P } from "@/features/ops/permissions";
+import { useCan } from "@/features/ops/useCan";
 import type { SmsMessage } from "./smsApi";
 import { useResendMessages, useSmsMessages } from "./smsHooks";
 
@@ -69,9 +71,12 @@ export function UndeliveredList({
   const list = useSmsMessages({ ...PAGE, filters });
   const resend = useConfirmedResend(pricePerPart);
   const [picked, setPicked] = useState<Set<number>>(new Set());
+  // Resending is a send (`send_sms`); whoever only sends debt warnings reads this list.
+  const mayResend = useCan()(P.sendSms);
+  const canResend = (m: SmsMessage) => mayResend && m.can_resend;
 
   const rows = list.data?.results ?? [];
-  const open = rows.filter((m) => m.can_resend);
+  const open = rows.filter(canResend);
   const chosen = open.filter((m) => picked.has(m.id));
   const send = (targets: SmsMessage[]) => resend.send(targets, () => setPicked(new Set()));
 
@@ -120,7 +125,7 @@ export function UndeliveredList({
                   <input
                     type="checkbox"
                     aria-label={`Select ${m.user?.name || m.phone}`}
-                    disabled={!m.can_resend}
+                    disabled={!canResend(m)}
                     checked={picked.has(m.id)}
                     onChange={() => toggle(m.id)}
                   />
@@ -136,7 +141,7 @@ export function UndeliveredList({
                 <td className={TD}><StatusPill message={m} /></td>
                 <td className={`${TD} text-ms-fg-3`}>{dateTime(m.created_at)}</td>
                 <td className={`${TD} text-right`}>
-                  {m.can_resend ? (
+                  {canResend(m) ? (
                     <button type="button" className={TEXT_BUTTON} disabled={resend.isPending} onClick={() => send([m])}>
                       Resend
                     </button>
@@ -157,7 +162,7 @@ export function UndeliveredList({
                 type="checkbox"
                 aria-label={`Select ${m.user?.name || m.phone} on a phone`}
                 className="mt-1"
-                disabled={!m.can_resend}
+                disabled={!canResend(m)}
                 checked={picked.has(m.id)}
                 onChange={() => toggle(m.id)}
               />

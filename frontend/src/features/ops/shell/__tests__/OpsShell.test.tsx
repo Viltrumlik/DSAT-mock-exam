@@ -6,6 +6,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ADMIN_ME, TEACHER_ME } from "@/features/ops/testing/me";
 
 const logout = vi.fn();
 const get = vi.fn();
@@ -23,8 +24,8 @@ const { OpsShell } = await import("../OpsShell");
 const { BUILDER_CONSOLE } = await import("@/features/builderShell/builderNav");
 
 const SUPER_ADMIN = { role: "super_admin", permissions: ["*"], first_name: "Aziza", last_name: "Karimova" };
-const ADMIN = { role: "admin", permissions: [], username: "desk1" };
-const TEACHER = { role: "teacher", permissions: [], username: "t1" };
+const ADMIN = { role: "admin", permissions: ADMIN_ME.permissions, username: "desk1" };
+const TEACHER = { role: "teacher", permissions: TEACHER_ME.permissions, username: "t1" };
 
 const FOLLOWUPS_URL = "/lcup/followups/";
 const followups = (pending: number) => ({
@@ -280,9 +281,9 @@ describe("OpsShell's Trials count", () => {
     expect(get).toHaveBeenCalledWith(FOLLOWUPS_URL);
   });
 
-  it("does not fetch it for a teacher, who sees the nav item but not the API", async () => {
+  it("neither shows nor fetches it for a teacher, who holds no enroll", async () => {
     await renderSettled("/ops", TEACHER);
-    expect(sidebar().querySelector('a[href="/ops/trials"]')).not.toBeNull();
+    expect(sidebar().querySelector('a[href="/ops/trials"]')).toBeNull();
     expect(followupCalls()).toHaveLength(0);
   });
 

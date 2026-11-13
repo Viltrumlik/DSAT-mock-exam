@@ -20,10 +20,13 @@ export function ParentCard({
   id,
   parent,
   onSaved,
+  readOnly = false,
 }: {
   id: number;
   parent: { name: string; phone: string };
   onSaved: () => void;
+  /** Without `edit_people` the parent's contact is shown, not changed. */
+  readOnly?: boolean;
 }) {
   const uid = useId();
   const { push } = useToast();
@@ -55,13 +58,13 @@ export function ParentCard({
             <label htmlFor={`${uid}-name`} className="block text-[14px] font-medium leading-5 text-ms-fg">
               Name
             </label>
-            <input id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" className={INPUT} />
+            <input disabled={readOnly} id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" className={INPUT} />
           </div>
           <div className="min-w-0 space-y-1.5">
             <label htmlFor={`${uid}-phone`} className="block text-[14px] font-medium leading-5 text-ms-fg">
               Phone
             </label>
-            <input id={`${uid}-phone`} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" className={INPUT} />
+            <input disabled={readOnly} id={`${uid}-phone`} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" className={INPUT} />
           </div>
         </div>
         <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -72,13 +75,11 @@ export function ParentCard({
           ) : (
             <span />
           )}
-          <button
-            type="submit"
-            disabled={saving}
-            className={buttonClass({ variant: "primary" })}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
+          {readOnly ? null : (
+            <button type="submit" disabled={saving} className={buttonClass({ variant: "primary" })}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          )}
         </div>
       </form>
     </Fieldset>

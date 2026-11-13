@@ -41,6 +41,8 @@ import {
   todayInTashkent,
 } from "./format";
 import { BOX, CAPTION_TEXT, LoadError, Loading, Section, TABLE, TD, TH, TR, errorText, paidErrorText } from "./panelKit";
+import { P } from "@/features/ops/permissions";
+import { useCan } from "@/features/ops/useCan";
 import type { EskizTemplate, SlotRole, SmsSettings, SmsSettingsPatch, TemplateSlot } from "./smsApi";
 import {
   DEBT_POLL_FOR_MS,
@@ -147,6 +149,7 @@ function TemplateChoice({
 function SettingsForm({ settings: s, usable }: { settings: SmsSettings; usable: EskizTemplate[] }) {
   const uid = useId();
   const update = useUpdateSmsSettings();
+  const maySave = useCan()(P.sendSms);
   const [enabled, setEnabled] = useState(s.debt_enabled);
   const [hour, setHour] = useState(s.debt_hour);
   const [warning, setWarning] = useState<Choice>({ id: s.warning_template_id, roles: s.warning_slots });
@@ -247,11 +250,14 @@ function SettingsForm({ settings: s, usable }: { settings: SmsSettings; usable: 
           />
         </div>
 
-        <div className="flex justify-end">
-          <Button size="sm" onClick={save} loading={update.isPending}>
-            Save
-          </Button>
-        </div>
+        {/* The debt warning's settings are the SMS settings: changing them is `send_sms`'s. */}
+        {maySave ? (
+          <div className="flex justify-end">
+            <Button size="sm" onClick={save} loading={update.isPending}>
+              Save
+            </Button>
+          </div>
+        ) : null}
       </div>
     </Section>
   );

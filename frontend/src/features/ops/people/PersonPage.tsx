@@ -8,6 +8,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
+import { useMe } from "@/hooks/useMe";
+import { P, holds, mayChangeAccount, rolesYouMayGive } from "@/features/ops/permissions";
 import { peopleKeys, type PeopleSection } from "@/features/ops/changelist/peopleApi";
 import { listHrefFrom } from "@/features/ops/changelist/backLink";
 import { formatDate, formatLastSeen } from "@/features/ops/users/peopleColumns";
@@ -79,6 +81,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
   const { push } = useToast();
   const query = usePerson(id);
   const person = query.data;
+  const { me } = useMe();
   const backHref = listHrefFrom(search, `/ops/${section}`);
   // Today's "Recently opened" (this browser only): the person moves to the front.
   useEffect(() => {
@@ -132,7 +135,12 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
   }
   if (!person || person.section !== section) return null;
 
-  const tabs = tabsFor(person);
+  // What the viewer may do here (features/ops/permissions): change this account, edit the parent, read the money
+  // and the SMS. The server refuses the rest; this keeps the page from offering it.
+  const mayChange = mayChangeAccount(me, person.role);
+  const tabs = tabsFor(person).filter(
+    (t) => (t.key !== "payments" || holds(me, P.viewMoney)) && (t.key !== "sms" || holds(me, P.sendSms, P.sendDebtSms)),
+  );
   const tab = activeTab(search, tabs);
   const openTab = (key: TabKey) =>
     router.replace(tabHref(`/ops/${section}/${id}`, new URLSearchParams(search.toString()), key), { scroll: false });
@@ -207,6 +215,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
       <PersonHeader
         person={person}
         busy={busy}
+        mayChange={mayChange}
         onToggleFreeze={() => void bulk(person.is_frozen ? "unfreeze" : "freeze")}
         onOneTimePassword={() => setDialog("otp")}
         onRevoke={() => setDialog("revoke")}
@@ -222,8 +231,16 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
             <SameNameNotice person={person} />
             <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               <div className="min-w-0 space-y-5">
-                <PersonForm key={person.id} person={person} onSaved={refresh} />
-                {person.parent ? <ParentCard key={`parent-${person.id}`} id={person.id} parent={person.parent} onSaved={refresh} /> : null}
+                <PersonForm key={person.id} person={person} onSaved={refresh} readOnly={!mayChange} roles={rolesYouMayGive(me)} />
+                {person.parent ? (
+                  <ParentCard
+                    key={`parent-${person.id}`}
+                    id={person.id}
+                    parent={person.parent}
+                    onSaved={refresh}
+                    readOnly={!holds(me, P.editPeople)}
+                  />
+                ) : null}
               </div>
               <SummaryCard person={person} />
             </div>
@@ -234,7 +251,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         {tab === "attendance" ? <AttendanceSection id={id} /> : null}
         {tab === "results" ? <ResultsSection id={id} section={section} target={person.sat.target_score} /> : null}
         {tab === "security" ? (
-          <SecuritySection id={id} person={person} onOneTimePassword={() => setDialog("otp")} />
+          <SecuritySection id={id} person={person} onOneTimePassword={mayChange ? () => setDialog("otp") : undefined} />
         ) : null}
         {tab === "sms" ? <SmsSection id={id} /> : null}
         {tab === "history" ? <HistorySection id={id} /> : null}
