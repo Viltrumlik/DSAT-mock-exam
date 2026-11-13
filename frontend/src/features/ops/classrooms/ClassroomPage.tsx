@@ -235,6 +235,7 @@ export function ClassroomPage({ id }: { id: number }) {
           label="Class sections"
           value={tab}
           onChange={openTab}
+          tree
           ids={{ tab: (key) => tabId("class", key), panel: (key) => panelId("class", key) }}
           tabs={TABS.map((t) => ({ id: t.key, label: t.label, count: counts[t.key]?.count, tone: counts[t.key]?.tone }))}
         />

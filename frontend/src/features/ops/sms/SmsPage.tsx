@@ -18,7 +18,6 @@ import { BellRing, FileText, Gauge, ScrollText, Send } from "lucide-react";
 import { Tabs } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { activeTab, panelId, tabId, type Tab } from "@/features/ops/detail/tabs";
-import { P } from "@/features/ops/permissions";
 import { useCan } from "@/features/ops/useCan";
 import { BalanceBanner } from "./BalanceBanner";
 import { CampaignsPanel } from "./CampaignsPanel";
@@ -26,24 +25,17 @@ import { DebtPanel } from "./DebtPanel";
 import { JournalPanel } from "./JournalPanel";
 import { OverviewPanel } from "./OverviewPanel";
 import { useSmsOverview } from "./smsHooks";
-import { smsTabHref, type SmsTab } from "./smsTabs";
+import { SMS_TAB_LABEL, SMS_TAB_NEEDS, smsTabHref, type SmsTab } from "./smsTabs";
 import { TemplatesPanel } from "./TemplatesPanel";
 
 const TABS: Tab<SmsTab>[] = [
-  { key: "overview", label: "Overview", icon: Gauge },
-  { key: "journal", label: "Journal", icon: ScrollText },
-  { key: "campaigns", label: "Campaigns", icon: Send },
-  { key: "debt", label: "Debt warnings", icon: BellRing },
-  { key: "templates", label: "Templates", icon: FileText },
+  { key: "overview", label: SMS_TAB_LABEL.overview, icon: Gauge },
+  { key: "journal", label: SMS_TAB_LABEL.journal, icon: ScrollText },
+  { key: "campaigns", label: SMS_TAB_LABEL.campaigns, icon: Send },
+  { key: "debt", label: SMS_TAB_LABEL.debt, icon: BellRing },
+  { key: "templates", label: SMS_TAB_LABEL.templates, icon: FileText },
 ];
-/** What each tab needs: the overview and journal open to anyone who sends; the debt warnings are `send_debt_sms`'s. */
-const NEEDS: Record<SmsTab, readonly string[]> = {
-  overview: [P.sendSms, P.sendDebtSms],
-  journal: [P.sendSms, P.sendDebtSms],
-  campaigns: [P.sendSms],
-  debt: [P.sendDebtSms],
-  templates: [P.sendSms],
-};
+const NEEDS = SMS_TAB_NEEDS;
 
 export function SmsPage() {
   // useSearchParams needs a Suspense boundary above it, or the production build's prerender fails.
@@ -77,6 +69,7 @@ function SmsPageInner() {
         label="SMS sections"
         value={tab}
         onChange={(key) => router.replace(smsTabHref(key), { scroll: false })}
+        tree
         ids={{ tab: (key) => tabId("sms", key), panel: (key) => panelId("sms", key) }}
         tabs={tabs.map((t) => ({ id: t.key, label: t.label }))}
       />

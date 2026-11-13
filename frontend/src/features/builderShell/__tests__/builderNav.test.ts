@@ -9,26 +9,53 @@ import { activeNavItem, sectionFor, visibleByRole } from "@/features/ops/shell/o
 import { qbChangeListQuery, QB_FILTER_KEYS } from "@/domains/questionBank/changelist";
 import { readChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import { ICON_NAMES } from "@/components/ui/Icon";
-import { BUILDER_CONSOLE, BUILDER_NAV_GROUPS, isBuilderEditorRoute } from "../builderNav";
+import { BUILDER_CATEGORIES, BUILDER_CONSOLE, BUILDER_NAV_GROUPS, isBuilderEditorRoute } from "../builderNav";
 
-const labels = (i: number) => BUILDER_NAV_GROUPS[i].items.map((item) => item.label);
 const active = (path: string) => activeNavItem(path, BUILDER_NAV_GROUPS)?.label ?? null;
 const section = (path: string) => sectionFor(path, BUILDER_CONSOLE.groups, BUILDER_CONSOLE.root);
 
-describe("BUILDER_NAV_GROUPS", () => {
-  it("keeps the builder's groups, with the clearer names and the old bank below the line", () => {
-    expect(BUILDER_NAV_GROUPS.map((g) => g.caption)).toEqual([null, "Learning", "Simulation", null]);
-    expect(labels(0)).toEqual(["Studio home"]);
-    expect(labels(1)).toEqual([
-      "Question bank",
-      "Assessments",
-      "Midterms",
-      "Vocabulary",
-      "Categories",
+describe("BUILDER_CATEGORIES", () => {
+  it("is the board's map: Home, Learning, Simulation, Archive — the same pages, names and hrefs", () => {
+    expect(BUILDER_CATEGORIES.map((c) => [c.label, c.letter])).toEqual([
+      ["Home", "H"],
+      ["Learning", "L"],
+      ["Simulation", "S"],
+      ["Archive", "A"],
     ]);
-    expect(labels(2)).toEqual(["Past papers", "Practice tests", "Full mocks"]);
-    expect(labels(3)).toEqual(["Old sets bank", "Archived"]);
-    expect(BUILDER_NAV_GROUPS[3].items[0].href).toBe("/builder/bank");
+    expect(BUILDER_CATEGORIES.map((c) => c.groups.map((g) => [g.caption, g.items.map((i) => i.label)]))).toEqual([
+      [[null, ["Studio home"]]],
+      [
+        ["Questions", ["Question bank"]],
+        ["Sets", ["Assessments", "Midterms", "Categories"]],
+        ["Words", ["Vocabulary"]],
+      ],
+      [
+        ["Real papers", ["Past papers"]],
+        ["Practice", ["Practice tests"]],
+        ["Timed exams", ["Full mocks"]],
+      ],
+      [
+        ["Retired", ["Archived"]],
+        ["Legacy", ["Old sets bank"]],
+      ],
+    ]);
+    expect(BUILDER_NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href)).sort()).toEqual(
+      [
+        "/builder",
+        "/builder/question-bank",
+        "/builder/sets",
+        "/builder/midterms",
+        "/builder/vocabulary",
+        "/builder/categories",
+        "/builder/pastpapers",
+        "/builder/practice-tests",
+        "/builder/full-mocks",
+        "/builder/bank",
+        "/builder/archived",
+      ].sort(),
+    );
+    // The Review queue and Imports stay removed (owner, 2026-11-12).
+    expect(BUILDER_NAV_GROUPS.flatMap((g) => g.items.map((i) => i.label))).not.toContain("Review queue");
   });
 
   it("draws every item with an icon from the design's set", () => {

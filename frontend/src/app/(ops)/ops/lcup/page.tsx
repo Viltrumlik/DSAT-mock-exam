@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Tabs, useTabParam } from "@/features/console/ui";
 import { AccountsPanel, ArchivePanel, AttendancePushesPanel, GroupsPanel, StatusPanel, StudentsPanel, TeachersPanel } from "@/features/lcup/LcupPanels";
 import { useLcupStatus } from "@/features/lcup/lcupHooks";
+import { LCUP_TAB_IDS, LCUP_TAB_LABEL, type LcupTab } from "@/features/lcup/lcupTabs";
 
 /**
  * The lc-up link: the centre's CRM is the master for groups and who is in them, and our classes
@@ -16,17 +17,8 @@ import { useLcupStatus } from "@/features/lcup/lcupHooks";
  * tab reads.
  */
 
-type LcupTab = "status" | "groups" | "students" | "teachers" | "accounts" | "attendance" | "archive";
-const TAB_IDS: readonly LcupTab[] = ["status", "groups", "students", "teachers", "accounts", "attendance", "archive"];
-const LABEL: Record<LcupTab, string> = {
-  status: "Status",
-  groups: "Groups",
-  students: "Students",
-  teachers: "Teachers",
-  accounts: "Accounts",
-  attendance: "Attendance",
-  archive: "Archive",
-};
+const TAB_IDS = LCUP_TAB_IDS;
+const LABEL = LCUP_TAB_LABEL;
 
 function LcupPage() {
   const [tab, setTab] = useTabParam(TAB_IDS, "status");
@@ -54,6 +46,7 @@ function LcupPage() {
         idPrefix="lcup"
         value={tab}
         onChange={setTab}
+        tree
         tabs={TAB_IDS.map((id) => {
           const w = waiting[id];
           return { id, label: LABEL[id], count: w && w.count > 0 ? w.count : undefined, tone: w?.tone };

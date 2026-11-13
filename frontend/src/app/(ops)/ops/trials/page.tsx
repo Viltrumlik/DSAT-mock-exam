@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Tabs, useTabParam } from "@/features/console/ui";
 import { NotOnListPanel, TrialStudentsPanel } from "@/features/lcup/LcupPanels";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
+import { TRIALS_TAB_IDS, TRIALS_TAB_LABEL, type TrialsTab } from "@/features/lcup/lcupTabs";
 
 /**
  * Trials (owner, 2026-10-20): students on trial, and lc-up members no class list shows. The teacher
@@ -14,8 +15,7 @@ import { useLcupFollowups } from "@/features/lcup/lcupHooks";
  * its count.
  */
 
-type TrialsTab = "trials" | "missing";
-const TAB_IDS: readonly TrialsTab[] = ["trials", "missing"];
+const TAB_IDS = TRIALS_TAB_IDS;
 
 function TrialsPage() {
   const [tab, setTab] = useTabParam(TAB_IDS, "trials");
@@ -43,11 +43,12 @@ function TrialsPage() {
         idPrefix="trials"
         value={tab}
         onChange={setTab}
+        tree
         tabs={[
-          { id: "trials", label: "Trial students", count: q.data ? q.data.trials.length : undefined },
+          { id: "trials", label: TRIALS_TAB_LABEL.trials, count: q.data ? q.data.trials.length : undefined },
           {
             id: "missing",
-            label: "Not on class list",
+            label: TRIALS_TAB_LABEL.missing,
             count: q.data ? q.data.not_on_list.length : undefined,
             tone: q.data?.not_on_list.length ? "attention" : undefined,
           },

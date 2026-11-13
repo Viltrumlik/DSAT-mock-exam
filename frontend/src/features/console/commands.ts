@@ -6,7 +6,7 @@ import type { OpsNavGroup } from "@/features/ops/shell/opsNav";
 export type Command = {
   id: string;
   label: string;
-  group: "Pages" | "Actions" | EntityKind;
+  group: "Pinned" | "Pages" | "Actions" | EntityKind;
   icon: IconName;
   href?: string;
   run?: () => void;
@@ -37,6 +37,11 @@ export function consoleCommands(groups: readonly OpsNavGroup[], extra: readonly 
     ),
   );
   return [...pages, ...extra];
+}
+
+/** The person's pinned pages (Shell v0.4: "pins show on top of the panel, in ⌘K and on the phone sheet"), first. */
+export function pinCommands(pins: readonly { href: string; label: string; icon: IconName }[]): Command[] {
+  return pins.map((p) => ({ id: `pin:${p.href}`, label: p.label, group: "Pinned", icon: p.icon, href: p.href, keywords: ["pinned"] }));
 }
 
 /**
