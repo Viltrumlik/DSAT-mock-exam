@@ -454,7 +454,7 @@ export function ShortcutsCard({ me, delay }: { me: MeLike; delay: number }) {
   const pop = useQuery({
     queryKey: ["users", "population"],
     queryFn: usersAdminApi.population,
-    enabled: Boolean(me) && holds(me, P.manageUsers) && (shown("/ops/students") || shown("/ops/public")),
+    enabled: Boolean(me) && holds(me, P.viewPeople) && (shown("/ops/students") || shown("/ops/public")),
   });
   const classes = useQuery({
     queryKey: ["console", "today", "classes-count"],

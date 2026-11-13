@@ -99,7 +99,7 @@ export function TodayPage() {
           </Card>
         ) : null}
         <div className="flex min-w-0 flex-col gap-5">
-          <LearnersCard enabled={may(P.manageUsers, P.assignAccess)} withLessons={desk} delay={200} />
+          <LearnersCard enabled={may(P.viewPeople)} withLessons={desk} delay={200} />
           <RecentlyOpened delay={260} />
         </div>
       </div>
