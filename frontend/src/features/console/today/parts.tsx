@@ -3,6 +3,16 @@ import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { buttonClass } from "../ui";
 
+/**
+ * Marks a dashboard card for the console panel's "On this page" (Shell v0.4): its title, and an id to scroll to.
+ * A card whose title is not plain text is left out.
+ */
+export function sectionMark(title: unknown): { id?: string; "data-ms-section"?: string } {
+  if (typeof title !== "string" || !title.trim()) return {};
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return { id: `section-${slug || "card"}`, "data-ms-section": title };
+}
+
 /** A Today card; `delay` puts it in reading order as the page arrives. */
 export function Card({
   title,
@@ -25,6 +35,7 @@ export function Card({
 }) {
   return (
     <section
+      {...sectionMark(title)}
       className={`animate-ms-card-in flex min-w-0 flex-col gap-3.5 rounded-ms-card bg-ms-card px-[22px] py-5 shadow-ms-1 ${className}`}
       style={{ animationDelay: `${delay}ms`, ...style }}
     >

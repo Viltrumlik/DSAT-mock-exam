@@ -7,7 +7,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { clockOrDay } from "../attention";
 import { useRecent, type RecentItem } from "../recent";
 import { RollNumber } from "../RollNumber";
-import { Failed, Skeleton } from "../today/parts";
+import { Failed, Skeleton, sectionMark } from "../today/parts";
 import { Avatar, Badge, buttonClass, type BadgeTone } from "../ui";
 import type { CoverageSkill, RecentState, StudioSummary, TeamLine } from "./summary";
 
@@ -148,7 +148,7 @@ export function ContinueRow({ q, delay }: { q: Q; delay: number }) {
   const items = continueItems(local, q.data?.recent ?? []);
   if (!local.length) return null; // nothing opened in this browser yet: the row would only be empty
   return (
-    <section className="animate-ms-fade-in flex flex-col gap-3" style={{ animationDelay: `${delay}ms` }}>
+    <section {...sectionMark("Continue where you left off")} className="animate-ms-fade-in flex flex-col gap-3" style={{ animationDelay: `${delay}ms` }}>
       <h2 className="text-ms-h text-ms-fg">Continue where you left off</h2>
       {q.isError ? (
         <Failed what="where you left off" retry={() => void q.refetch()} />
@@ -198,7 +198,7 @@ function TeamRow({ line, i, delay }: { line: TeamLine; i: number; delay: number 
 export function TeamToday({ q, delay }: { q: Q; delay: number }) {
   const rows = q.data?.team_today ?? [];
   return (
-    <section className="animate-ms-card-in flex min-w-0 flex-col gap-3 rounded-ms-card bg-ms-card px-[22px] py-5 shadow-ms-1" style={{ animationDelay: `${delay}ms` }}>
+    <section {...sectionMark("Team today")} className="animate-ms-card-in flex min-w-0 flex-col gap-3 rounded-ms-card bg-ms-card px-[22px] py-5 shadow-ms-1" style={{ animationDelay: `${delay}ms` }}>
       <h2 className="text-ms-h text-ms-fg">Team today</h2>
       {q.isError ? <Failed what="today’s activity" retry={() => void q.refetch()} /> : q.isPending && !q.data ? <Skeleton rows={3} /> : rows.length === 0 ? (
         <p className="text-[14px] text-ms-fg-2">Nothing yet today. Approvals and publishing show up here as they happen.</p>
@@ -222,7 +222,7 @@ export function Coverage({ q, delay }: { q: Q; delay: number }) {
   const rows = coverageRows(skills, all);
   const max = Math.max(c?.target ?? 10, ...rows.map((r) => r.approved), 1);
   return (
-    <section className="animate-ms-card-in flex min-w-0 flex-col gap-3 rounded-ms-card bg-ms-card px-[22px] py-5 shadow-ms-1" style={{ animationDelay: `${delay}ms` }}>
+    <section {...sectionMark("Coverage by skill")} className="animate-ms-card-in flex min-w-0 flex-col gap-3 rounded-ms-card bg-ms-card px-[22px] py-5 shadow-ms-1" style={{ animationDelay: `${delay}ms` }}>
       <div className="flex flex-wrap items-baseline gap-x-2.5">
         <h2 className="text-ms-h text-ms-fg">Coverage by skill</h2>
         {c ? <span className="text-[13px] text-ms-fg-3">approved questions · line = target of {c.target}</span> : null}
@@ -323,7 +323,7 @@ export function Library({ q, delay }: { q: Q; delay: number }) {
   return (
     <>
       {groups.map((group, g) => (
-        <section key={group.caption} className="animate-ms-fade-in flex flex-col gap-3" style={{ animationDelay: `${delay + g * 100}ms` }}>
+        <section key={group.caption} {...sectionMark(group.caption)} className="animate-ms-fade-in flex flex-col gap-3" style={{ animationDelay: `${delay + g * 100}ms` }}>
           <h2 className="text-ms-h text-ms-fg">{group.caption}</h2>
           {g === 0 && q.isError ? <Failed what="the library’s counts" retry={() => void q.refetch()} /> : null}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

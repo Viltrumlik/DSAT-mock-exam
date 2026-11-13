@@ -24,15 +24,15 @@ import { DebtPanel } from "./DebtPanel";
 import { JournalPanel } from "./JournalPanel";
 import { OverviewPanel } from "./OverviewPanel";
 import { useSmsOverview } from "./smsHooks";
-import { smsTabHref, type SmsTab } from "./smsTabs";
+import { SMS_TAB_LABEL, smsTabHref, type SmsTab } from "./smsTabs";
 import { TemplatesPanel } from "./TemplatesPanel";
 
 const TABS: Tab<SmsTab>[] = [
-  { key: "overview", label: "Overview", icon: Gauge },
-  { key: "journal", label: "Journal", icon: ScrollText },
-  { key: "campaigns", label: "Campaigns", icon: Send },
-  { key: "debt", label: "Debt warnings", icon: BellRing },
-  { key: "templates", label: "Templates", icon: FileText },
+  { key: "overview", label: SMS_TAB_LABEL.overview, icon: Gauge },
+  { key: "journal", label: SMS_TAB_LABEL.journal, icon: ScrollText },
+  { key: "campaigns", label: SMS_TAB_LABEL.campaigns, icon: Send },
+  { key: "debt", label: SMS_TAB_LABEL.debt, icon: BellRing },
+  { key: "templates", label: SMS_TAB_LABEL.templates, icon: FileText },
 ];
 
 export function SmsPage() {
@@ -63,6 +63,7 @@ function SmsPageInner() {
         label="SMS sections"
         value={tab}
         onChange={(key) => router.replace(smsTabHref(key), { scroll: false })}
+        tree
         ids={{ tab: (key) => tabId("sms", key), panel: (key) => panelId("sms", key) }}
         tabs={TABS.map((t) => ({ id: t.key, label: t.label }))}
       />

@@ -7,6 +7,17 @@ import { tabHref } from "@/features/ops/detail/tabs";
 
 export type SmsTab = "overview" | "journal" | "campaigns" | "debt" | "templates";
 
+export const SMS_TAB_IDS: readonly SmsTab[] = ["overview", "journal", "campaigns", "debt", "templates"];
+
+/** The tabs' names — on the page and in the console panel's tree under SMS (Shell v0.4). */
+export const SMS_TAB_LABEL: Record<SmsTab, string> = {
+  overview: "Overview",
+  journal: "Journal",
+  campaigns: "Campaigns",
+  debt: "Debt warnings",
+  templates: "Templates",
+};
+
 export const SMS_PATH = "/ops/sms";
 
 /** The address of one tab. Nothing else is carried over: the journal's filters belong to the journal. */

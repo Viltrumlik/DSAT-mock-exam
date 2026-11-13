@@ -52,6 +52,7 @@ export function notMarkedItem(d: LessonsToday): AttentionItem | null {
     id: "lessons",
     icon: "calcheck",
     tone: "critical",
+    count: n,
     title: n === 1 && first ? `${first.classroom.name} attendance not marked` : `${n} registers not marked`,
     detail: first ? [first.ends_at ? `Lesson ended ${hhmm(first.ends_at)}` : "", first.teacher?.name ?? ""].filter(Boolean).join(" · ") || undefined : undefined,
     action: { label: "Mark now", href: first ? `/ops/classrooms/${first.classroom.id}?tab=attendance` : "/ops/classrooms" },

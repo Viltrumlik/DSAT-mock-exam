@@ -1,54 +1,43 @@
 "use client";
 
-import { useEffect, useState, type RefObject } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { AttentionBell } from "@/features/console/AttentionBell";
 import type { AttentionSource } from "@/features/console/attention";
 import { UserMenu } from "@/features/console/UserMenu";
 import { cn } from "@/lib/cn";
-import { OPS_SIDEBAR_ID } from "./OpsSidebar";
-import { OPS_CONSOLE, sectionFor, type ConsoleConfig, type MeLike } from "./opsNav";
+import type { Crumb, MeLike } from "./opsNav";
+import { MAX_PINS } from "./shellStore";
 
 /**
- * The bar across the top of the content column (design handoff v0.3, Shell board): the menu button
- * (below `lg`), where you are ("Admin › Students" — back is always the parent crumb), the ⌘K search
- * pill, the Admin | Builder switch, and the person with their menu.
+ * The bar across the top of the content column (design handoff v0.4, Shell board): the breadcrumb in the shell's
+ * three levels (Centre › Finance › Debtors — every step but the last is a link), the ⌘K search pill, the bookmark
+ * that pins this page, and the attention bell. The console switch and the person moved into the rail.
  *
- * Flat at the top of the page; once content scrolls under it a hairline and a soft shadow show the
- * edge. On a phone it keeps the page title, a search button and the avatar, each 44 × 44.
+ * Flat at the top of the page; once content scrolls under it a hairline and a soft shadow show the edge. On a phone
+ * (no rail) it keeps the page's name, search, the bell and the person, each 44 × 44.
  */
 export function OpsTopBar({
-  pathname,
+  crumbs,
   me,
-  mobileOpen,
-  onOpenMobile,
-  menuButtonRef,
   onOpenSearch,
-  otherConsole,
   attention = [],
   searchLabel = "Search pages…",
-  config = OPS_CONSOLE,
+  pin,
 }: {
-  pathname: string;
+  crumbs: readonly Crumb[];
   me: MeLike;
-  mobileOpen: boolean;
-  onOpenMobile: () => void;
-  menuButtonRef?: RefObject<HTMLButtonElement | null>;
   /** Opens ⌘K. */
   onOpenSearch: () => void;
-  /** The other console's name and address, for the switch; `null` when this person may not open it. */
-  otherConsole: { label: string; href: string } | null;
   /** "Needs you" for the bell; empty for a role that reads none of it (no bell then). */
   attention?: readonly AttentionSource[];
   /** What the pill says ⌘K searches here: "Search students, classes, pages…". */
   searchLabel?: string;
-  /** Which console this bar belongs to — its home, its first crumb, its nav. */
-  config?: Pick<ConsoleConfig, "root" | "crumb" | "groups">;
+  /** This page's bookmark: whether it is pinned, how many pins there are, and the toggle. */
+  pin: { pinned: boolean; count: number; onToggle: () => void } | null;
 }) {
   const [scrolled, setScrolled] = useState(false);
-  const section = sectionFor(pathname, config.groups, config.root);
-  const atSection = section ? pathname === section.href : false;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 4);
@@ -57,51 +46,44 @@ export function OpsTopBar({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  const last = crumbs[crumbs.length - 1];
+  const full = pin ? !pin.pinned && pin.count >= MAX_PINS : false;
+
   return (
     <header
       data-scrolled={scrolled || undefined}
       className={cn(
-        "ms-transition sticky top-0 z-20 flex h-(--ms-topbar) shrink-0 items-center gap-1.5 border-b bg-ms-bg px-2 sm:gap-3 md:px-6",
+        "ms-transition sticky top-0 z-20 flex h-(--ms-topbar) shrink-0 items-center gap-1.5 border-b bg-ms-bg pl-4 pr-2 sm:gap-3 md:px-6",
         scrolled ? "border-ms-border shadow-[0_4px_12px_rgba(0,0,0,.06)]" : "border-transparent",
       )}
     >
-      <button
-        ref={menuButtonRef}
-        type="button"
-        onClick={onOpenMobile}
-        aria-label="Open menu"
-        aria-controls={OPS_SIDEBAR_ID}
-        aria-expanded={mobileOpen}
-        className="ms-transition grid size-11 shrink-0 place-items-center rounded-full text-ms-fg-2 hover:bg-ms-surface-2 hover:text-ms-fg lg:hidden"
-      >
-        <Icon name="menu" size="lg" />
-      </button>
-
       <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
-        <ol className="flex min-w-0 items-center gap-1.5 text-[14px] leading-5">
-          <li className={cn("shrink-0", section && "max-sm:hidden")}>
-            <Link href={config.root} className="ms-transition rounded-[6px] font-medium text-ms-fg-3 hover:text-ms-fg">
-              {config.crumb}
-            </Link>
-          </li>
-          {section ? (
-            <>
-              <li aria-hidden className="shrink-0 text-ms-fg-3 max-sm:hidden">
-                <Icon name="right" size="sm" />
-              </li>
-              <li className="min-w-0 truncate">
-                {atSection ? (
-                  <span aria-current="page" className="font-semibold text-ms-fg max-sm:text-[16px]">
-                    {section.label}
-                  </span>
-                ) : (
-                  <Link href={section.href} className="ms-transition rounded-[6px] font-semibold text-ms-fg hover:underline max-sm:text-[16px]">
-                    {section.label}
-                  </Link>
-                )}
-              </li>
-            </>
-          ) : null}
+        {/* A phone has room for where you are, not the way there. */}
+        <p className="truncate text-[20px] font-extrabold leading-7 tracking-[-.02em] text-ms-fg md:hidden">{last?.label}</p>
+        <ol className="hidden min-w-0 items-center gap-1.5 text-[14px] leading-5 md:flex">
+          {crumbs.map((c, i) => {
+            const isLast = i === crumbs.length - 1;
+            return (
+              <Fragment key={`${i}-${c.label}`}>
+                {i > 0 ? (
+                  <li aria-hidden className="shrink-0 text-ms-fg-3">
+                    <Icon name="right" size="sm" />
+                  </li>
+                ) : null}
+                <li className={cn(isLast ? "min-w-0 truncate" : "shrink-0")}>
+                  {isLast || !c.href ? (
+                    <span aria-current={isLast ? "page" : undefined} className={cn(isLast ? "font-semibold text-ms-fg" : "font-medium text-ms-fg-3")}>
+                      {c.label}
+                    </span>
+                  ) : (
+                    <Link href={c.href} className="ms-transition rounded-[6px] font-medium text-ms-fg-3 hover:text-ms-fg">
+                      {c.label}
+                    </Link>
+                  )}
+                </li>
+              </Fragment>
+            );
+          })}
         </ol>
       </nav>
 
@@ -124,19 +106,36 @@ export function OpsTopBar({
         <Icon name="search" size="lg" />
       </button>
 
-      {otherConsole ? (
-        <div role="group" aria-label="Console" className="hidden shrink-0 items-center gap-0.5 rounded-full bg-ms-surface-2 p-[3px] lg:inline-flex">
-          <span aria-current="page" className="inline-flex h-9 items-center rounded-full bg-ms-card px-3.5 text-[14px] font-semibold text-ms-fg shadow-ms-1">
-            {config.crumb}
-          </span>
-          <a href={otherConsole.href} className="ms-transition inline-flex h-9 items-center rounded-full px-3.5 text-[14px] font-medium text-ms-fg-2 hover:text-ms-fg">
-            {otherConsole.label}
-          </a>
-        </div>
+      {pin ? (
+        <span className="relative hidden md:inline-flex">
+          <button
+            type="button"
+            onClick={pin.onToggle}
+            aria-pressed={pin.pinned}
+            aria-disabled={full || undefined}
+            aria-describedby={full ? "ops-pin-full" : undefined}
+            aria-label={pin.pinned ? "Pinned — unpin this page" : "Pin this page"}
+            title={full ? `Up to ${MAX_PINS} pins — unpin one first` : pin.pinned ? "Pinned — unpin this page" : "Pin this page"}
+            className={cn(
+              "ms-transition grid size-11 shrink-0 place-items-center rounded-full hover:bg-ms-surface-2",
+              pin.pinned ? "text-ms-primary-text" : "text-ms-fg-2 hover:text-ms-fg",
+              full && "cursor-not-allowed opacity-50 hover:bg-transparent",
+            )}
+          >
+            <Icon name="bookmark" size="lg" className={pin.pinned ? "fill-current" : undefined} />
+          </button>
+          {full ? (
+            <span id="ops-pin-full" className="sr-only">
+              Up to {MAX_PINS} pins — unpin one first
+            </span>
+          ) : null}
+        </span>
       ) : null}
 
       <AttentionBell sources={attention} />
-      <UserMenu me={me} />
+      <div className="md:hidden">
+        <UserMenu me={me} />
+      </div>
     </header>
   );
 }

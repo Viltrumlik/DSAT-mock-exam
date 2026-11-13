@@ -88,6 +88,7 @@ export function TabBar({ tabs, active, onSelect, person }: { tabs: Tab[]; active
       label="Account sections"
       value={active}
       onChange={onSelect}
+      tree
       ids={{ tab: tabId, panel: panelId }}
       tabs={tabs.map((t) => ({ id: t.key, label: t.label, count: counts[t.key]?.count, tone: counts[t.key]?.tone }))}
     />

@@ -40,8 +40,10 @@ const ENTRANCES = [
   "dialog-in", "scrim-in", "roll-in", "snow-in", "tick-in", "card-in", "wipe-in",
   // The drag lift (PR 14a): the picked-up row grows into its own scale and shadow.
   "lift",
+  // The tablet's sub-category sheet comes out of the rail (Shell v0.4, PR 25).
+  "sheet-in-left",
 ];
-const EXITS = ["fade-out", "sink-out", "sheet-out-bottom", "sheet-out-right", "dialog-out", "scrim-out", "roll-out"];
+const EXITS = ["fade-out", "sink-out", "sheet-out-bottom", "sheet-out-right", "sheet-out-left", "dialog-out", "scrim-out", "roll-out"];
 const LOOPS = ["shimmer", "spin", "pulse", "ring-turn"];
 const ONCE = ["pop", "shake", "flash", "burst", "countdown"];
 

@@ -10,6 +10,7 @@ import {
   currentMonth,
 } from "@/features/finance/FinancePanels";
 import { useFinanceSummary } from "@/features/finance/financeHooks";
+import { FINANCE_TAB_IDS, FINANCE_TAB_LABEL, type FinanceTab } from "@/features/finance/financeTabs";
 import { LedgerPanel } from "@/features/finance/LedgerPanel";
 
 /**
@@ -23,9 +24,8 @@ import { LedgerPanel } from "@/features/finance/LedgerPanel";
  * and Back land on the tab, and the month picker beside them where a tab belongs to a month.
  */
 
-type FinanceTab = "overview" | "debtors" | "payments" | "ledger";
-const TAB_IDS: readonly FinanceTab[] = ["overview", "debtors", "payments", "ledger"];
-const LABEL: Record<FinanceTab, string> = { overview: "Overview", debtors: "Debtors", payments: "Payments", ledger: "Ledger" };
+const TAB_IDS = FINANCE_TAB_IDS;
+const LABEL = FINANCE_TAB_LABEL;
 
 function FinancePage() {
   const [tab, setTab] = useTabParam(TAB_IDS, "overview");
@@ -48,6 +48,7 @@ function FinancePage() {
           idPrefix="finance"
           value={tab}
           onChange={setTab}
+          tree
           className="border-b-0"
           tabs={TAB_IDS.map((id) => ({
             id,

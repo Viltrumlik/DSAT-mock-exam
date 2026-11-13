@@ -30,6 +30,8 @@ export type AttentionItem = {
   title: string;
   detail?: string;
   action: { label: string; href: string };
+  /** How many things wait behind it (22 SMS, 13 debtors) — the console panel's count beside the page it links to. */
+  count?: number;
 };
 
 export type AttentionSource = {
@@ -51,6 +53,7 @@ export function smsItem(o: SmsOverview): AttentionItem | null {
       id: "sms",
       icon: "ms-undelivered",
       tone: "critical",
+      count: failed,
       title: `${plural(failed, "SMS", "SMS")} did not arrive today`,
       detail: o.eskiz.last_error || (o.forecast.short ? "The balance is too low for the next 24 hours" : undefined),
       action: { label: "Open SMS", href: "/ops/sms" },
@@ -76,6 +79,7 @@ export function trialsItem(f: LcupFollowups): AttentionItem | null {
     id: "trials",
     icon: "ms-trial",
     tone: "attention",
+    count: f.pending,
     title: `${plural(f.pending, "trial student", "trial students")} to call back`,
     detail: missing ? `${plural(missing, "lc-up member", "lc-up members")} missing from a class list` : undefined,
     action: { label: "Open trials", href: "/ops/trials" },
@@ -89,6 +93,7 @@ export function debtItem(s: FinanceSummary): AttentionItem | null {
     id: "debt",
     icon: "wallet",
     tone: "critical",
+    count: s.debtors,
     title: `${plural(s.debtors, "student owes", "students owe")} ${formatSom(s.total_debt)}`,
     detail: detail || undefined,
     action: { label: "Debtors", href: "/ops/finance" },
@@ -102,6 +107,7 @@ export function pairingItem(s: LcupStatus): AttentionItem | null {
     id: "lcup",
     icon: "ms-sync",
     tone: "attention",
+    count: n,
     title: `${plural(n, "lc-up group", "lc-up groups")} to pair with a class`,
     action: { label: "Pair", href: "/ops/lcup" },
   };
@@ -124,6 +130,7 @@ export function noTeacherItem(page: FacetPage): AttentionItem | null {
     id: "teacher",
     icon: "warn",
     tone: "attention",
+    count: n,
     title: n === 1 ? "1 class has no teacher" : `${n} classes have no teacher`,
     action: { label: "Assign", href: "/ops/classrooms?status=active" },
   };
@@ -156,6 +163,7 @@ export function noKeyItem(s: StudioSummary): AttentionItem | null {
     id: "no-key",
     icon: "ms-answerkey",
     tone: live ? "critical" : "attention",
+    count: n,
     title: n === 1 ? "1 question has no answer key" : `${n} questions have no answer key`,
     detail: live
       ? `${live} ${live === 1 ? "is" : "are"} in live tests — students can’t be scored on ${live === 1 ? "it" : "them"}`
@@ -177,6 +185,7 @@ export function mockItem(s: StudioSummary): AttentionItem | null {
     id: "mock",
     icon: "ms-fullmock",
     tone: "attention",
+    count: s.mocks.not_ready_count,
     title: m.ready ? `${m.title} is ${plural(m.short, "question", "questions")} short` : `${m.title} can’t be published yet`,
     detail: [gapLine(m.gaps) || m.block_reason, more > 0 ? `+${plural(more, "more mock", "more mocks")}` : ""].filter(Boolean).join(" · "),
     action: { label: "Open", href: `/builder/full-mocks/${m.id}` },
@@ -190,6 +199,7 @@ export function unclassifiedItem(s: StudioSummary): AttentionItem | null {
     id: "unclassified",
     icon: "tag",
     tone: "info",
+    count: n,
     title: `${plural(n, "question", "questions")} without a skill`,
     detail: "They won’t show in students’ error reports",
     action: { label: "Classify", href: "/builder/question-bank?classified=no" },
