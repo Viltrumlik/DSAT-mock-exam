@@ -77,18 +77,19 @@ class RoleEscalationTests(TestCase):
         self.assertEqual(created.role, acc_const.ROLE_SUPER_ADMIN)
 
     def test_admin_can_still_assign_lower_roles(self):
-        # A teacher account carries a subject — "Teacher and support_teacher accounts require
-        # subject: math or english", enforced in UserCreateSerializer and on the model. The
-        # test asked for a teacher with no subject and read the resulting 400 as the escalation
-        # guard refusing an admin, which is not what happened.
+        # Learner roles only: a staff role is the owner's to give since the CRM roles plan's PR 4
+        # (manage_staff). A teacher account would also need a subject, which is sent so the refusal
+        # below is the staff rule and not the subject check.
+        res = self._create(self.admin, "ok-student@example.com", acc_const.ROLE_STUDENT)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(User.objects.get(email="ok-student@example.com").role, acc_const.ROLE_STUDENT)
         res = self._create(
             self.admin, "ok-teacher@example.com", acc_const.ROLE_TEACHER,
             subject=acc_const.DOMAIN_MATH,
         )
-        self.assertEqual(res.status_code, 201, res.content)
-        self.assertEqual(
-            User.objects.get(email="ok-teacher@example.com").role, acc_const.ROLE_TEACHER
-        )
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("Only the owner", res.json()["role"])
+        self.assertFalse(User.objects.filter(email="ok-teacher@example.com").exists())
 
 
 class SingleObjectScopeTests(TestCase):
