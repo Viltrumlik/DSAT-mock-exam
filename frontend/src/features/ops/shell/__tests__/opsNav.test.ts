@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import { ICON_NAMES } from "@/components/ui/Icon";
-import { ADMIN_OPS_SECTIONS } from "@/features/ops/adminScope";
-import { OPS_NAV_GROUPS, sectionFor, sectionLabel, visibleNav, type OpsNavGroup } from "../opsNav";
+import { OPS_NAV_GROUPS, opsPathAllowed, sectionFor, sectionLabel, visibleNav, type OpsNavGroup } from "../opsNav";
 
 const SUPER_ADMIN = { role: "super_admin", permissions: ["*"] };
 const DJANGO_SUPERUSER = { role: "admin", permissions: ["*"], is_superuser: true };
-const ADMIN = { role: "admin", permissions: ["manage_users", "view_dashboard"] };
+/** What GET /users/me/ gives an administrator: the old six, plus every CRM permission (PR 2). */
+const ADMIN = {
+  role: "admin",
+  permissions: ["adjust_balance", "assign_access", "create_classroom", "debt_freeze", "edit_people", "enroll", "events_shop", "lcup_tools", "manage_groups", "manage_seats", "manage_staff", "manage_tests", "manage_users", "send_debt_sms", "send_sms", "set_prices", "submit_test", "take_payment", "view_dashboard", "view_money", "view_people", "view_reports", "void_payment"],
+};
+/** An accountant as PR 4 will make one: money only. */
+const ACCOUNTANT = {
+  role: "accountant",
+  permissions: ["view_people", "view_money", "take_payment", "void_payment", "adjust_balance", "set_prices", "debt_freeze", "view_reports", "send_debt_sms"],
+};
 const TEACHER = { role: "teacher", permissions: ["assign_access"] };
 
 const hrefs = (groups: OpsNavGroup[]) => groups.flatMap((g) => g.items.map((i) => i.href));
@@ -56,23 +64,39 @@ describe("visibleNav", () => {
   });
 
   it("hides the super-admin-only items from everyone else", () => {
-    const groups = visibleNav(OPS_NAV_GROUPS, TEACHER);
-    const seen = hrefs(groups);
+    const seen = hrefs(visibleNav(OPS_NAV_GROUPS, TEACHER));
     for (const href of ["/ops/surveys", "/ops/mobile", "/ops/broadcast"]) expect(seen).not.toContain(href);
-    // The rest of the console stays: teachers are not scoped.
-    for (const href of ["/ops/journals", "/ops/midterms", "/ops/stories", "/ops/exam-dates"]) {
+    // Teachers are not the desk: the academic pages stay for them.
+    for (const href of ["/ops/journals", "/ops/midterms", "/ops/exam-dates", "/ops/students"]) {
       expect(seen).toContain(href);
     }
   });
 
-  it("drops a group whose items are all filtered out — System has only super-admin items", () => {
-    expect(captions(visibleNav(OPS_NAV_GROUPS, TEACHER))).toEqual([null, "People", "Teaching", "Centre", "Content"]);
+  it("shows a section only to someone holding a permission its API checks", () => {
+    const seen = hrefs(visibleNav(OPS_NAV_GROUPS, TEACHER));
+    for (const href of [
+      "/ops/classrooms",
+      "/ops/trials",
+      "/ops/finance",
+      "/ops/sms",
+      "/ops/lcup",
+      "/ops/shop",
+      "/ops/events",
+      "/ops/telegram-posts",
+      "/ops/stories",
+    ]) {
+      expect(seen).not.toContain(href);
+    }
   });
 
-  it("shows a scoped admin only the school's sections", () => {
+  it("drops a group whose items are all filtered out", () => {
+    // System has only super-admin items; Content only events_shop and super-admin ones.
+    expect(captions(visibleNav(OPS_NAV_GROUPS, TEACHER))).toEqual([null, "People", "Teaching", "Centre"]);
+  });
+
+  it("shows an administrator exactly the school's sections, as before permissions", () => {
     const groups = visibleNav(OPS_NAV_GROUPS, ADMIN);
     const seen = hrefs(groups);
-    for (const href of seen) expect(ADMIN_OPS_SECTIONS).toContain(href);
     expect(seen).toEqual([
       "/ops",
       "/ops/students",
@@ -101,6 +125,31 @@ describe("visibleNav", () => {
     ];
     expect(captions(visibleNav(custom, ADMIN))).toEqual(["A"]);
     expect(captions(visibleNav(custom, SUPER_ADMIN))).toEqual(["A", "B"]);
+  });
+
+  it("shows an accountant the money, and none of the desk's other sections", () => {
+    // Branches and Support hours still go by role on the server; the accountant's role decides them (PR 4).
+    const seen = hrefs(visibleNav(OPS_NAV_GROUPS, ACCOUNTANT));
+    for (const href of ["/ops", "/ops/finance", "/ops/sms", "/ops/classrooms"]) expect(seen).toContain(href);
+    for (const href of [
+      "/ops/students",
+      "/ops/staff",
+      "/ops/trials",
+      "/ops/lcup",
+      "/ops/shop",
+      "/ops/events",
+      "/ops/journals",
+      "/ops/stories",
+    ]) {
+      expect(seen).not.toContain(href);
+    }
+  });
+
+  it("follows a per-person tick: an administrator without events_shop loses the three content desks", () => {
+    const noShop = { ...ADMIN, permissions: ADMIN.permissions.filter((p) => p !== "events_shop") };
+    const seen = hrefs(visibleNav(OPS_NAV_GROUPS, noShop));
+    for (const href of ["/ops/shop", "/ops/events", "/ops/telegram-posts"]) expect(seen).not.toContain(href);
+    expect(seen).toContain("/ops/finance");
   });
 
   it("shows nothing super-admin-only before `me` has loaded", () => {
@@ -142,5 +191,60 @@ describe("sectionLabel", () => {
   it("has nothing to say outside the console", () => {
     expect(sectionLabel("/login")).toBeNull();
     expect(sectionLabel("/")).toBeNull();
+  });
+});
+
+describe("opsPathAllowed", () => {
+  it("opens to an administrator the school's sections, nested pages included", () => {
+    for (const path of [
+      "/ops",
+      "/ops/classrooms/12",
+      "/ops/students/42",
+      "/ops/users",
+      "/ops/users/5/edit",
+      "/ops/sms/campaigns/7",
+      "/ops/finance",
+      "/ops/trials",
+      "/ops/telegram-posts",
+    ]) {
+      expect(opsPathAllowed(path, ADMIN)).toBe(true);
+    }
+  });
+
+  it("keeps the rest from an administrator, however it is reached", () => {
+    for (const path of [
+      "/ops/journals",
+      "/ops/journals/3/lessons/9",
+      "/ops/midterms",
+      "/ops/mock-sessions",
+      "/ops/surveys",
+      "/ops/stories",
+      "/ops/exam-dates",
+      "/ops/assignments",
+      "/ops/broadcast",
+    ]) {
+      expect(opsPathAllowed(path, ADMIN)).toBe(false);
+    }
+  });
+
+  it("does not let a look-alike prefix through", () => {
+    expect(opsPathAllowed("/ops/usersettings", ADMIN)).toBe(false);
+    expect(opsPathAllowed("/ops/shopping", ADMIN)).toBe(false);
+    expect(opsPathAllowed("/ops/smsx", ADMIN)).toBe(false);
+  });
+
+  it("opens everything to the owner", () => {
+    for (const path of ["/ops/journals", "/ops/stories", "/ops/broadcast", "/ops/assignments", "/ops/finance"]) {
+      expect(opsPathAllowed(path, SUPER_ADMIN)).toBe(true);
+    }
+  });
+
+  it("closes to a teacher the pages the server refuses them, and leaves theirs open", () => {
+    for (const path of ["/ops/finance", "/ops/sms", "/ops/lcup", "/ops/classrooms/3", "/ops/events"]) {
+      expect(opsPathAllowed(path, TEACHER)).toBe(false);
+    }
+    for (const path of ["/ops", "/ops/students", "/ops/journals", "/ops/users", "/ops/assignments"]) {
+      expect(opsPathAllowed(path, TEACHER)).toBe(true);
+    }
   });
 });

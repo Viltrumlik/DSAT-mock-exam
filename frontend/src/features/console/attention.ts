@@ -8,6 +8,7 @@ import { financeKeys } from "@/features/finance/financeHooks";
 import { lcupApi, type LcupFollowups, type LcupStatus } from "@/features/lcup/lcupApi";
 import { lcupKeys } from "@/features/lcup/lcupHooks";
 import { smsApi, type SmsOverview } from "@/features/ops/sms/smsApi";
+import { P, holds, type MeLike } from "@/features/ops/permissions";
 import { smsKeys } from "@/features/ops/sms/smsHooks";
 import api from "@/lib/api";
 import { formatSom } from "./entitySearch";
@@ -218,29 +219,38 @@ function source<T>(
   }
 }
 
-/** Admin's sources. `enabled` only for super admins and admins: every endpoint here refuses others. */
-export function useAdminAttention(enabled: boolean): AttentionSource[] {
-  const lessons = useQuery({ queryKey: lessonsTodayKey, queryFn: fetchLessonsToday, enabled, staleTime: 60_000, refetchInterval: 120_000 });
-  const sms = useQuery({ queryKey: smsKeys.overview, queryFn: () => smsApi.overview(), enabled, staleTime: 60_000 });
-  const trials = useQuery({ queryKey: lcupKeys.followups, queryFn: () => lcupApi.followups(), enabled, refetchInterval: 60_000 });
+/**
+ * Admin's sources, each asked only of a viewer holding the permission its endpoint checks (so a source never
+ * shows as failed for someone the server refuses). `me` is null while the attention is off: in the Builder, or
+ * before `me` has loaded.
+ */
+export function useAdminAttention(me: MeLike): AttentionSource[] {
+  const may = (...codes: string[]) => Boolean(me) && holds(me, ...codes);
+  const people = may(P.viewPeople);
+  const smsOn = may(P.sendSms, P.sendDebtSms);
+  const trialsOn = may(P.enroll);
+  const debtOn = may(P.viewReports);
+  const lcupOn = may(P.lcupTools);
+  const lessons = useQuery({ queryKey: lessonsTodayKey, queryFn: fetchLessonsToday, enabled: people, staleTime: 60_000, refetchInterval: 120_000 });
+  const sms = useQuery({ queryKey: smsKeys.overview, queryFn: () => smsApi.overview(), enabled: smsOn, staleTime: 60_000 });
+  const trials = useQuery({ queryKey: lcupKeys.followups, queryFn: () => lcupApi.followups(), enabled: trialsOn, refetchInterval: 60_000 });
   const month = tashkentMonth();
-  const debt = useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month), enabled, staleTime: 60_000 });
-  const lcup = useQuery({ queryKey: lcupKeys.status, queryFn: () => lcupApi.status(), enabled, staleTime: 60_000 });
+  const debt = useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month), enabled: debtOn, staleTime: 60_000 });
+  const lcup = useQuery({ queryKey: lcupKeys.status, queryFn: () => lcupApi.status(), enabled: lcupOn, staleTime: 60_000 });
   const teacher = useQuery({
     queryKey: ["console", "attention", "classes-no-teacher"],
     queryFn: async () => (await api.get<FacetPage>("/classes/admin/classrooms/", { params: { status: "active", page_size: 25 } })).data,
-    enabled,
+    enabled: people,
     staleTime: 60_000,
   });
-  if (!enabled) return [];
   return [
-    source("lessons", "today's lessons", lessons, notMarkedItem),
-    source("sms", "SMS", sms, smsItem),
-    source("debt", "debts", debt, debtItem),
-    source("trials", "trials", trials, trialsItem),
-    source("lcup", "lc-up groups", lcup, pairingItem),
-    source("teacher", "classes", teacher, noTeacherItem),
-  ];
+    people ? source("lessons", "today's lessons", lessons, notMarkedItem) : null,
+    smsOn ? source("sms", "SMS", sms, smsItem) : null,
+    debtOn ? source("debt", "debts", debt, debtItem) : null,
+    trialsOn ? source("trials", "trials", trials, trialsItem) : null,
+    lcupOn ? source("lcup", "lc-up groups", lcup, pairingItem) : null,
+    people ? source("teacher", "classes", teacher, noTeacherItem) : null,
+  ].filter((s): s is AttentionSource => s !== null);
 }
 
 /**

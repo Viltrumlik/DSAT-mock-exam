@@ -156,14 +156,17 @@ export function ClassHeader({
   room,
   busy,
   canMessage,
+  canManage,
   onToggleActive,
   onDelete,
   children,
 }: {
   room: ClassroomCore;
   busy: boolean;
-  /** Admins and super admins: the SMS panel is theirs alone. */
+  /** Whoever holds `send_sms`: the SMS panel's campaigns are theirs alone. */
   canMessage: boolean;
+  /** Whoever holds `manage_groups`: archiving and deleting a class go through its governance endpoints. */
+  canManage: boolean;
   onToggleActive: () => void;
   onDelete: () => void;
   /** The tab row, at the card's foot. */
@@ -189,7 +192,7 @@ export function ClassHeader({
               Message class
             </Link>
           ) : null}
-          {managed ? null : (
+          {managed || !canManage ? null : (
             <>
               <Button icon={room.is_active ? "archive" : "undo"} disabled={busy} onClick={onToggleActive}>
                 {room.is_active ? "Archive" : "Restore"}
