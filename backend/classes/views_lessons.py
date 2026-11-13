@@ -376,8 +376,8 @@ class _ClassroomCapabilityView(_ClassroomScopedView):
 
         Both of those include TAs (capabilities.py), and classwork points are *minted*
         rather than derived from work a student did — a TA holding the grading brief must
-        not be able to create points out of nothing. ``rewards.views._is_reward_staff`` is
-        not reusable here either: it excludes teachers entirely, which is the opposite of
+        not be able to create points out of nothing. ``rewards.views.REWARD_STAFF`` is
+        not reusable here either: no teacher holds ``events_shop``, which is the opposite of
         what a class-local award needs.
         """
         if not self.caps(request).can_manage_class:

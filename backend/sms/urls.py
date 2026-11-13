@@ -1,4 +1,4 @@
-"""The SMS panel's routes (``/api/sms/``), all under ``admin/`` and all ``IsGlobalAdmin``. The fixed
+"""The SMS panel's routes (``/api/sms/``), all under ``admin/`` and each behind ``Requires(...)``. The fixed
 ``campaigns/preview/`` sits above the ``<int:pk>`` routes."""
 
 from django.urls import path

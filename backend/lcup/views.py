@@ -16,12 +16,12 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access import constants as acc_const
-from classes.capabilities import is_global_admin
+from access.permissions import Requires
 from classes.models import Classroom, ClassroomMembership
 from users.models import User
 
@@ -51,14 +51,11 @@ _TRUTHY = {"1", "true", "yes", "on"}
 _NEEDS_ATTENTION = (LinkStatus.NEEDS_REVIEW, LinkStatus.UNMATCHED)
 
 
-class IsGlobalAdmin(BasePermission):
-    def has_permission(self, request, view):
-        user = request.user
-        return bool(user and user.is_authenticated and is_global_admin(user))
-
-
 class _AdminView(APIView):
-    permission_classes = [IsGlobalAdmin]
+    """The lc-up tools: pairing, sync, review, the accounts the sync created. Finance and the trials list
+    name their own permission."""
+
+    permission_classes = [Requires(acc_const.PERM_LCUP_TOOLS)]
 
 
 def _bad(detail: str, code: int = status.HTTP_400_BAD_REQUEST) -> Response:
@@ -389,23 +386,31 @@ class StudentFinanceView(APIView):
         return Response(finance.student_finance(request.user))
 
 
-class FinanceSummaryView(_AdminView):
+class FinanceSummaryView(APIView):
+    permission_classes = [Requires(acc_const.PERM_VIEW_REPORTS)]
+
     def get(self, request):
         return Response(finance.summary(finance.parse_month(request.query_params.get("month"), now=timezone.now())))
 
 
-class FinanceDebtorsView(_AdminView):
+class FinanceDebtorsView(APIView):
+    permission_classes = [Requires(acc_const.PERM_VIEW_MONEY)]
+
     def get(self, request):
         return Response(finance.debtors())
 
 
-class FinancePaymentsView(_AdminView):
+class FinancePaymentsView(APIView):
+    permission_classes = [Requires(acc_const.PERM_VIEW_MONEY)]
+
     def get(self, request):
         return Response(finance.payments_in(finance.parse_month(request.query_params.get("month"), now=timezone.now())))
 
 
-class FinanceExemptView(_AdminView):
+class FinanceExemptView(APIView):
     """Never freeze this student for debt (a grant, an agreement) — or freeze as usual again."""
+
+    permission_classes = [Requires(acc_const.PERM_DEBT_FREEZE)]
 
     def post(self, request, pk):
         link = get_object_or_404(LcupStudentLink.objects.select_related("user"), pk=pk)
@@ -474,10 +479,12 @@ class ArchiveView(_AdminView):
 # ── follow-ups (/ops/trials) ──────────────────────────────────────────────
 
 
-class FollowupsView(_AdminView):
+class FollowupsView(APIView):
     """lc-up's trial students, by the lessons they came to since the trial began, and the members no
     class list shows (lcup.followups). Read-only: a student is activated in lc-up, or linked in
     /ops/lcup, and leaves these lists within one sync."""
+
+    permission_classes = [Requires(acc_const.PERM_ENROLL)]
 
     def get(self, request):
         from datetime import date

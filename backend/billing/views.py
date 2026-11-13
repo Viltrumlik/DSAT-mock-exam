@@ -1,4 +1,5 @@
-"""The ledger on /ops/finance, for admins only. Read-only until the cutover: lc-up stays the master."""
+"""The ledger on /ops/finance. Read-only until the cutover: lc-up stays the master. Each view names the CRM
+permission it needs (plan 2026-11-12-crm-roles)."""
 
 import uuid
 
@@ -7,11 +8,11 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status
-from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from classes.capabilities import is_global_admin
+from access import constants as C
+from access.permissions import Requires, require
 
 from . import conf, ledger
 from .models import Account, BillingRun, BillingState, Entry, EntryKind, Seat, SeatState
@@ -19,16 +20,6 @@ from .models import Account, BillingRun, BillingState, Entry, EntryKind, Seat, S
 #: How many runs with something wrong the summary shows.
 PROBLEMS_SHOWN = 5
 ENTERABLE_KINDS = {EntryKind.PAYMENT.value, EntryKind.REFUND.value, EntryKind.ADJUST.value}
-
-
-class IsGlobalAdmin(BasePermission):
-    def has_permission(self, request, view):
-        user = request.user
-        return bool(user and user.is_authenticated and is_global_admin(user))
-
-
-class _AdminView(APIView):
-    permission_classes = [IsGlobalAdmin]
 
 
 def _iso(value):
@@ -39,7 +30,9 @@ def _current_account_ids() -> set[int]:
     return set(Account.objects.filter(seats__isnull=False).exclude(seats__state=SeatState.LEFT).values_list("pk", flat=True))
 
 
-class SummaryView(_AdminView):
+class SummaryView(APIView):
+    permission_classes = [Requires(C.PERM_VIEW_MONEY)]
+
     def get(self, request):
         state = BillingState.get()
         accounts = Account.objects.count()
@@ -65,7 +58,9 @@ class SummaryView(_AdminView):
         })
 
 
-class AccountListView(_AdminView):
+class AccountListView(APIView):
+    permission_classes = [Requires(C.PERM_VIEW_MONEY)]
+
     def get(self, request):
         scope = request.query_params.get("scope")
         balances = dict(Entry.objects.filter(voided_at__isnull=True).values_list("account_id").annotate(total=Sum("amount")))
@@ -83,7 +78,9 @@ class AccountListView(_AdminView):
         return Response({"accounts": rows})
 
 
-class AccountDetailView(_AdminView):
+class AccountDetailView(APIView):
+    permission_classes = [Requires(C.PERM_VIEW_MONEY)]
+
     def get(self, request, pk):
         account = get_object_or_404(Account, pk=pk)
         running, rows = 0, []
@@ -126,8 +123,11 @@ def _bad(detail: str) -> Response:
     return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class EntryCreateView(_AdminView):
-    """Money an admin enters. Refused until the cutover, while it is still entered in lc-up."""
+class EntryCreateView(APIView):
+    """Money an admin enters. Refused until the cutover, while it is still entered in lc-up. A payment or a
+    refund needs ``take_payment``, an adjustment ``adjust_balance``."""
+
+    permission_classes = [Requires(C.PERM_TAKE_PAYMENT, C.PERM_ADJUST_BALANCE)]
 
     def post(self, request, pk):
         if not conf.payments_open():
@@ -137,6 +137,7 @@ class EntryCreateView(_AdminView):
         kind = data.get("kind")
         if kind not in ENTERABLE_KINDS:
             return _bad("Only a payment, a refund or an adjustment can be entered.")
+        require(request.user, C.PERM_ADJUST_BALANCE if kind == EntryKind.ADJUST.value else C.PERM_TAKE_PAYMENT)
         try:
             request_id = uuid.UUID(str(data.get("request_id")))
         except ValueError:
@@ -158,9 +159,11 @@ class EntryCreateView(_AdminView):
         return Response({"balance": ledger.balance(account)}, status=status.HTTP_201_CREATED)
 
 
-class SeatPriceView(_AdminView):
+class SeatPriceView(APIView):
     """A student's own price. Open while lc-up runs, unlike entering money: it only touches this ledger, and it
     is how a difference from lc-up over a discount gets put right."""
+
+    permission_classes = [Requires(C.PERM_SET_PRICES)]
 
     def post(self, request, pk):
         seat = get_object_or_404(Seat.objects.select_related("account"), pk=pk)
@@ -176,8 +179,11 @@ class SeatPriceView(_AdminView):
         return Response({"balance": ledger.balance(seat.account)})
 
 
-class EntryVoidView(_AdminView):
-    """Any admin may void what any admin entered (owner, 2026-11-04); the reason and the name stay on the row."""
+class EntryVoidView(APIView):
+    """Whoever holds ``void_payment`` voids a row anyone entered (owner, 2026-11-04); the reason and the name stay
+    on the row."""
+
+    permission_classes = [Requires(C.PERM_VOID_PAYMENT)]
 
     def post(self, request, pk):
         if not conf.payments_open():

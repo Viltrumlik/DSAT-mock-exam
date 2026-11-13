@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from . import constants
@@ -237,3 +238,43 @@ class CanAuthorVocabulary(BasePermission):
 
     def has_object_permission(self, request, view, obj):
         return is_global_scope_staff(request.user)
+
+
+class Requires(BasePermission):
+    """The CRM's one gate: ``permission_classes = [Requires(constants.PERM_TAKE_PAYMENT)]``.
+
+    It passes when the signed-in user holds the permission, through their role or through a per-person
+    tick (``access.UserPermission``, where a deny wins). With several codenames it passes when the user
+    holds any one of them; a view that needs a particular one for a particular action then checks it
+    with :func:`require` inside (a payment and an adjustment share one endpoint).
+
+    It is an instance, not a class. DRF calls each entry of ``permission_classes``, and calling an
+    instance returns the instance. ``message`` keeps the 403 body a view answered before it moved here.
+    Only subject-less codenames: ``authorize`` refuses a subject-scoped one when no subject is given.
+    """
+
+    def __init__(self, *codenames: str, message: str | None = None):
+        if not codenames:
+            raise ValueError("Requires() needs at least one permission codename.")
+        scoped = [c for c in codenames if c in constants.PERMISSIONS_REQUIRING_PLATFORM_SUBJECT]
+        if scoped:
+            raise ValueError(f"Requires() takes subject-less codenames only, not {scoped}.")
+        self.codenames = tuple(codenames)
+        if message:
+            self.message = message
+
+    def __call__(self):
+        return self
+
+    def __repr__(self):
+        return f"Requires({', '.join(map(repr, self.codenames))})"
+
+    def has_permission(self, request, view):
+        return any(authorize(request.user, code) for code in self.codenames)
+
+
+def require(user, codename: str, message: str | None = None) -> None:
+    """Inside a view behind :class:`Requires` with several codenames: refuse with a 403 unless the user
+    holds this one."""
+    if not authorize(user, codename):
+        raise PermissionDenied(message)

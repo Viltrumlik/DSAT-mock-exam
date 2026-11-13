@@ -5,10 +5,11 @@ from __future__ import annotations
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from access import constants as C
+from access.permissions import Requires
 from users.changelist import apply_search, facets, paginate
 
 from .lessons_today import lessons_today
@@ -18,25 +19,19 @@ from .ops_classrooms import (
 )
 
 
-def is_ops_admin(user) -> bool:
-    """The governance rule (views_assign._AdminClassroomGovernanceView._guard): superuser, super_admin, admin."""
-    if not user or not getattr(user, "is_authenticated", False):
-        return False
-    if getattr(user, "is_superuser", False):
-        return True
-    return str(getattr(user, "role", "") or "").strip().lower() in ("super_admin", "admin")
+#: Reading the classes and their lessons; changing one is ``manage_groups``. "Admins only." is the 403 these
+#: views answered before they moved to permissions.
+READ = Requires(C.PERM_VIEW_PEOPLE, message="Admins only.")
 
 
 class ClassroomChangeListView(APIView):
     """``GET /api/classes/admin/classrooms/`` — every class: search, filters with counts, ordering, pages."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [READ]
 
     def get(self, request):
         from lcup.guards import lcup_managed_ids
 
-        if not is_ops_admin(request.user):
-            return Response({"detail": "Admins only."}, status=403)
         params = request.query_params
         qs = Classroom.objects.all()
         # A teacher-name search joins one teacher per class (a foreign key), so it cannot repeat a row.
@@ -57,11 +52,9 @@ class ClassroomChangeListView(APIView):
 class ClassroomDetailView(APIView):
     """``GET /api/classes/admin/classrooms/<pk>/`` — what the class's change form opens with."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [READ]
 
     def get(self, request, pk: int):
-        if not is_ops_admin(request.user):
-            return Response({"detail": "Admins only."}, status=403)
         room = Classroom.objects.select_related("teacher", "branch").filter(pk=pk).first()
         if room is None:
             return Response({"detail": "Not found."}, status=404)
@@ -72,11 +65,9 @@ class ClassroomPartView(APIView):
     """``GET /api/classes/admin/classrooms/<pk>/<part>/`` — roster, attendance, homework or history, each on its
     own, so a slow or failing part never blanks the page."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [READ]
 
     def get(self, request, pk: int, part: str):
-        if not is_ops_admin(request.user):
-            return Response({"detail": "Admins only."}, status=403)
         build = CLASS_PARTS.get(part)
         room = Classroom.objects.filter(pk=pk).first() if build else None
         if room is None:
@@ -90,14 +81,12 @@ class ClassroomTelegramRemoveView(APIView):
     from members it never watched arrive and from accounts it cannot place, and this is the
     admin deciding about exactly those (decision 3). A chat administrator is never removed."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [Requires(C.PERM_MANAGE_GROUPS, message="Admins only.")]
 
     def post(self, request, pk: int):
         from . import telegram_group as tg
         from .models_telegram import ClassroomTelegramMember
 
-        if not is_ops_admin(request.user):
-            return Response({"detail": "Admins only."}, status=403)
         try:
             member_id = int(request.data.get("member_id"))
         except (TypeError, ValueError):
@@ -127,11 +116,9 @@ class LessonsTodayView(APIView):
     (today by the school's clock when left out), its teacher, and what its register says
     (``classes.lessons_today``). The same people as the classroom changelist: admins only."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [READ]
 
     def get(self, request):
-        if not is_ops_admin(request.user):
-            return Response({"detail": "Admins only."}, status=403)
         raw = (request.query_params.get("date") or "").strip()
         if not raw:
             return Response(lessons_today(timezone.localdate()))

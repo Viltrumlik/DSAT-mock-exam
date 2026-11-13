@@ -93,6 +93,9 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
                 constants.PERM_CREATE_CLASSROOM,
                 constants.PERM_MANAGE_TESTS,
                 constants.PERM_SUBMIT_TEST,
+                # Every CRM permission: exactly what the role-name checks gave an admin before
+                # (plan 2026-11-12-crm-roles, PR 2). No other role holds one.
+                *constants.CRM_PERMISSION_CODENAMES,
             }
         ),
         constants.ROLE_TEACHER: frozenset(

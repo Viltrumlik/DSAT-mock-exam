@@ -32,7 +32,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from rewards.views import _is_reward_staff
+from access import constants as acc_const
+from access.services import normalized_role
 from users.auth_cookies import NATIVE_CLIENT_HEADER
 from users.authentication import CookieOrHeaderJWTAuthentication
 
@@ -254,13 +255,23 @@ class DiagnosticsUploadView(APIView):
 # --- The console ------------------------------------------------------------------------------
 
 
+def _is_console_staff(user) -> bool:
+    """super_admin, admin or a Django superuser, never a teacher. The app's update policy is not a CRM action, so
+    it keeps the role rule the shop console had before the CRM's permissions replaced it there
+    (plan 2026-11-12-crm-roles)."""
+    return bool(getattr(user, "is_superuser", False)) or normalized_role(user) in (
+        acc_const.ROLE_SUPER_ADMIN,
+        acc_const.ROLE_ADMIN,
+    )
+
+
 class _StaffView(APIView):
-    """Same guard as the shop and stories consoles: global staff only, never a teacher."""
+    """Global staff only, never a teacher."""
 
     permission_classes = [IsAuthenticated]
 
     def _guard(self, request):
-        if not _is_reward_staff(request.user):
+        if not _is_console_staff(request.user):
             return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
         return None
 

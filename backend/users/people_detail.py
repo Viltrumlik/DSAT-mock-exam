@@ -11,7 +11,7 @@ from django.db.models.functions import Lower
 from django.utils import timezone
 
 from access import constants as C
-from classes.capabilities import is_global_admin
+from access.services import authorize
 from classes.models import Classroom, ClassroomMembership, Submission
 from classes.models_membership_audit import ClassroomMembershipEvent
 
@@ -258,8 +258,10 @@ def _lcup_locked_fields(user) -> list[str]:
 
 
 def _parent(user, request):
-    """Whom to call about this learner. An admin's alone, though anyone who manages users can open this page."""
-    return {"name": user.parent_name, "phone": user.parent_phone} if is_global_admin(getattr(request, "user", None)) else None
+    """Whom to call about this learner. The desk's alone (``view_people``), though anyone who manages users can open
+    this page."""
+    viewer = getattr(request, "user", None)
+    return {"name": user.parent_name, "phone": user.parent_phone} if authorize(viewer, C.PERM_VIEW_PEOPLE) else None
 
 
 def person_core(user, request=None) -> dict:
