@@ -79,8 +79,9 @@ class BothSubjectApiTests(TestCase):
 
     def test_creating_a_both_support_teacher_grants_two_access_rows(self):
         """Two real rows, not one "both" row — that is what makes every existing
-        subject-scoped check work unchanged."""
-        self.client.force_authenticate(self.admin)
+        subject-scoped check work unchanged. Made by the owner: a staff account is theirs to
+        create (the CRM roles plan's PR 4, manage_staff)."""
+        self.client.force_authenticate(_u("sb_owner@t.com", role=C.ROLE_SUPER_ADMIN))
 
         response = self.client.post("/api/users/create/", {
             "email": "sb_new@t.com", "username": "sb_new", "password": "secret12345",
