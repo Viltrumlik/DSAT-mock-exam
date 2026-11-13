@@ -802,6 +802,89 @@ class FinishedClassTests(TelegramGroupBase):
         )
         self.assertEqual(self.tg.kicked, [(CHAT, 1001)])
 
+    def test_a_stolen_ticket_is_burned_but_nobody_is_kicked(self):
+        """The one removal that does not go through `remove_member`.
+
+        A ticket minted while the class was still running, opened by somebody else after it
+        finished: the link is spent — that half is about the credential — but the chat is
+        the group's own now, so the person who walked in stays. Found by review (Codex, PR
+        #357), and right: a rule that one path does not say is not a rule.
+        """
+        link = self.issue_for(self.student)
+        self._finish()
+
+        self.tg.join(1002)  # self.other, on self.student's link
+        outcome = tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1002}, invite_link=link)
+        )
+
+        self.assertEqual(outcome, "rejected_identity_mismatch")
+        self.assertEqual(self.tg.kicked, [])
+        self.assertEqual(self.row(self.student).invite_link, "")
+        self.assertTrue(
+            ClassroomTelegramEvent.objects.filter(
+                action=ClassroomTelegramEvent.ACTION_JOIN_REJECTED,
+                detail__contains="no running class meets in this chat",
+            ).exists()
+        )
+
+    def test_the_owner_is_told_the_link_was_spent_and_nothing_else(self):
+        """The note for a mismatch says somebody was taken out of the group. When nobody
+        was, that sentence is a lie the student can check in one tap."""
+        link = self.issue_for(self.student)
+        self._finish()
+        self.tg.messages.clear()
+
+        self.tg.join(1002)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1002}, invite_link=link)
+        )
+
+        note = Notification.objects.filter(
+            recipient=self.student, event="TELEGRAM_GROUP"
+        ).latest("id")
+        self.assertIn("used up", note.body)
+        self.assertNotIn("removed from the group", note.body)
+        dm = " ".join(body for chat, body in self.tg.messages if chat == "1001")
+        self.assertIn("guruhda qoldi", dm)
+        self.assertNotIn("guruhdan chiqarildi", dm)
+
+    def test_a_chat_shared_with_a_running_class_still_gets_the_kick(self):
+        """`telegram_chat_id` is not unique and two classes may meet in one chat. A ticket
+        from the finished one, opened in a room the site still manages for the live one,
+        leaves a stranger standing in a managed room — so rule 4 asks about the ROOM here,
+        not about the ticket's own class. Found by review (Codex, PR #358)."""
+        still_running = Classroom.objects.create(
+            name="Junior G15 English (next term)",
+            subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin,
+            teacher=self.teacher,
+            telegram_chat_id=CHAT,  # the same room
+        )
+        self.assertTrue(still_running.is_active)
+        link = self.issue_for(self.student)
+        self._finish()  # only the student's own class finishes
+
+        self.tg.join(1002)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1002}, invite_link=link)
+        )
+
+        self.assertEqual(self.tg.kicked, [(CHAT, 1002)])
+
+    def test_a_stolen_ticket_in_a_running_class_still_gets_the_kick(self):
+        """The same path, the only difference being that the class has not finished — so
+        the test above is proving rule 4 rather than a rejection that stopped working."""
+        link = self.issue_for(self.student)
+
+        self.tg.join(1002)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1002}, invite_link=link)
+        )
+
+        self.assertEqual(self.tg.kicked, [(CHAT, 1002)])
+
     def test_reopening_the_class_puts_the_group_back_under_the_bot(self):
         """lc-up restores the group, `reopen_class` sets is_active again, and the class is
         running: there is nothing to undo, because the rule reads the class, not a flag of
