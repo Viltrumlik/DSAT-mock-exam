@@ -29,6 +29,10 @@ function consoleFromHostname(): "admin" | "questions" | "teacher" | "main" {
 const MAIN_SITE_URL =
     process.env.NEXT_PUBLIC_MAIN_SITE_URL || "https://mastersat.uz";
 
+/** Where a teacher who opens the admin panel is sent: their classes live in the Teacher Portal. */
+const TEACHER_PORTAL_URL =
+    process.env.NEXT_PUBLIC_TEACHER_PORTAL_URL || "https://teacher.mastersat.uz";
+
 function permissionList(me: Record<string, unknown> | undefined | null): string[] {
     if (!me) return [];
     const p = me.permissions;
@@ -109,6 +113,10 @@ export default function AuthGuard({
     // would refuse to serve.
     const teacherPortalAllowed =
         roleRaw === "teacher" || roleRaw === "support_teacher" || roleRaw === "super_admin";
+    // The admin panel is the desk's (owner, 2026-11-12): a teacher or support teacher is sent to the
+    // Teacher Portal. The server refuses them here too (host guard, sign-in); "*" is the owner.
+    const teacherOnAdmin =
+        consoleMode === "admin" && (roleRaw === "teacher" || roleRaw === "support_teacher") && !perms.includes("*");
 
     useEffect(() => {
         if (bootState !== "AUTHENTICATED" || !me) return;
@@ -116,6 +124,10 @@ export default function AuthGuard({
         // cross-origin to the main site with the permission notice.
         if (consoleMode === "teacher" && !teacherPortalAllowed) {
             window.location.replace(`${MAIN_SITE_URL}/?denied=teacher-portal`);
+            return;
+        }
+        if (teacherOnAdmin) {
+            window.location.replace(`${TEACHER_PORTAL_URL}/`);
             return;
         }
         // Frozen students are NOT redirected — they stay on the dashboard with a
@@ -145,6 +157,7 @@ export default function AuthGuard({
         isStudent,
         isTester,
         teacherPortalAllowed,
+        teacherOnAdmin,
         adminOnly,
         consoleMode,
         publicBlocked,
@@ -221,6 +234,7 @@ export default function AuthGuard({
 
     const willRedirectAway =
         (consoleMode === "teacher" && !teacherPortalAllowed) ||
+        teacherOnAdmin ||
         (consoleMode === "questions" && isStudent) ||
         (consoleMode === "admin" && (isStudent || isTester)) ||
         (adminOnly && (!hasStaff || (consoleMode === "admin" && isTester))) ||

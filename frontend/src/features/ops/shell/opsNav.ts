@@ -97,15 +97,15 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
         id: "learners",
         caption: "Learners",
         items: [
-          { href: "/ops/students", label: "Students", icon: "users", requires: [P.manageUsers, P.assignAccess] },
-          { href: "/ops/public", label: "Public users", icon: "user", requires: [P.manageUsers, P.assignAccess] },
+          { href: "/ops/students", label: "Students", icon: "users", requires: [P.viewPeople] },
+          { href: "/ops/public", label: "Public users", icon: "user", requires: [P.viewPeople] },
         ],
       },
       {
         id: "team",
         caption: "Team",
         items: [
-          { href: "/ops/staff", label: "Staff", icon: "shield", requires: [P.manageUsers, P.assignAccess] },
+          { href: "/ops/staff", label: "Staff", icon: "shield", requires: [P.manageUsers] },
           { href: "/ops/access", label: "Access", icon: "key", requires: [P.manageUsers, P.assignAccess] },
         ],
       },
@@ -291,7 +291,7 @@ export function visibleNav(groups: readonly OpsNavGroup[], me: MeLike): OpsNavGr
  */
 export function opsPathAllowed(pathname: string, me: MeLike, groups: readonly OpsNavGroup[] = OPS_NAV_GROUPS): boolean {
   if (pathname === "/ops/users" || pathname.startsWith("/ops/users/")) {
-    return holds(me, P.manageUsers, P.assignAccess);
+    return holds(me, P.viewPeople);
   }
   const item = activeNavItem(pathname, groups);
   if (item) return canSeeItem(item, me);

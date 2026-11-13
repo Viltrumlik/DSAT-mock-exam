@@ -140,7 +140,7 @@ describe("visibleNav / visibleCategories", () => {
     const seen = hrefs(visibleNav(OPS_NAV_GROUPS, TEACHER));
     for (const href of ["/ops/surveys", "/ops/mobile", "/ops/broadcast"]) expect(seen).not.toContain(href);
     // Teachers are not the desk: the academic pages stay for them.
-    for (const href of ["/ops/journals", "/ops/midterms", "/ops/exam-dates", "/ops/students"]) expect(seen).toContain(href);
+    for (const href of ["/ops/journals", "/ops/midterms", "/ops/exam-dates", "/ops/access"]) expect(seen).toContain(href);
   });
 
   it("shows a section only to someone holding a permission its API checks", () => {
@@ -189,8 +189,9 @@ describe("visibleNav / visibleCategories", () => {
   it("shows an accountant the money, and none of the desk's other sections", () => {
     // Branches and Support hours are group desks (manage_groups), not money.
     const seen = hrefs(visibleNav(OPS_NAV_GROUPS, ACCOUNTANT));
-    expect(seen).toEqual(["/ops", "/ops/classrooms", "/ops/finance", "/ops/sms"]);
-    for (const href of ["/ops/branches", "/ops/support", "/ops/students", "/ops/staff", "/ops/trials", "/ops/lcup", "/ops/shop", "/ops/events", "/ops/journals", "/ops/stories"]) {
+    // The people pages are view_people's (PR 5): the accountant reads students to take their money.
+    expect(seen).toEqual(["/ops", "/ops/students", "/ops/public", "/ops/classrooms", "/ops/finance", "/ops/sms"]);
+    for (const href of ["/ops/branches", "/ops/support", "/ops/staff", "/ops/trials", "/ops/lcup", "/ops/shop", "/ops/events", "/ops/journals", "/ops/stories"]) {
       expect(seen).not.toContain(href);
     }
   });
@@ -253,10 +254,10 @@ describe("opsPathAllowed", () => {
   });
 
   it("closes to a teacher the pages the server refuses them, and leaves theirs open", () => {
-    for (const path of ["/ops/finance", "/ops/sms", "/ops/lcup", "/ops/classrooms/3", "/ops/events"]) {
+    for (const path of ["/ops/finance", "/ops/sms", "/ops/lcup", "/ops/classrooms/3", "/ops/events", "/ops/students", "/ops/users"]) {
       expect(opsPathAllowed(path, TEACHER)).toBe(false);
     }
-    for (const path of ["/ops", "/ops/students", "/ops/journals", "/ops/users", "/ops/assignments"]) {
+    for (const path of ["/ops", "/ops/access", "/ops/journals", "/ops/assignments"]) {
       expect(opsPathAllowed(path, TEACHER)).toBe(true);
     }
   });

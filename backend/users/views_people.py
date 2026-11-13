@@ -18,7 +18,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access import constants as C
-from access.permissions import HasManageUsersOrAssignTestAccess
+from access.permissions import Requires
+from access.services import authorize
 from classes.models import ClassroomMembership
 
 from . import audience as A
@@ -246,8 +247,10 @@ def _row(u, section, request=None):
     if section == "students":
         link = getattr(u, "lcup_student_link", None)
         row["groups"] = [{"id": s.classroom_id, "name": s.classroom.name} for s in getattr(u, "active_seats", [])]
+        # The balance is money: ``view_money``'s alone (teachers saw it here once; the badge, never the amount).
+        money = request is not None and authorize(request.user, C.PERM_VIEW_MONEY)
         row["lcup"] = (
-            {"linked": True, "balance": None if link.balance is None else int(link.balance)}
+            {"linked": True, "balance": None if link.balance is None or not money else int(link.balance)}
             if link else {"linked": False, "balance": None}
         )
     elif section == "public":
@@ -258,7 +261,7 @@ def _row(u, section, request=None):
 
 
 class PeopleListView(APIView):
-    permission_classes = [HasManageUsersOrAssignTestAccess]
+    permission_classes = [Requires(C.PERM_VIEW_PEOPLE)]
 
     def get(self, request):
         params = request.query_params

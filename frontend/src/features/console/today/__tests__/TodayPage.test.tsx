@@ -114,11 +114,11 @@ describe("TodayPage", () => {
     expect(text).not.toContain("No one owes");
   });
 
-  it("asks a teacher only for what a teacher may read", async () => {
+  it("asks a teacher for nothing: every card is the desk's (teachers are sent to the portal anyway)", async () => {
     me = { id: 9, role: "teacher", permissions: TEACHER_ME.permissions, first_name: "Kamola" };
     await render();
     const asked = get.mock.calls.map(([url]) => url);
-    expect(asked).toEqual(["/users/admin/population/"]);
+    expect(asked).toEqual([]);
     expect(host.textContent).not.toContain("Needs you");
     expect(host.textContent).toContain("Shortcuts");
   });
