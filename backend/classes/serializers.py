@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+import re
 
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
@@ -155,6 +156,15 @@ class ClassroomSerializer(serializers.ModelSerializer):
         }
 
 
+#: What /chatid prints: an integer, negative for a group (``-100…`` once it is a supergroup).
+#: ``[0-9]``, not ``\d``: ``\d`` also takes Arabic-Indic and other Unicode digits, and the class
+#: bot matches Telegram's ASCII id against this column as an exact string.
+TELEGRAM_CHAT_ID_RE = re.compile(r"-?[0-9]+")
+TELEGRAM_CHAT_ID_MESSAGE = (
+    "Telegram chat id must be the number /chatid gave you (e.g. -1001234567890)."
+)
+
+
 class ClassroomCreateSerializer(serializers.ModelSerializer):
     #: Declared as a CharField even though the model column is a ``URLField``.
     #:
@@ -266,6 +276,21 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "That is not a Telegram link. It should start with https://t.me/"
             )
+        return value
+
+    def validate_telegram_chat_id(self, value):
+        """Blank (no group) or the bare integer /chatid prints — nothing else.
+
+        Telegram itself is no check: the Bot API answered for ``-100…9860v`` (a paste that kept a
+        stray letter), so the group's health looked fine, while ``classrooms_for_chat`` matches
+        incoming updates by exact string and would never have found the class. Refused here, at
+        the paste, rather than discovered when nobody's join is ever seen.
+        """
+        value = (value or "").strip()
+        if not value:
+            return ""
+        if not TELEGRAM_CHAT_ID_RE.fullmatch(value):
+            raise serializers.ValidationError(TELEGRAM_CHAT_ID_MESSAGE)
         return value
 
     class Meta:
