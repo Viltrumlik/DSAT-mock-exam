@@ -1,9 +1,10 @@
 """Every receiver in ``rewards.hooks`` — what fires it, what it pays, and what takes it back.
 
-There are eleven: two on the attendance register's saves, two on its deletes, one on a midterm
-verdict, four on the things a homework bundle can contain, one on a support booking and one on
-a survey response. This module used to cover the first two areas only. It now covers all
-eleven, because the overhaul moved the rule under several of them at once.
+There are thirteen: two on the attendance register's saves, two on its deletes, three on a
+midterm (its verdict, and the two ways a class's result is published), four on the things a
+homework bundle can contain, one on a support booking and one on a survey response. This module
+used to cover the first two areas only. It now covers all thirteen, because the overhaul moved
+the rule under several of them at once.
 
 The three rules that moved, and what pins them here:
 
@@ -47,8 +48,12 @@ from assessments.models import (
     AssessmentSet,
     HomeworkAssignment,
 )
+from access.models import ResourceAccessGrant
+from access.resources import RT_MIDTERM_V2
 from classes.models import Assignment, Classroom, ClassroomMembership, Submission
 from classes.models_attendance import AttendanceRecord, AttendanceSession
+from classes.models_certificates import MidtermCertificate
+from classes.models_schedule import MidtermSchedule
 from classes.models_support import SupportAvailability, SupportBooking
 from exams.models import Module, PracticeTest, Question, TestAttempt
 from midterms.models import Midterm, MidtermAttempt, MidtermOutcome
@@ -670,6 +675,222 @@ class MidtermAwardTests(TestCase):
         self._sit(mt, correct=3)
 
         self.assertIsNone(PointAward.objects.get(student=self.student).classroom_id)
+
+
+class MidtermXpAfterPublishTests(TestCase):
+    """A classroom midterm's XP is given at the publish, not at the hand-in.
+
+    The score is hidden ("awaiting result") until the teacher publishes, and paying at submit
+    told the student the verdict anyway — on their balance and in the bell. XP now follows the
+    same gate the result page reads (``midterms.access.midterm_results_state``).
+
+    Every sitting here is a classroom one (an active classroom grant), except where a test says
+    otherwise. ``MidtermAwardTests`` above sits with no grant at all, which the gate treats as
+    visible — so those tests pin that the ungated paths still pay on submit.
+    """
+
+    def setUp(self):
+        self.teacher = _u("hk_mt_teacher@t.com")
+        self.student = _u("hk_mt_pub@t.com")
+        self.room = self._room("MT-A")
+        self.mt = _midterm(pass_mark=50)
+        self.schedule = MidtermSchedule.objects.create(
+            classroom=self.room, midterm=self.mt, starts_at=timezone.now() - timedelta(hours=2)
+        )
+        self._grant(self.student, self.room)
+
+    def _room(self, name):
+        room = Classroom.objects.create(
+            name=name, subject=Classroom.SUBJECT_MATH, level="junior", description="x",
+            lesson_days="ODD", teacher=self.teacher, created_by=self.teacher,
+        )
+        return room
+
+    def _grant(self, student, room):
+        ClassroomMembership.objects.create(
+            classroom=room, user=student, role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        ResourceAccessGrant.objects.create(
+            user=student, classroom=room, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            resource_type=RT_MIDTERM_V2, resource_id=self.mt.id,
+            source=ResourceAccessGrant.SOURCE_CLASSROOM,
+            status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+
+    def _sit(self, *, correct, student=None):
+        student = student or self.student
+        qs = list(self.mt.questions())
+        answers = {str(q.id): ("a" if i < correct else "b") for i, q in enumerate(qs)}
+        attempt = MidtermAttempt.objects.create(midterm=self.mt, student=student, answers=answers)
+        attempt.start_attempt()
+        attempt.submit()
+        attempt.complete()
+        return attempt
+
+    def _publish(self):
+        from midterms.certificate_service import issue_classroom_certificates
+
+        return issue_classroom_certificates(self.mt, self.room, self.teacher)
+
+    def test_a_pass_earns_nothing_until_the_teacher_publishes(self):
+        self._sit(correct=3)   # 75 >= 50
+
+        self.assertEqual(_paid(self.student), (0, 0))
+        self.assertFalse(PointAward.objects.filter(student=self.student).exists())
+
+        self.assertTrue(self._publish()["ok"])
+
+        self.assertEqual(_paid(self.student), (20, 20))
+
+    def test_the_earning_bell_rings_at_the_publish_not_at_the_hand_in(self):
+        """The bell was the leak: "You earned 20 points · Midterm passed" while the result
+        page still said "awaiting result"."""
+        from notifications import constants as note_const
+        from notifications.models import Notification
+
+        def earned():
+            return Notification.objects.filter(
+                recipient=self.student, event=note_const.EVENT_REWARD_EARNED
+            ).count()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self._sit(correct=3)
+        self.assertEqual(earned(), 0)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self._publish()
+        self.assertEqual(earned(), 1)
+
+    def test_a_fail_earns_nothing_at_the_publish_either(self):
+        self._sit(correct=1)   # 25 < 50
+        self._publish()
+
+        self.assertEqual(_paid(self.student), (0, 0))
+
+    def test_publishing_twice_pays_once(self):
+        """"Re-calculate" runs the same publish again."""
+        self._sit(correct=3)
+        self._publish()
+        self._publish()
+
+        self.assertEqual(_paid(self.student), (20, 20))
+        self.assertEqual(PointAward.objects.filter(student=self.student).count(), 1)
+
+    def test_releasing_the_schedule_alone_pays(self):
+        """The schedule flag is a release on its own, whichever code path flips it."""
+        self._sit(correct=3)
+
+        self.schedule.results_released = True
+        self.schedule.save(update_fields=["results_released"])
+
+        self.assertEqual(_paid(self.student), (20, 20))
+
+    def test_a_classroom_certificate_alone_pays(self):
+        """A class with no schedule row is released by its certificate instead."""
+        self.schedule.delete()
+        attempt = self._sit(correct=3)
+        self.assertEqual(_paid(self.student), (0, 0))
+
+        MidtermCertificate.objects.create(
+            flavor=MidtermCertificate.FLAVOR_CLASSROOM, classroom=self.room, midterm=self.mt,
+            student=self.student, midterm_attempt=attempt, student_name="S",
+            midterm_title="MT", score=75,
+        )
+
+        self.assertEqual(_paid(self.student), (20, 20))
+
+    def test_a_release_in_another_class_pays_nobody_here(self):
+        """Two classes on the same paper publish separately. Releasing one must not pay — or
+        reveal — the other."""
+        other_room = self._room("MT-B")
+        other = _u("hk_mt_other@t.com")
+        self._grant(other, other_room)
+        other_schedule = MidtermSchedule.objects.create(
+            classroom=other_room, midterm=self.mt, starts_at=timezone.now() - timedelta(hours=2)
+        )
+        self._sit(correct=3)
+        self._sit(correct=3, student=other)
+
+        other_schedule.results_released = True
+        other_schedule.save(update_fields=["results_released"])
+
+        self.assertEqual(_paid(other), (20, 20))
+        self.assertEqual(_paid(self.student), (0, 0))
+
+    def test_a_release_under_the_legacy_identity_pays(self):
+        """A midterm mirrored from a mock exam can be released under the mock exam's id;
+        the result page honours that, so the XP has to as well."""
+        from exams.models import MockExam
+
+        mock = MockExam.objects.create(title="Legacy midterm")
+        self.mt.legacy_mock_exam_id = mock.id
+        self.mt.save(update_fields=["legacy_mock_exam_id"])
+        self.schedule.delete()
+        self._sit(correct=3)
+        self.assertEqual(_paid(self.student), (0, 0))
+
+        MidtermSchedule.objects.create(
+            classroom=self.room, mock_exam=mock, results_released=True,
+            starts_at=timezone.now() - timedelta(hours=2),
+        )
+
+        self.assertEqual(_paid(self.student), (20, 20))
+
+    def test_saving_a_released_schedule_for_something_else_writes_nothing(self):
+        self._sit(correct=3)
+        self.schedule.results_released = True
+        self.schedule.save(update_fields=["results_released"])
+        audits = PointAwardAudit.objects.count()
+
+        self.schedule.generate_access_code()
+        self.schedule.save(update_fields=["access_code", "access_code_set_at"])
+
+        self.assertEqual(PointAwardAudit.objects.count(), audits)
+        self.assertEqual(_paid(self.student), (20, 20))
+
+    def test_a_standalone_sitting_is_still_paid_on_submit(self):
+        """Standalone access shows the score on submit, so it pays on submit — unchanged."""
+        solo = _u("hk_mt_solo@t.com")
+        ResourceAccessGrant.objects.create(
+            user=solo, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            resource_type=RT_MIDTERM_V2, resource_id=self.mt.id,
+            status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+        self._sit(correct=3, student=solo)
+
+        self.assertEqual(_paid(solo), (20, 20))
+
+    def test_xp_paid_before_this_rule_is_not_taken_back_while_unpublished(self):
+        """Passes paid at hand-in before this change stay paid. Holding means "do not pay
+        yet", never "take it back"."""
+        self._sit(correct=3)
+        outcome = MidtermOutcome.objects.get(midterm=self.mt, student=self.student)
+        from rewards.services import award
+
+        award(
+            self.student, constants.EVENT_MIDTERM_PASS,
+            idempotency_key=constants.midterm_key(outcome.id),
+            source_type="midterm_outcome", source_id=outcome.id,
+        )
+        self.assertEqual(_paid(self.student), (20, 20))
+
+        outcome.save()   # any re-run of the hook while the result is still hidden
+
+        self.assertEqual(_paid(self.student), (20, 20))
+
+    def test_a_re_score_to_a_fail_after_the_publish_still_takes_it_back(self):
+        """Paid at the publish, the award is now newer than the sitting — so a re-score of
+        that sitting must still read as a withdrawn fact, not as a later re-sit."""
+        self._sit(correct=3)
+        self._publish()
+        self.assertEqual(_paid(self.student), (20, 20))
+
+        outcome = MidtermOutcome.objects.get(midterm=self.mt, student=self.student)
+        outcome.passed = False
+        outcome.save(update_fields=["passed"])
+
+        self.assertEqual(_paid(self.student), (0, 0))
 
 
 # ── Homework: the four item receivers, and the gate they all converge on ──────
