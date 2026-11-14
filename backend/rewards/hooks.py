@@ -413,6 +413,33 @@ def _verdict_rests_on_a_later_sitting(outcome, awarded_at) -> bool:
     return completed_at is not None and awarded_at is not None and completed_at > awarded_at
 
 
+def _midterm_result_is_out(outcome) -> bool:
+    """Has the student been shown this verdict yet?
+
+    A classroom midterm's score stays hidden ("awaiting result") until the teacher publishes.
+    Paying the pass at submit told the student what the result page refused to: the XP landed
+    on their balance and the bell said "You earned 20 points · Midterm passed" — before the
+    teacher released anything, and while a re-score could still change it. The school's rule
+    is that midterm XP is given after the publish.
+
+    So the pass is paid behind the SAME gate the result page reads,
+    ``midterms.access.midterm_results_state``, and nothing of its own: a standalone sitting is
+    visible on submit and is paid on submit, exactly as before; a classroom sitting is paid by
+    the publish, through :func:`_on_midterm_schedule_saved` and
+    :func:`_on_midterm_certificate_saved`. One gate means XP can never arrive before the score
+    it is for, nor stay held after the score is out.
+
+    An outcome whose attempt is gone (``SET_NULL``) has nothing to check against, and keeps
+    the old behaviour rather than being held for ever.
+    """
+    attempt = outcome.attempt
+    if attempt is None:
+        return True
+    from midterms.access import midterm_results_state
+
+    return bool(midterm_results_state(attempt).get("results_visible"))
+
+
 def sync_midterm_outcome(outcome, *, actor=None) -> None:
     """Award the verdict recorded for one student on one midterm.
 
@@ -449,6 +476,11 @@ def sync_midterm_outcome(outcome, *, actor=None) -> None:
     down is treated as a downgrade and keeps the XP. The outcome row cannot distinguish it —
     nothing records which sitting the award was paid for — and of the two ways to be wrong,
     keeping XP a student was once shown is the one that does not confiscate.
+
+    **A pass waits for the publish** (:func:`_midterm_result_is_out`). While the score is
+    hidden this writes nothing — it does not revoke either, so XP a student already holds is
+    never taken back for being unpublished. The non-pass branch is not gated: it only ever
+    lowers or withdraws, and both are silent.
     """
     from midterms.models import Midterm
 
@@ -489,6 +521,10 @@ def sync_midterm_outcome(outcome, *, actor=None) -> None:
             revoke(key, reason="midterm verdict is not a pass", actor=actor)
         return
 
+    if not _midterm_result_is_out(outcome):
+        # Held, not refused: the publish re-runs this and pays it then.
+        return
+
     award(
         outcome.student,
         event,
@@ -506,6 +542,90 @@ def _on_midterm_outcome_saved(sender, instance, **kwargs):
         sync_midterm_outcome(instance)
     except Exception:
         logger.exception("reward_hook_failed midterm_outcome=%s", instance.pk)
+
+
+def _midterm_ids_for(midterm_id, mock_exam_id) -> set[int]:
+    """Every midterm a schedule or certificate can be speaking for.
+
+    The same paper has two identities: its own ``midterm`` FK, and the legacy ``mock_exam`` it
+    mirrors (``Midterm.legacy_mock_exam_id``). ``midterm_results_state`` honours a release
+    written under either, so the publish hooks have to listen under both — otherwise a release
+    through the mock-exam publish would show the score and leave its XP held.
+    """
+    from midterms.models import Midterm
+
+    ids = {midterm_id} if midterm_id else set()
+    if mock_exam_id:
+        ids.update(
+            Midterm.objects.filter(legacy_mock_exam_id=mock_exam_id).values_list("id", flat=True)
+        )
+    return ids
+
+
+def _pay_released_midterm_passes(midterm_ids, student_ids) -> None:
+    """Re-run the pass hook for these students now that a publish may have revealed them.
+
+    Passes only: a fail has nothing to pay, and its branch is not gated. Each student goes
+    back through :func:`sync_midterm_outcome`, which asks the result gate again, so this never
+    has to decide who the publish reached — a student in another class, or one whose score
+    the release did not reveal, is still held. Re-running it on somebody already paid is the
+    no-op re-run ``award`` is built for.
+    """
+    from midterms.models import MidtermOutcome
+
+    if not midterm_ids:
+        return
+    outcomes = MidtermOutcome.objects.filter(
+        midterm_id__in=midterm_ids, student_id__in=list(student_ids), passed=True
+    ).select_related("midterm", "student", "attempt")
+    for outcome in outcomes:
+        try:
+            sync_midterm_outcome(outcome)
+        except Exception:
+            logger.exception("reward_hook_failed midterm_outcome=%s (on publish)", outcome.pk)
+
+
+@receiver(post_save, sender="classes.MidtermSchedule", dispatch_uid="rewards_midterm_results_released")
+def _on_midterm_schedule_saved(sender, instance, update_fields=None, **kwargs):
+    """A class's results were released — pay the passes that were waiting for it.
+
+    Only a save that could have released anything: ``results_released`` set, and either a full
+    save or one that names the flag. Setting an access code on a released schedule pays nobody.
+    Every student the class has ever held is offered to the gate, removed ones included — the
+    gate, not this, decides whose score the release showed.
+    """
+    if not instance.results_released:
+        return
+    if update_fields is not None and "results_released" not in update_fields:
+        return
+    try:
+        from classes.models import ClassroomMembership
+
+        students = ClassroomMembership.objects.filter(
+            classroom_id=instance.classroom_id, role=ClassroomMembership.ROLE_STUDENT
+        ).values_list("user_id", flat=True)
+        _pay_released_midterm_passes(
+            _midterm_ids_for(instance.midterm_id, instance.mock_exam_id), students
+        )
+    except Exception:
+        logger.exception("reward_hook_failed midterm_schedule=%s", instance.pk)
+
+
+@receiver(post_save, sender="classes.MidtermCertificate", dispatch_uid="rewards_midterm_certificate_issued")
+def _on_midterm_certificate_saved(sender, instance, **kwargs):
+    """A classroom certificate is the other release signal — it reveals the score even where
+    the class has no schedule row to flip. A standalone certificate releases nothing: that
+    sitting was visible, and paid, on submit."""
+    from classes.models_certificates import MidtermCertificate
+
+    if instance.flavor != MidtermCertificate.FLAVOR_CLASSROOM:
+        return
+    try:
+        _pay_released_midterm_passes(
+            _midterm_ids_for(instance.midterm_id, instance.mock_exam_id), [instance.student_id]
+        )
+    except Exception:
+        logger.exception("reward_hook_failed midterm_certificate=%s", instance.pk)
 
 
 # ── Homework: 15 / 10 / 5 on the whole bundle ─────────────────────────────────
