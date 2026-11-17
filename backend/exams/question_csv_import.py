@@ -91,16 +91,32 @@ def _skill_index(platform_subject: str, level: str = "") -> dict[str, int]:
     the same way: a junior math midterm resolves against the junior topic list and nothing
     else, every other module against the SAT taxonomy (``BankDomain.objects.for_level``).
     Names are unique within the one list a module sees, so a case/space-insensitive name
-    match is unambiguous; the stable ``code`` (e.g. "linear-functions") is also accepted."""
+    match is unambiguous; the stable ``code`` (e.g. "linear-functions") is also accepted.
+
+    A topic an admin has retired does not resolve: an import tags nothing new with it."""
     from questionbank.models import BankDomain, BankSkill
 
     domains = BankDomain.objects.for_level(_bank_subject(platform_subject), level)
     idx: dict[str, int] = {}
-    for s in BankSkill.objects.filter(domain__in=domains):
+    for s in BankSkill.objects.active().filter(domain__in=domains):
         idx[_norm_key(s.name)] = s.id
         if s.code:
             idx[_norm_key(s.code)] = s.id
     return idx
+
+
+def _retired_skill_keys(platform_subject: str, level: str = "") -> set[str]:
+    """Normalized names/codes of the retired topics in the module's list — so a row that
+    names one is told it is retired, not that it is unknown."""
+    from questionbank.models import BankDomain, BankSkill
+
+    domains = BankDomain.objects.for_level(_bank_subject(platform_subject), level)
+    keys: set[str] = set()
+    for s in BankSkill.objects.filter(domain__in=domains, retired_at__isnull=False):
+        keys.add(_norm_key(s.name))
+        if s.code:
+            keys.add(_norm_key(s.code))
+    return keys
 
 
 def decode_csv(raw: bytes) -> str:
@@ -215,7 +231,9 @@ def import_questions_csv(
     if not payloads:
         return [], {"detail": "The CSV has no question rows."}
 
-    skill_lookup = _skill_index(subject, _midterm_level(module))
+    level = _midterm_level(module)
+    skill_lookup = _skill_index(subject, level)
+    retired_keys = _retired_skill_keys(subject, level)
 
     validated = []
     errors = []
@@ -226,12 +244,15 @@ def import_questions_csv(
         if skill_raw:
             skill_id = skill_lookup.get(_norm_key(skill_raw))
             if skill_id is None:
+                message = (
+                    f"'{skill_raw}' is a retired topic. Pick another, or restore it on the Topics page."
+                    if _norm_key(skill_raw) in retired_keys
+                    else f"Unknown skill '{skill_raw}' for this subject. Use one of the exact "
+                    f"skill names for this module's subject (see the import help)."
+                )
                 errors.append({
                     "row": idx + _FIRST_DATA_ROW,
-                    "errors": {"skill": [
-                        f"Unknown skill '{skill_raw}' for this subject. Use one of the exact "
-                        f"skill names for this module's subject (see the import help)."
-                    ]},
+                    "errors": {"skill": [message]},
                 })
                 continue
             payload["skill"] = skill_id

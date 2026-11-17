@@ -1,7 +1,7 @@
 """Question Bank admin API routes (read-only, Phase A). Mounted at api/questionbank/."""
 from django.urls import path
 
-from . import studio, views, views_changelist
+from . import studio, views, views_changelist, views_topics
 
 app_name = "questionbank"
 
@@ -26,6 +26,11 @@ urlpatterns = [
     path("skills/", views.BankSkillListView.as_view(), name="skill-list"),
     # Grouped domain→skills tree for subject-aware pickers (exam question editor).
     path("taxonomy/", views.BankTaxonomyView.as_view(), name="taxonomy"),
+    # A level's own midterm topic list, managed by an admin from the builder (views_topics).
+    path("topic-lists/", views_topics.TopicListsView.as_view(), name="topic-lists"),
+    path("topic-lists/<int:pk>/topics/", views_topics.TopicCreateView.as_view(), name="topic-create"),
+    path("topic-lists/<int:pk>/reorder/", views_topics.TopicReorderView.as_view(), name="topic-reorder"),
+    path("topics/<int:pk>/", views_topics.TopicDetailView.as_view(), name="topic-detail"),
     # Student practice (M9) — APPROVED-only, no answer leak
     path("practice/", views.PracticeQuestionListView.as_view(), name="practice-list"),
     path("practice/taxonomy/", views.PracticeTaxonomyView.as_view(), name="practice-taxonomy"),

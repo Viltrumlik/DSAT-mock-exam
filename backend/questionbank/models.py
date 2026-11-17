@@ -132,11 +132,24 @@ class BankDomain(models.Model):
         return f"{self.get_subject_display()} › {self.name}"
 
 
+class BankSkillQuerySet(models.QuerySet):
+    def active(self):
+        """Skills a question can be newly tagged with — every one but a retired topic."""
+        return self.filter(retired_at__isnull=True)
+
+
 class BankSkill(models.Model):
     domain = models.ForeignKey(BankDomain, on_delete=models.PROTECT, related_name="skills")
     name = models.CharField(max_length=255)
     code = models.SlugField(max_length=64, help_text="Stable machine code, e.g. 'linear-functions'.")
     display_order = models.PositiveIntegerField(default=0)
+    #: Set when an admin retires a level topic from the builder's Topics page. A retired
+    #: topic leaves the picker and the CSV importer, but the questions already tagged with
+    #: it keep it and the results graded on it keep their frozen name, so no history moves.
+    #: Restoring clears it. The SAT taxonomy is never retired (no UI reaches it).
+    retired_at = models.DateTimeField(null=True, blank=True)
+
+    objects = BankSkillQuerySet.as_manager()
 
     class Meta:
         db_table = "qb_skills"

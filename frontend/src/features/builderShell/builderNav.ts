@@ -35,6 +35,8 @@ export const BUILDER_CATEGORIES: readonly ConsoleCategory[] = [
         items: [
           { href: "/builder/sets", label: "Assessments", icon: "layers" },
           { href: "/builder/midterms", label: "Midterms", icon: "ms-midterm" },
+          // The junior / foundation math topic lists an admin manages (owner, 2026-11-17).
+          { href: "/builder/topics", label: "Midterm topics", icon: "bookmark" },
           { href: "/builder/categories", label: "Categories", icon: "tag" },
         ],
       },

@@ -36,6 +36,7 @@ import {
   bankSubjectForQuestionType,
   useSkillTaxonomyQuery,
 } from "@/features/questionsAdmin/skillTaxonomy";
+import { NewTopicInline } from "@/features/questionsAdmin/NewTopicInline";
 import { normalizeApiError } from "@/lib/apiError";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Badge, Button, EmptyState, buttonClass, prefersReducedMotion } from "@/features/console/ui";
@@ -273,14 +274,17 @@ function QuestionEditor({
   // topic list, and the server answers with that list in place of the SAT skills.
   const bankSubject = bankSubjectForQuestionType(draft.question_type);
   const taxonomy = useSkillTaxonomyQuery(bankSubject, isMidterm ? midtermLevel : null);
-  const taxonomyDomains = taxonomy.data ?? [];
+  const taxonomyDomains = taxonomy.data?.domains ?? [];
   const isTopicList = taxonomyDomains.some((d) => !!d.level);
+  // "+ New topic": a level's own list, an admin (the server decides both), and a midterm question.
+  const topicDomain = isMidterm && taxonomy.data?.canManageTopics ? taxonomyDomains.find((d) => !!d.level) : undefined;
+  const currentSkill =
+    draft.skill != null ? taxonomyDomains.flatMap((d) => d.skills).find((s) => s.id === draft.skill) : undefined;
   // A skill saved before the question changed type is no longer in the fetched list;
   // keep showing its stored label rather than silently rendering "Unclassified". On a
   // topic list that is an SAT skill tagged before the list existed — it stays until the
   // author picks a topic, and says so.
-  const skillIsOffList =
-    draft.skill != null && !taxonomyDomains.some((d) => d.skills.some((s) => s.id === draft.skill));
+  const skillIsOffList = draft.skill != null && !currentSkill;
 
   /** Switching bank subject invalidates the chosen skill — the server would 400 on it. */
   const patchQuestionType = (next: QuestionDraft["question_type"]) => {
@@ -500,11 +504,14 @@ function QuestionEditor({
           )}
           {taxonomyDomains.map((d) => (
             <optgroup key={d.domain_id} label={d.domain}>
-              {d.skills.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
+              {/* A retired topic is offered only to the question that already carries it. */}
+              {d.skills
+                .filter((s) => !s.retired || s.id === draft.skill)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.retired ? `${s.name} (retired)` : s.name}
+                  </option>
+                ))}
             </optgroup>
           ))}
         </select>
@@ -515,10 +522,21 @@ function QuestionEditor({
             ? "Skill list unavailable — the question can still be saved unclassified."
             : taxonomyDomains.length === 0
             ? "No skills seeded for this subject yet."
+            : currentSkill?.retired
+            ? "This topic is retired: the question keeps it, but no new question can pick it."
             : isTopicList
             ? "The student sees this topic in their midterm report. Leave unclassified if unsure."
             : "Groups the question in the student's error report. Leave unclassified if unsure."}
         </p>
+        {topicDomain ? (
+          <NewTopicInline
+            key={question.id}
+            listId={topicDomain.domain_id}
+            listName={topicDomain.domain}
+            inputId={`q${question.id}-new-topic`}
+            onCreated={(topic) => patch({ skill: topic.id })}
+          />
+        ) : null}
       </div>
     </aside>
   );

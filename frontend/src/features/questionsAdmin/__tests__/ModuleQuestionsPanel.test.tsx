@@ -26,9 +26,22 @@ vi.mock("next/link", () => ({
 vi.mock("@/hooks/useMe", () => ({ useMe: () => ({ me: { role: "test_admin" } }) }));
 vi.mock("@/components/FormulaToolbar", () => ({ FormulaToolbar: () => null }));
 vi.mock("@/components/MathText", () => ({ MathText: ({ text }: { text: string }) => <span>{text}</span> }));
+type TaxonomyMock = {
+  domains: { domain_id: number; domain: string; subject: string; level?: string; skills: { id: number; name: string; retired?: boolean }[] }[];
+  canManageTopics: boolean;
+};
+let taxonomy: TaxonomyMock = { domains: [], canManageTopics: false };
 vi.mock("@/features/questionsAdmin/skillTaxonomy", () => ({
   bankSubjectForQuestionType: () => "MATH",
-  useSkillTaxonomyQuery: () => ({ data: [], isLoading: false, isError: false }),
+  useSkillTaxonomyQuery: () => ({ data: taxonomy, isLoading: false, isError: false }),
+}));
+// "+ New topic" talks to the server itself (NewTopicInline.test.tsx); here it is the seam it hands back.
+vi.mock("@/features/questionsAdmin/NewTopicInline", () => ({
+  NewTopicInline: ({ listName, onCreated }: { listName: string; onCreated: (t: { id: number; name: string }) => void }) => (
+    <button type="button" data-new-topic-stub onClick={() => onCreated({ id: 99, name: "Quadratic Inequalities" })}>
+      New topic in {listName}
+    </button>
+  ),
 }));
 vi.mock("@/features/questionsAdmin/hooks", () => ({
   examsModuleQuestionsApi: { source: "exams", exportCsv: vi.fn() },
@@ -85,6 +98,7 @@ beforeEach(() => {
   update.mockReset().mockImplementation(async ({ questionId }: { questionId: number }) => questions.find((q) => q.id === questionId));
   create.mockReset();
   questions = [question(1), question(2), question(3)];
+  taxonomy = { domains: [], canManageTopics: false };
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -244,5 +258,46 @@ describe("the question pane", () => {
     expect(host.textContent).toContain("Delete this question?");
     await click(button("Cancel"));
     expect(host.textContent).not.toContain("Delete this question?");
+  });
+});
+
+describe("a midterm question's Topic picker (topics an admin manages, 2026-11-17)", () => {
+  const junior = (skills: TaxonomyMock["domains"][number]["skills"]): TaxonomyMock["domains"] => [
+    { domain_id: 5, domain: "Junior Math", subject: "MATH", level: "junior", skills },
+  ];
+  const skillSelect = () => host.querySelector<HTMLSelectElement>("#q1-skill")!;
+  const optionLabels = () => Array.from(skillSelect().options).map((o) => o.textContent);
+
+  it("offers an admin '+ New topic', and the new topic is the one Save sends", async () => {
+    taxonomy = { domains: junior([{ id: 1, name: "Percent" }]), canManageTopics: true };
+    await render({ examKind: "MIDTERM", midtermLevel: "junior" });
+    expect(host.textContent).toContain("Topic (optional)");
+    const stub = host.querySelector<HTMLButtonElement>("[data-new-topic-stub]")!;
+    expect(stub.textContent).toBe("New topic in Junior Math");
+    await click(stub);
+    await click(button("Save question"));
+    expect(update.mock.calls[0][0].data.skill).toBe(99);
+  });
+
+  it("offers nothing to add to a teacher, nor on the SAT skill list", async () => {
+    taxonomy = { domains: junior([{ id: 1, name: "Percent" }]), canManageTopics: false };
+    await render({ examKind: "MIDTERM", midtermLevel: "junior" });
+    expect(host.querySelector("[data-new-topic-stub]")).toBeNull();
+  });
+
+  it("names a retired topic only on the question that carries it", async () => {
+    taxonomy = {
+      domains: junior([
+        { id: 1, name: "Percent", retired: true },
+        { id: 2, name: "Circles" },
+        { id: 3, name: "Angles", retired: true },
+      ]),
+      canManageTopics: true,
+    };
+    questions = [question(1, { skill: 1, skill_name: "Percent", domain_name: "Junior Math" })];
+    await render({ examKind: "MIDTERM", midtermLevel: "junior" });
+    expect(optionLabels()).toEqual(["Unclassified", "Percent (retired)", "Circles"]);
+    expect(skillSelect().value).toBe("1");
+    expect(host.textContent).toContain("This topic is retired");
   });
 });
