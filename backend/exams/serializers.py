@@ -818,6 +818,14 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                         )
                     }
                 )
+            # A retired topic is left on the questions that already carry it, but nothing
+            # is newly tagged with it. Re-saving such a question (the builder sends the
+            # skill back with every save) is not a new tag, so it still saves.
+            already = getattr(self.instance, "skill_id", None) == skill.id
+            if skill.retired_at is not None and not already:
+                raise serializers.ValidationError(
+                    {"skill": f"'{skill.name}' is a retired topic. Pick another, or restore it on the Topics page."}
+                )
 
         # Stub creation (POST with empty fields from admin "Add question") skips
         # content validation so a blank question can be saved and filled in later.

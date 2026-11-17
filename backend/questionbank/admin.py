@@ -25,7 +25,7 @@ class BankDomainAdmin(admin.ModelAdmin):
 
 @admin.register(BankSkill)
 class BankSkillAdmin(admin.ModelAdmin):
-    list_display = ("name", "domain", "code", "display_order")
+    list_display = ("name", "domain", "code", "display_order", "retired_at")
     list_filter = ("domain__subject",)
     search_fields = ("name", "code")
 

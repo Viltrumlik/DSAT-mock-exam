@@ -300,11 +300,20 @@ class BankTaxonomyView(APIView):
     (junior math) gets that list and nothing else; any other level gets the SAT taxonomy.
     Without a level — every caller before this one — the answer is the SAT taxonomy, as
     it always was.
+
+    A retired topic is left out, so nobody newly tags with it. ``include_retired=1`` keeps
+    it, marked ``retired``, for the builder: a question already tagged with one still
+    shows its own topic by name. ``can_manage_topics`` tells the builder whether to offer
+    "+ New topic" — only on a level's own list, and only to an admin.
     """
 
     permission_classes = QB_PERMISSIONS
 
     def get(self, request):
+        from django.db.models import Prefetch
+
+        from .topics import can_manage_topics
+
         domains = BankDomain.objects.sat()
         raw_subject = request.query_params.get("subject")
         if raw_subject:
@@ -313,9 +322,14 @@ class BankTaxonomyView(APIView):
             # a typo'd filter that silently offers Math skills on an English question
             # is worse than an empty picker.
             if subject is None:
-                return Response({"results": []})
+                return Response({"results": [], "can_manage_topics": False})
             domains = BankDomain.objects.for_level(subject, request.query_params.get("level"))
-        domains = domains.order_by("subject", "display_order", "name").prefetch_related("skills")
+        skills = BankSkill.objects.all()
+        if not _truthy(request.query_params.get("include_retired")):
+            skills = skills.active()
+        domains = list(
+            domains.order_by("subject", "display_order", "name").prefetch_related(Prefetch("skills", queryset=skills))
+        )
         return Response({
             "results": [
                 {
@@ -324,10 +338,16 @@ class BankTaxonomyView(APIView):
                     "subject": d.subject,
                     # Blank for SAT domains; the picker calls a level's own list "topics".
                     "level": d.level,
-                    "skills": [{"id": s.id, "name": s.name} for s in d.skills.all()],
+                    "skills": [
+                        {"id": s.id, "name": s.name, **({"retired": True} if s.retired_at else {})}
+                        for s in d.skills.all()
+                    ],
                 }
                 for d in domains
-            ]
+            ],
+            "can_manage_topics": bool(domains)
+            and all(d.level for d in domains)
+            and can_manage_topics(request.user),
         })
 
 

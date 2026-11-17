@@ -26,7 +26,7 @@ describe("BUILDER_CATEGORIES", () => {
       [[null, ["Studio home"]]],
       [
         ["Questions", ["Question bank"]],
-        ["Sets", ["Assessments", "Midterms", "Categories"]],
+        ["Sets", ["Assessments", "Midterms", "Midterm topics", "Categories"]],
         ["Words", ["Vocabulary"]],
       ],
       [
@@ -45,6 +45,7 @@ describe("BUILDER_CATEGORIES", () => {
         "/builder/question-bank",
         "/builder/sets",
         "/builder/midterms",
+        "/builder/topics",
         "/builder/vocabulary",
         "/builder/categories",
         "/builder/pastpapers",
