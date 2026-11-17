@@ -60,6 +60,13 @@ REMOVED_MISMATCH = (
     "Bir martalik linkingizni boshqa odam ochdi, u guruhdan chiqarildi. "
     "Yangi link uchun: /guruhlar. Linkni hech kimga bermang."
 )
+#: The same thing, where the group belongs to a class that has finished: the link is spent
+#: all the same, but nobody was taken out — and saying otherwise is a lie one tap away.
+MISMATCH_LEFT_IN_PLACE = (
+    "Bir martalik linkingizni boshqa odam ochdi va link ishlatib bo'lindi. "
+    "Bu class tugagani uchun uning guruhiga endi tegilmaydi — ochgan odam guruhda qoldi. "
+    "Muammo bo'lsa administratorga ayting. Linkni hech kimga bermang."
+)
 REMOVED_MANUAL = "Administrator sizni quyidagi guruhdan chiqardi:\n{groups}"
 UNFROZEN = "🔓 Akkauntingiz faollashdi! Guruhlaringizga qaytishingiz mumkin:"
 
