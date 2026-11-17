@@ -73,11 +73,13 @@ private func booking(
     starts: String,
     ends: String,
     teacher: String = "T",
-    withdrawn: Bool = false
+    withdrawn: Bool = false,
+    canAddMember: Bool = true
 ) -> SupportBooking {
     SupportBooking(
         id: id,
         status: status,
+        canAddMember: canAddMember,
         slot: SupportSlot(id: id, supportTeacher: teacher, startsAt: starts, endsAt: ends, isCancelled: withdrawn)
     )
 }
@@ -291,11 +293,19 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
                 // Attended late (2026-10-11): its own status, rated like an attended one.
                 bookingJSON(id: 6, status: "LATE", extra: ["rating": 3, "settled_at": "2026-09-26T05:20:00Z"]),
                 bookingJSON(id: 7, status: "late"),
+                // The hour already holds two students (2026-10-21): no one else may be added.
+                bookingJSON(id: 8, status: "BOOKED", extra: ["can_add_member": false]),
+                bookingJSON(id: 9, status: "BOOKED", extra: ["can_add_member": true]),
+                // A null or an unreadable value must not cost the row, and leaves the button.
+                bookingJSON(id: 10, status: "BOOKED", extra: ["can_add_member": NSNull()]),
+                bookingJSON(id: 11, status: "BOOKED", extra: ["can_add_member": "no"]),
             ]])
         }
         let list = try await api().bookings()
         #expect(server.requests.first?.url?.absoluteString == "https://mastersat.uz/api/classes/support/bookings/")
-        #expect(list.map(\.status) == [.held, .booked, .cancelled, .noShow, .unknown, .late, .late])
+        #expect(list.map(\.status) == [.held, .booked, .cancelled, .noShow, .unknown, .late, .late, .booked, .booked, .booked, .booked])
+        // A server that predates the two-student cap sends no `can_add_member`: room is assumed.
+        #expect(list.map(\.canAddMember) == [true, true, true, true, true, true, true, false, true, true, true])
         #expect(list[5].statusRaw == "LATE")
         #expect(list[5].rating == 3)
         #expect(list[0].rating == 4)
@@ -712,7 +722,7 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
         #expect(SupportSchedule.canCancel(booking(6, .booked, starts: "soon", ends: "later"), now: now))
     }
 
-    @Test("No one is added while booking is paused")
+    @Test("No one is added while booking is paused, nor to a session that already holds two")
     func inviting() {
         let session = booking(1, .booked, starts: "2026-10-21T10:00:00+05:00", ends: "2026-10-21T11:00:00+05:00")
         #expect(SupportSchedule.canInvite(session, allowance: nil))
@@ -720,6 +730,10 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
         #expect(!SupportSchedule.canInvite(session, allowance: SupportAllowance(upcoming: 1, canBook: true, pausedUntil: "2026-10-20")))
         let late = booking(2, .late, starts: "2026-10-13T10:00:00+05:00", ends: "2026-10-13T11:00:00+05:00")
         #expect(!SupportSchedule.canInvite(late, allowance: nil))
+        // Full: the picker could only say "nobody", and the server refuses a third anyway.
+        let full = booking(3, .booked, starts: "2026-10-21T12:00:00+05:00", ends: "2026-10-21T13:00:00+05:00", canAddMember: false)
+        #expect(!SupportSchedule.canInvite(full, allowance: nil))
+        #expect(!SupportSchedule.canInvite(full, allowance: SupportAllowance(upcoming: 1, canBook: true)))
     }
 }
 

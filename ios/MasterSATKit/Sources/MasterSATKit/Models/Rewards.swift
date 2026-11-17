@@ -269,7 +269,7 @@ extension RewardRule {
         rules.filter { !$0.isRetired }
     }
 
-    /// `+5`, or `+10–20` for a rule whose price climbs with the group. Nil for a rule a teacher
+    /// `+5`, or `+10–15` for a rule whose price climbs with the group. Nil for a rule a teacher
     /// prices — the screen says "Set by your teacher" there instead.
     public var amountText: String? {
         guard !isTeacherPriced else { return nil }
@@ -291,9 +291,15 @@ extension RewardRule {
         case "CLASSWORK_MANUAL":
             lines.append("Your teacher decides this one, for the work you do in the lesson itself.")
         case "SUPPORT_SESSION":
-            if let ladder = groupPoints, ladder.count >= 3 {
+            // A ladder of any length: its length IS the group size the school allows (two
+            // since 2026-10-21 — 10 alone, 15 each for two). This used to need three rungs,
+            // so the day a session was capped at two the sentence silently vanished.
+            if let ladder = groupPoints, ladder.count >= 2 {
+                let larger = ladder.dropFirst(2).enumerated()
+                    .map { ", \($0.element) each if \($0.offset + 3) of you go" }
+                    .joined()
                 lines.append(
-                    "Bring a classmate and you both earn more: \(ladder[0]) on your own, \(ladder[1]) each if two of you go, \(ladder[2]) each if three do. You're paid once the teacher marks the session as held."
+                    "Bring a classmate and you both earn more: \(ladder[0]) on your own, \(ladder[1]) each if two of you go\(larger). A session holds up to \(ladder.count) students. You're paid once the teacher marks the session as held."
                 )
             }
         default:
