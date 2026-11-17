@@ -130,6 +130,23 @@ class TelegramLinkTests(ClassroomDetailsFixture):
         self.assertEqual(r.json()["telegram_group_url"], "")
 
 
+class TelegramChatIdAtCreateTests(ClassroomDetailsFixture):
+    """The create form takes the chat id too, through the same serializer."""
+
+    def test_the_number_is_kept(self):
+        r = self.create(telegram_chat_id=" -1001234567890 ")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(
+            Classroom.objects.get(name="Maths evening").telegram_chat_id, "-1001234567890"
+        )
+
+    def test_a_stray_letter_is_refused(self):
+        r = self.create(telegram_chat_id="-1001234569860v")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("telegram_chat_id", r.json())
+        self.assertFalse(Classroom.objects.filter(name="Maths evening").exists())
+
+
 class SupportTeacherAtCreateTests(ClassroomDetailsFixture):
     def _memberships(self, classroom):
         return set(
@@ -261,6 +278,53 @@ class GovernanceUpdateTests(ClassroomDetailsFixture):
     def test_a_bad_telegram_link_is_refused_here_too(self):
         r = self.patch(self.other_admin, {"telegram_group_url": "https://example.com/x"})
         self.assertEqual(r.status_code, 400, r.content)
+
+    def test_a_chat_id_is_stored_as_chatid_printed_it(self):
+        r = self.patch(self.other_admin, {"telegram_chat_id": "-1001234567890"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.classroom.refresh_from_db()
+        self.assertEqual(self.classroom.telegram_chat_id, "-1001234567890")
+
+    def test_a_padded_chat_id_is_stored_trimmed(self):
+        """The bot matches the column by exact string — a kept space would miss every update."""
+        r = self.patch(self.other_admin, {"telegram_chat_id": "  -1001234567890 \n"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.classroom.refresh_from_db()
+        self.assertEqual(self.classroom.telegram_chat_id, "-1001234567890")
+
+    def test_an_emptied_chat_id_takes_the_class_off_its_group(self):
+        Classroom.objects.filter(pk=self.classroom.pk).update(telegram_chat_id="-1001234567890")
+        for blank in ("", "   "):
+            r = self.patch(self.other_admin, {"telegram_chat_id": blank})
+            self.assertEqual(r.status_code, 200, (blank, r.content))
+            self.classroom.refresh_from_db()
+            self.assertEqual(self.classroom.telegram_chat_id, "")
+
+    def test_anything_but_the_number_is_refused_and_nothing_is_saved(self):
+        """``-1001234569860v`` is the shape of the 2026-10-17 paste: Telegram's API answered for
+        it, so the group looked healthy, but no update from that group would ever have matched
+        the class."""
+        Classroom.objects.filter(pk=self.classroom.pk).update(telegram_chat_id="-1001234567890")
+        for bad in (
+            "-1001234569860v",
+            "abc",
+            "@mygroup",
+            "-",
+            "--100123",
+            "-100 123",
+            "+100123",
+            "https://t.me/mygroup",
+            "-١٠٠١٢٣",  # Arabic-Indic digits: `\d` would take them, Telegram never sends them
+        ):
+            r = self.patch(self.other_admin, {"telegram_chat_id": bad})
+            self.assertEqual(r.status_code, 400, (bad, r.content))
+            self.assertEqual(
+                r.json()["telegram_chat_id"],
+                ["Telegram chat id must be the number /chatid gave you (e.g. -1001234567890)."],
+                bad,
+            )
+            self.classroom.refresh_from_db()
+            self.assertEqual(self.classroom.telegram_chat_id, "-1001234567890", bad)
 
     def test_a_teacher_cannot_edit_a_classroom_here(self):
         self.assertEqual(self.patch(self.teacher, {"name": "Mine now"}).status_code, 403)
