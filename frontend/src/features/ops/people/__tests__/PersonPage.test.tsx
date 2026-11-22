@@ -1,5 +1,6 @@
 /**
- * The /ops person change form (`GET /users/admin/people/<id>/`), in tabs: the Overview opens with
+ * The /ops person change form (`GET /users/admin/people/<id>/`) of a public user or a staff member (a centre
+ * student's page is lc-up's shape since 22 Nov 2026: StudentProfile.test.tsx), in tabs: the Overview opens with
  * the form and a read-only Summary, each other tab shows one subject and fetches its part only when
  * it opens, the open tab lives in `?tab=` beside the list's `_changelist_filters`, a person in the
  * wrong section is sent to the right one, and a missing account says so (never "Nothing yet").
@@ -46,7 +47,7 @@ const { PersonPage } = await import("../PersonPage");
 function core(over: Partial<PersonCore> = {}): PersonCore {
   return {
     id: 7,
-    section: "students",
+    section: "public",
     avatar_url: null,
     glance: { attendance_rate: 50, homework: { completed: 3, total: 4 }, mocks_taken: 0, last_mock_total: null },
     one_time_password: null,
@@ -59,7 +60,7 @@ function core(over: Partial<PersonCore> = {}): PersonCore {
     phone: "998901234567",
     role: "student",
     subject: "",
-    status: "centre",
+    status: "public",
     is_frozen: false,
     frozen_reason: null,
     date_joined: "2026-09-01T10:00:00+05:00",
@@ -162,7 +163,7 @@ async function settle() {
 }
 
 /** Renders the page with `query` as its address's query string (e.g. "tab=groups"). */
-async function renderPage(section: "students" | "public" | "staff" = "students", query = "") {
+async function renderPage(section: "students" | "public" | "staff" = "public", query = "") {
   search = query;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   act(() =>
@@ -245,18 +246,6 @@ afterEach(() => {
 });
 
 describe("the person page's tabs", () => {
-  it("gives a student every subject, Payments only with lc-up", async () => {
-    route(core());
-    await renderPage();
-    expect(tabLabels()).toEqual(["Overview", "Groups", "Payments", "Attendance", "Results", "SMS", "Security", "History"]);
-    expect(tab("Overview")?.getAttribute("aria-selected")).toBe("true");
-
-    remount();
-    route(core({ lcup: null }));
-    await renderPage();
-    expect(tabLabels()).not.toContain("Payments");
-  });
-
   it("gives a public user no Attendance, and Groups only with earlier groups", async () => {
     route(core({ section: "public", status: "public", groups: [], lcup: null }));
     await renderPage("public");
@@ -280,26 +269,26 @@ describe("the person page's tabs", () => {
     expect(partCalls()).toEqual([]);
 
     remount();
-    await renderPage("students", "tab=attendance");
-    expect(partCalls()).toEqual(["/users/admin/people/7/attendance/"]);
-    expect(box("Attendance")).not.toBeNull();
+    await renderPage("public", "tab=results");
+    expect(partCalls()).toEqual(["/users/admin/people/7/results/"]);
+    expect(box("Results")).not.toBeNull();
   });
 
   it("opens a tab in the address and keeps the list it came from", async () => {
     route(core());
-    await renderPage("students", "_changelist_filters=status%3Dfrozen_debt");
-    act(() => tab("Attendance")!.click());
+    await renderPage("public", "_changelist_filters=status%3Dfrozen_debt");
+    act(() => tab("Results")!.click());
     expect(replace).toHaveBeenCalledWith(
-      "/ops/students/7?_changelist_filters=status%3Dfrozen_debt&tab=attendance",
+      "/ops/public/7?_changelist_filters=status%3Dfrozen_debt&tab=results",
       { scroll: false },
     );
   });
 
   it("leaves the Overview out of the address", async () => {
     route(core());
-    await renderPage("students", "tab=history&_changelist_filters=q%3Daziz");
+    await renderPage("public", "tab=history&_changelist_filters=q%3Daziz");
     act(() => tab("Overview")!.click());
-    expect(replace).toHaveBeenCalledWith("/ops/students/7?_changelist_filters=q%3Daziz", { scroll: false });
+    expect(replace).toHaveBeenCalledWith("/ops/public/7?_changelist_filters=q%3Daziz", { scroll: false });
   });
 
   it("moves between tabs with the arrow keys", async () => {
@@ -309,11 +298,11 @@ describe("the person page's tabs", () => {
     act(() => {
       list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     });
-    expect(replace).toHaveBeenLastCalledWith("/ops/students/7?tab=groups", { scroll: false });
+    expect(replace).toHaveBeenLastCalledWith("/ops/public/7?tab=results", { scroll: false });
     act(() => {
       list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     });
-    expect(replace).toHaveBeenLastCalledWith("/ops/students/7?tab=history", { scroll: false });
+    expect(replace).toHaveBeenLastCalledWith("/ops/public/7?tab=history", { scroll: false });
   });
 
   it("scrolls the open tab into view, so a phone opening ?tab=security sees it underlined", async () => {
@@ -324,7 +313,7 @@ describe("the person page's tabs", () => {
     };
     try {
       route(core());
-      await renderPage("students", "tab=security");
+      await renderPage("public", "tab=security");
       expect(scrolled.map((el) => el.textContent)).toContain("Security");
     } finally {
       Element.prototype.scrollIntoView = original;
@@ -352,23 +341,6 @@ describe("the Overview", () => {
     expect([input("First name").disabled, input("Last name").disabled, input("Phone").disabled]).toEqual([true, true, true]);
     expect(input("Username").disabled).toBe(false);
     expect(profile.textContent).toContain("Set in lc-up");
-  });
-
-  it("opens with the name, the form and a Summary, the debt said once — in the figures", async () => {
-    route(core());
-    await renderPage();
-    expect(host.querySelector("h1")?.textContent).toBe("Aziz Tursunov");
-    expect(box("Profile")).not.toBeNull();
-    const summary = box("Summary")!.textContent;
-    expect(summary).not.toContain("Owes");
-    expect(summary).not.toContain("Joined");
-    expect(host.querySelector("h1")!.closest("section")!.textContent).toContain("Owes250 000so'm");
-    expect(summary).toContain("Junior G21 Math");
-    expect(summary).toContain("SAT exam date");
-    expect(summary).toContain("Created by lc-up");
-    // The form holds only what an admin can change.
-    expect(box("Profile")!.textContent).not.toContain("SAT exam date");
-    expect(box("Groups")).toBeNull();
   });
 
   it("names the same-name accounts at the top of the Summary", async () => {
@@ -462,18 +434,7 @@ describe("the Overview", () => {
 });
 
 describe("the subject tabs", () => {
-  it("shows an lc-up seat read-only on the Groups tab", async () => {
-    route(core());
-    await renderPage("students", "tab=groups");
-    const groups = box("Groups")!;
-    const seat = [...groups.querySelectorAll('[data-testid="group-card"]')].find((c) => c.textContent?.includes("Junior G21 Math"))!;
-    expect(seat.textContent).toContain("Synced from lc-up");
-    expect(seat.textContent).toContain("Vali Aliyev");
-    expect(button(seat, "Remove")).toBeUndefined();
-    expect(box("Profile")).toBeNull();
-  });
-
-  it("lets an unpaired seat be removed, and a student be added to an open class", async () => {
+  it("lets an unpaired seat be removed (a centre student's Groups tab is StudentProfile.test's)", async () => {
     route(
       core({
         groups: [
@@ -484,21 +445,15 @@ describe("the subject tabs", () => {
     );
     patch.mockResolvedValue({ data: {} });
     post.mockResolvedValue({ data: {} });
-    await renderPage("students", "tab=groups");
+    await renderPage("public", "tab=groups");
 
     const groups = box("Groups")!;
     act(() => button(groups, "Remove")!.click());
     await settle();
     expect(patch).toHaveBeenCalledWith("/classes/3/members/7/", { status: "REMOVED" });
 
-    const select = groups.querySelector("select") as HTMLSelectElement;
-    act(() => {
-      select.value = "4";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    act(() => button(groups, "Add")!.click());
-    await settle();
-    expect(post).toHaveBeenCalledWith("/classes/4/members/", { user_id: 7 });
+    // A public learner joins the centre through lc-up, so their page offers no seat.
+    expect(groups.querySelector("select")).toBeNull();
   });
 
   it("offers no class seat to a public user — joining the centre is a new lc-up account", async () => {
@@ -521,7 +476,7 @@ describe("the subject tabs", () => {
         },
       }),
     );
-    await renderPage("students", "tab=payments");
+    await renderPage("public", "tab=payments");
     const payments = box("lc-up & payments")!;
     expect(payments.textContent).toContain("250,000 UZS");
     // A phone keeps Date and Amount: the table fits its card (335px of 324 with the Kind badge).
@@ -530,7 +485,7 @@ describe("the subject tabs", () => {
 
   it("keeps the page up when a part fails, and offers a retry there", async () => {
     route(core(), { "/users/admin/people/7/history/": () => Promise.reject(new Error("boom")) });
-    await renderPage("students", "tab=history");
+    await renderPage("public", "tab=history");
     expect(host.querySelector("h1")?.textContent).toBe("Aziz Tursunov");
     const history = box("History")!;
     expect(history.textContent).toContain("Could not load.");
@@ -618,7 +573,7 @@ describe("the header", () => {
     route(core({ is_frozen: true, frozen_reason: "debt", status: "frozen_debt" }));
     await renderPage();
     const header = host.querySelector("h1")!.closest("section") as HTMLElement;
-    expect(header.textContent).toContain("Student");
+    expect(header.textContent).toContain("Public user");
     expect(header.textContent).toContain("Frozen for debt");
     // The notice says, in words, what still works and what lifts it (DataDisplay board).
     expect(header.textContent).toContain("The freeze lifts when lc-up records the payment.");
@@ -627,26 +582,9 @@ describe("the header", () => {
     expect(header.textContent).toContain("+998 90 123 45 67");
   });
 
-  it("answers the desk's two questions first: did he come today, does he owe — then attendance", async () => {
-    route(core());
-    await renderPage();
-    const facts = [...host.querySelectorAll("dl dt")].map((d) => d.textContent);
-    expect(facts).toEqual(["Today", "Owes", "Attendance", "Last seen"]);
-    const header = host.querySelector("h1")!.closest("section") as HTMLElement;
-    expect(header.textContent).toContain("Owes250 000so'm");
-    expect(header.textContent).toContain("Attendance50 %");
-  });
-
-  it("says today's mark, the class and its lesson time", async () => {
-    route(core({ glance: { attendance_rate: 50, homework: { completed: 3, total: 4 }, mocks_taken: 0, last_mock_total: null, today: [{ class_id: 21, class_name: "Junior G21 Math", lesson_time: "15:00", status: "LATE" }] } }));
-    await renderPage();
-    const today = [...host.querySelectorAll("dl > *")].find((n) => n.textContent?.startsWith("Today"))!;
-    expect(today.textContent).toBe("TodayLateJunior G21 Math · lesson 15:00");
-  });
-
   it("keeps the photo, the name and the glance on every tab (the header comes before any tab)", async () => {
     route(core());
-    await renderPage("students", "tab=groups");
+    await renderPage("public", "tab=groups");
     const header = host.querySelector("h1")!.closest("section") as HTMLElement;
     expect(header.textContent).toContain("Aziz Tursunov");
     expect(header.textContent).toContain("Owes");

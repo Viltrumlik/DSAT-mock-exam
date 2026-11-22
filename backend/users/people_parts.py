@@ -277,9 +277,32 @@ def history_part(user) -> dict:
     return {"items": items, "truncated": len(rows) > HISTORY_LIMIT}
 
 
+PURCHASES_LIMIT = 100
+
+
+def purchases_part(user) -> dict:
+    """What the learner bought in the shop with coins or strikes, newest first — the profile's Purchases tab (lc-up's
+    "Xaridlar", 22 Nov 2026). Read-only: an order is handed over or cancelled in the shop's own queue."""
+    from shop.models import ShopOrder
+
+    orders = list(ShopOrder.objects.filter(student=user).order_by("-created_at", "-id")[: PURCHASES_LIMIT + 1])
+    return {
+        "orders": [
+            {
+                "id": o.pk, "item": o.item_name, "currency": o.currency, "price": o.price, "status": o.status,
+                "status_label": o.get_status_display(), "note": o.note or "",
+                "at": iso(o.created_at), "settled_at": iso(o.settled_at),
+            }
+            for o in orders[:PURCHASES_LIMIT]
+        ],
+        "truncated": len(orders) > PURCHASES_LIMIT,
+    }
+
+
 PARTS = {
     "attendance": attendance_part,
     "results": results_part,
     "security": security_part,
     "history": history_part,
+    "purchases": purchases_part,
 }

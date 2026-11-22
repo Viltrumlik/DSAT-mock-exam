@@ -1,65 +1,75 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { recordRecent } from "@/features/console/recent";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  BookCheck,
-  CalendarCheck,
-  CalendarDays,
-  CalendarPlus,
-  ChevronLeft,
-  Clock,
-  History,
-  Info,
-  KeyRound,
-  LayoutGrid,
-  Link2,
-  Send,
-  UserCog,
-  Users,
-} from "lucide-react";
+import { CalendarDays, CalendarPlus, ChevronLeft, Clock, Info, KeyRound, Link2, Send } from "lucide-react";
 import { classesApi } from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { listHrefFrom } from "@/features/ops/changelist/backLink";
 import { peopleKeys } from "@/features/ops/changelist/peopleApi";
-import { activeTab, panelId, tabHref, tabId, type Tab } from "@/features/ops/detail/tabs";
-import { Tabs } from "@/features/console/ui";
-import { P, holds } from "@/features/ops/permissions";
+import { panelId, tabHref, tabId } from "@/features/ops/detail/tabs";
+import { NotKept } from "@/features/ops/detail/NotKept";
+import { usePhone } from "@/features/ops/detail/usePhone";
+import { Tabs, tashkentToday } from "@/features/console/ui";
+import { P, holds, isOwner, type MeLike } from "@/features/ops/permissions";
 import { useMe } from "@/hooks/useMe";
 import { ConfirmDialog } from "@/features/ops/people/ConfirmDialog";
-import { Fieldset, LINK_CLASS, Pill, Row } from "@/features/ops/people/Fieldset";
+import { Fieldset, LINK_CLASS, Pill, PlainBoxes, Row } from "@/features/ops/people/Fieldset";
 import { formatDay } from "@/features/ops/people/format";
 import { formatDate } from "@/features/ops/users/peopleColumns";
-import { ClassHeader } from "./ClassHeader";
+import { ClassHeader, lessonToMark } from "./ClassHeader";
 import { ClassroomForm } from "./ClassroomForm";
 import { classroomKeys, isNotFound, serverReason, useClassroom, type ClassroomCore } from "./classroomsApi";
+import { MarkLessonSheet } from "./MarkLessonSheet";
 import { ClassAttendanceSection, ClassHistorySection, ClassHomeworkSection } from "./sections/ClassParts";
+import { RatingSection } from "./sections/RatingSection";
+import { RegisterGrid } from "./sections/RegisterGrid";
+import { RosterAside } from "./sections/RosterAside";
 import { StaffSection } from "./sections/StaffSection";
 import { StudentsSection } from "./sections/StudentsSection";
 import { TelegramSection } from "./sections/TelegramSection";
 
 /**
- * One class's change form, in the same tabs and with the same header as a person's: the Overview
- * (its details beside a read-only Summary, the class's figures above), then Students, Staff,
- * Attendance, Homework, History and Telegram, each fetched when its tab opens. A class that follows an lc-up
- * group shows lc-up's fields locked, offers no student add or remove, no teacher change, no archive
- * and no delete — lc-up owns those.
+ * One group's page in lc-up's shape, our look (Group / PhoneGroup boards, 22 Nov 2026): a header card (the title,
+ * the group's facts as badges, SMS all, ⋮, "Mark …'s lesson"), then the roster on the left and lc-up's tabs on the
+ * right — Attendance (the register grid), Homework, Rating, History, Notes, Telegram, Staff — and our own Details
+ * (the class's form and summary, the old Overview). Every tab is fetched when it opens. On a phone the roster is a
+ * tab of its own ("Students"), after the register.
+ *
+ * A class that follows an lc-up group shows lc-up's fields locked, offers no student add or remove, no teacher
+ * change, no archive and no delete — lc-up owns those.
  */
 
-type ClassTab = "overview" | "students" | "staff" | "attendance" | "homework" | "history" | "telegram";
+type ClassTab = "attendance" | "students" | "homework" | "rating" | "history" | "notes" | "telegram" | "staff" | "details";
 
-const TABS: Tab<ClassTab>[] = [
-  { key: "overview", label: "Overview", icon: LayoutGrid },
-  { key: "students", label: "Students", icon: Users },
-  { key: "staff", label: "Staff", icon: UserCog },
-  { key: "attendance", label: "Attendance", icon: CalendarCheck },
-  { key: "homework", label: "Homework", icon: BookCheck },
-  { key: "history", label: "History", icon: History },
-  { key: "telegram", label: "Telegram", icon: Send },
-];
+const LABEL: Record<ClassTab, string> = {
+  attendance: "Attendance",
+  students: "Students",
+  homework: "Homework",
+  rating: "Rating",
+  history: "History",
+  notes: "Notes",
+  telegram: "Telegram",
+  staff: "Staff",
+  details: "Details",
+};
+
+const DESKTOP: ClassTab[] = ["attendance", "homework", "rating", "history", "notes", "telegram", "staff", "details"];
+/** The PhoneGroup board's chips: Register, Students, Homework, History — then the rest. */
+const PHONE: ClassTab[] = ["attendance", "students", "homework", "history", "rating", "notes", "telegram", "staff", "details"];
+
+const FIRST: ClassTab = "attendance";
+
+/** Addresses from before the redesign keep working: the old Overview is Details; Students is the roster beside. */
+const OLD: Record<string, ClassTab> = { overview: "details" };
+
+function openTabOf(raw: string | null, tabs: ClassTab[]): ClassTab {
+  const key = (raw && (OLD[raw] ?? raw)) || FIRST;
+  return (tabs as string[]).includes(key) ? (key as ClassTab) : FIRST;
+}
 
 /** What a tab holds, said on the tab when worth knowing before opening (Controls board · Tabs). */
 export function classTabCounts(room: ClassroomCore): Partial<Record<ClassTab, { count: number | string; tone?: "critical" | "attention" }>> {
@@ -71,9 +81,15 @@ export function classTabCounts(room: ClassroomCore): Partial<Record<ClassTab, { 
   return out;
 }
 
+/** Marking a register is a class staff member's or a global admin's (`classes.capabilities.is_global_admin`). */
+function mayMark(me: MeLike): boolean {
+  const role = String(me?.role ?? "").trim().toLowerCase();
+  return isOwner(me) || role === "admin";
+}
+
 /**
- * The Overview's read-only side: what the form does not edit and the header does not already say —
- * the lc-up pairing, the join code, Telegram, the lessons' length and dates (the header names the teachers).
+ * The Details tab's read-only side: what the form does not edit and the header does not already say — the lc-up
+ * pairing, the join code, Telegram, the lessons' length and dates.
  */
 function ClassSummary({ room }: { room: ClassroomCore }) {
   return (
@@ -130,13 +146,16 @@ export function ClassroomPage({ id }: { id: number }) {
   const queryClient = useQueryClient();
   const { push } = useToast();
   const { me } = useMe();
+  const phone = usePhone();
   const canMessage = holds(me, P.sendSms);
   const canManage = holds(me, P.manageGroups);
+  const canMoney = holds(me, P.viewMoney);
   const query = useClassroom(id);
   const room = query.data;
   const backHref = listHrefFrom(search, "/ops/classrooms");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [marking, setMarking] = useState(false);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: classroomKeys.all });
@@ -145,16 +164,16 @@ export function ClassroomPage({ id }: { id: number }) {
   };
 
   useEffect(() => {
-    if (room) document.title = `${room.name} · Classrooms`;
+    if (room) document.title = `${room.name} · Groups`;
     // Today's "Recently opened" (this browser only).
     if (room) recordRecent({ kind: "class", id: room.id, name: room.name, href: `/ops/classrooms/${room.id}` });
   }, [room]);
 
   if (query.isPending) {
     return (
-      <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6" aria-busy>
+      <div className="mx-auto w-full max-w-[1360px] space-y-4 p-4 md:px-7 md:py-6" aria-busy>
         <span className="sr-only">Loading…</span>
-        <div className="h-44 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
+        <div className="h-36 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
         <div className="h-64 animate-ms-shimmer rounded-ms-card bg-ms-surface-2" />
       </div>
     );
@@ -162,7 +181,7 @@ export function ClassroomPage({ id }: { id: number }) {
   if (query.isError || !room) {
     const missing = isNotFound(query.error);
     return (
-      <div className="mx-auto w-full max-w-6xl space-y-2 p-4 text-sm md:p-6">
+      <div className="mx-auto w-full max-w-[1360px] space-y-2 p-4 text-sm md:px-7 md:py-6">
         <p className="text-ms-fg-3">{missing ? "This class does not exist." : "Could not load this class."}</p>
         <p className="flex gap-3">
           {missing ? null : (
@@ -171,19 +190,19 @@ export function ClassroomPage({ id }: { id: number }) {
             </button>
           )}
           <Link href={backHref} className={LINK_CLASS}>
-            Back to Classrooms
+            Back to Groups
           </Link>
         </p>
       </div>
     );
   }
 
-  const tab = activeTab(search, TABS);
+  const tabs = phone ? PHONE : DESKTOP;
+  const tab = openTabOf(search.get("tab"), tabs);
   const counts = classTabCounts(room);
   const openTab = (key: ClassTab) =>
-    router.replace(tabHref(`/ops/classrooms/${id}`, new URLSearchParams(search.toString()), key, "overview"), {
-      scroll: false,
-    });
+    router.replace(tabHref(`/ops/classrooms/${id}`, new URLSearchParams(search.toString()), key, FIRST), { scroll: false });
+  const mark = mayMark(me) ? lessonToMark(room, tashkentToday()) : null;
 
   const setActive = async (isActive: boolean) => {
     setBusy(true);
@@ -213,14 +232,38 @@ export function ClassroomPage({ id }: { id: number }) {
     }
   };
 
+  let body: ReactNode = null;
+  if (tab === "attendance") {
+    body = (
+      <div className="flex flex-col gap-7">
+        <RegisterGrid roomId={id} />
+        <ClassAttendanceSection id={id} />
+      </div>
+    );
+  } else if (tab === "students") body = <StudentsSection room={room} onChanged={refresh} />;
+  else if (tab === "homework") body = <ClassHomeworkSection id={id} />;
+  else if (tab === "rating") body = <RatingSection roomId={id} />;
+  else if (tab === "history") body = <ClassHistorySection id={id} />;
+  else if (tab === "notes") body = <NotKept>Notes on a group are not kept in this system yet.</NotKept>;
+  else if (tab === "telegram") body = <TelegramSection id={id} />;
+  else if (tab === "staff") body = <StaffSection room={room} onChanged={refresh} canManage={canManage} />;
+  else if (tab === "details") {
+    body = (
+      <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <ClassroomForm key={room.id} room={room} onSaved={refresh} />
+        <ClassSummary room={room} />
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
+    <div className="mx-auto w-full max-w-[1360px] space-y-[18px] p-4 md:px-7 md:py-6">
       <Link
         href={backHref}
         className="inline-flex items-center gap-1 text-sm font-medium text-ms-fg-3 hover:text-ms-fg"
       >
         <ChevronLeft aria-hidden className="h-4 w-4" />
-        Classrooms
+        Groups
       </Link>
 
       <ClassHeader
@@ -228,35 +271,39 @@ export function ClassroomPage({ id }: { id: number }) {
         busy={busy}
         canMessage={canMessage}
         canManage={canManage}
+        canMoney={canMoney}
+        mark={mark}
+        onMark={() => setMarking(true)}
+        onDetails={() => openTab("details")}
         onToggleActive={() => void setActive(!room.is_active)}
         onDelete={() => setConfirmDelete(true)}
-      >
-        <Tabs<ClassTab>
-          label="Class sections"
-          value={tab}
-          onChange={openTab}
-          tree
-          ids={{ tab: (key) => tabId("class", key), panel: (key) => panelId("class", key) }}
-          tabs={TABS.map((t) => ({ id: t.key, label: t.label, count: counts[t.key]?.count, tone: counts[t.key]?.tone }))}
-        />
-      </ClassHeader>
+      />
 
-      {/* Only the open tab is rendered, so only its part is fetched. */}
-      <div role="tabpanel" id={panelId("class", tab)} aria-labelledby={tabId("class", tab)} className="min-w-0">
-        {tab === "overview" ? (
-          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-            <ClassroomForm key={room.id} room={room} onSaved={refresh} />
-            <ClassSummary room={room} />
+      <div className="flex flex-col gap-[18px] md:flex-row md:items-start">
+        {phone ? null : <RosterAside room={room} onChanged={refresh} canMoney={canMoney} className="md:w-[340px] md:shrink-0" />}
+        <section aria-label="Group sections" className="min-w-0 flex-1 rounded-ms-card border border-ms-border bg-ms-card">
+          <Tabs<ClassTab>
+            label="Group sections"
+            className="px-3"
+            value={tab}
+            onChange={openTab}
+            tree
+            ids={{ tab: (key) => tabId("class", key), panel: (key) => panelId("class", key) }}
+            tabs={tabs.map((key) => ({
+              id: key,
+              label: phone && key === "attendance" ? "Register" : LABEL[key],
+              count: counts[key]?.count,
+              tone: counts[key]?.tone,
+            }))}
+          />
+          {/* Only the open tab is rendered, so only its part is fetched. */}
+          <div role="tabpanel" id={panelId("class", tab)} aria-labelledby={tabId("class", tab)} className="min-w-0 p-4 md:p-5">
+            <PlainBoxes>{body}</PlainBoxes>
           </div>
-        ) : null}
-        {tab === "students" ? <StudentsSection room={room} onChanged={refresh} /> : null}
-        {tab === "staff" ? <StaffSection room={room} onChanged={refresh} canManage={canManage} /> : null}
-        {tab === "attendance" ? <ClassAttendanceSection id={id} /> : null}
-        {tab === "homework" ? <ClassHomeworkSection id={id} /> : null}
-        {tab === "history" ? <ClassHistorySection id={id} /> : null}
-        {tab === "telegram" ? <TelegramSection id={id} /> : null}
+        </section>
       </div>
 
+      {mark ? <MarkLessonSheet open={marking} onClose={() => setMarking(false)} roomId={id} date={mark.date} today={mark.today} /> : null}
       {confirmDelete ? (
         <ConfirmDialog
           title={`Delete ${room.name}?`}

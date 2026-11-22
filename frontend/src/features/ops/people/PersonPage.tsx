@@ -23,6 +23,7 @@ import { ParentCard } from "./ParentCard";
 import { PersonForm } from "./PersonForm";
 import { PersonHeader } from "./PersonHeader";
 import { activeTab, panelId, TabBar, tabHref, tabId, tabsFor, type TabKey } from "./PersonTabs";
+import { StudentProfile } from "./StudentProfile";
 import { SummaryCard } from "./SummaryCard";
 import { GroupsSection } from "./sections/GroupsSection";
 import { LcupSection } from "./sections/LcupSection";
@@ -49,7 +50,7 @@ function SameNameNotice({ person }: { person: PersonCore }) {
   return (
     <div
       data-testid="same-name"
-      className="flex gap-3 rounded-[16px] border border-ms-attention-line bg-ms-attention-soft px-4 py-3.5 text-[14px] text-ms-attention-fg"
+      className="flex gap-3 rounded-ms-ctl border border-ms-attention-line bg-ms-attention-soft px-4 py-3.5 text-[14px] text-ms-attention-fg"
     >
       <Icon name="warn" size="sm" className="mt-0.5 size-4" />
       <div className="min-w-0 space-y-1">
@@ -205,9 +206,11 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
   };
 
   const lastFour = person.phone.replace(/\D/g, "").slice(-4);
+  // A centre student's page is lc-up's shape (StudentProfile board, 22 Nov 2026); public users and staff keep theirs.
+  const student = section === "students";
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6">
+    <div className={student ? "mx-auto w-full max-w-[1360px] space-y-5 p-4 md:px-7 md:py-6" : "mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6"}>
       <Link
         href={backHref}
         className="inline-flex items-center gap-1 text-sm font-medium text-ms-fg-3 hover:text-ms-fg"
@@ -216,6 +219,22 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         {LIST_LABEL[section]}
       </Link>
 
+      {student ? (
+        <StudentProfile
+          person={person}
+          me={me}
+          busy={busy}
+          mayChange={mayChange}
+          roles={rolesYouMayGive(me)}
+          notice={<SameNameNotice person={person} />}
+          onChanged={refresh}
+          onToggleFreeze={() => void bulk(person.is_frozen ? "unfreeze" : "freeze")}
+          onOneTimePassword={() => setDialog("otp")}
+          onRevoke={() => setDialog("revoke")}
+          onDelete={() => setDialog("delete")}
+        />
+      ) : (
+        <>
       <PersonHeader
         person={person}
         busy={busy}
@@ -270,6 +289,8 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         {tab === "history" ? <HistorySection id={id} /> : null}
         {tab === "classes" && person.staff ? <StaffClassesSection staff={person.staff} /> : null}
       </div>
+        </>
+      )}
 
       {dialog === "delete" ? (
         <ConfirmBulkModal

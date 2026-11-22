@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date, timedelta
 
 from django.db.models import Count, F, Q
 from django.utils import timezone
 
 from users.changelist import to_int
+from users.models import User
 from users.people_detail import display_name, iso, section_of
 
 from .models import Assignment, Classroom, ClassroomMembership
@@ -278,6 +280,8 @@ def roster_part(room, request=None) -> dict:
                 # The photo beside the name, as on every people list (owner, 2026-10-15).
                 "avatar_url": profile_image_url(s.user, request),
                 "section": section_of(s.user),
+                # Under the name in the group page's roster, as lc-up lists a group (22 Nov 2026).
+                "phone": s.user.phone_number or "",
                 "joined_at": iso(s.joined_at),
                 "seat_status": s.seat_status,
                 "seat_start_date": iso(s.seat_start_date),
@@ -438,8 +442,85 @@ def class_telegram_part(room, request=None) -> dict:
     }
 
 
+def _register_month(request, today):
+    """The month the register grid shows: ``?month=YYYY-MM``, else this month."""
+    raw = str(request.query_params.get("month") or "") if request is not None else ""
+    try:
+        year, month = (int(part) for part in raw.split("-"))
+        return date(year, month, 1)
+    except ValueError:
+        return today.replace(day=1)
+
+
+def register_part(room, request=None) -> dict:
+    """``…/register/?month=YYYY-MM`` — the group page's register grid, lc-up's "Davomat" (22 Nov 2026): every
+    lesson date of one month (the registers held, and the days it meets that are still ahead) by every student, with
+    each mark. Read-only; marking stays the classroom register's (``views_attendance``).
+
+    A student sitting now is listed with the day they joined (a lesson before it is not theirs) and, for a frozen
+    seat, the day it froze. Someone marked that month who has since left is listed too, flagged ``left``.
+    """
+    from .lesson_schedule import has_begun, lesson_days_in_range
+    from .models_attendance import AttendanceRecord, AttendanceSession
+    from .seat_actions import frozen_on
+
+    today = timezone.localdate()
+    first = _register_month(request, today)
+    last = (first + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    sessions = list(AttendanceSession.objects.filter(classroom=room, date__range=(first, last)))
+    held = {s.date for s in sessions}
+    scheduled = (
+        [d for d in lesson_days_in_range(room, max(first, today + timedelta(days=1)), last) if has_begun(room, d)]
+        if room.is_active
+        else []
+    )
+    marks = defaultdict(dict)
+    for student_id, day, status in AttendanceRecord.objects.filter(session__in=sessions).values_list(
+        "student_id", "session__date", "status"
+    ):
+        marks[student_id][iso(day)] = status
+
+    seats = sorted(_student_seats(room), key=lambda s: display_name(s.user).casefold())
+    sitting = {s.user_id for s in seats}
+    froze = frozen_on(room) if any(s.seat_status == ClassroomMembership.SEAT_FROZEN for s in seats) else {}
+    students = [
+        {
+            "id": s.user_id,
+            "name": display_name(s.user),
+            "section": section_of(s.user),
+            "joined": iso(timezone.localdate(s.joined_at)) if s.joined_at else None,
+            "seat_status": s.seat_status,
+            "frozen_on": iso(froze.get(s.user_id)) if s.seat_status == ClassroomMembership.SEAT_FROZEN else None,
+            "left": False,
+            "marks": marks.get(s.user_id, {}),
+        }
+        for s in seats
+    ]
+    gone = User.objects.filter(pk__in=[pk for pk in marks if pk not in sitting])
+    students += sorted(
+        (
+            {
+                "id": u.pk, "name": display_name(u), "section": section_of(u), "joined": None,
+                "seat_status": None, "frozen_on": None, "left": True, "marks": marks[u.pk],
+            }
+            for u in gone
+        ),
+        key=lambda row: row["name"].casefold(),
+    )
+    months = {d.strftime("%Y-%m") for d in AttendanceSession.objects.filter(classroom=room).dates("date", "month")}
+    months |= {today.strftime("%Y-%m"), first.strftime("%Y-%m")}
+    return {
+        "month": first.strftime("%Y-%m"),
+        "months": sorted(months),
+        "today": iso(today),
+        "dates": [{"date": iso(d), "held": d in held} for d in sorted(held | set(scheduled))],
+        "students": students,
+    }
+
+
 CLASS_PARTS = {
     "roster": roster_part,
+    "register": register_part,
     "attendance": class_attendance_part,
     "homework": homework_part,
     "history": class_history_part,

@@ -239,6 +239,12 @@ describe("CampaignComposer", () => {
     expect(cardHead("Message").getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("?students= (the Students list's bulk Send SMS) preselects every ticked student, once each", async () => {
+    await render("students=5,9,5,x");
+    expect(previewAudience.mock.calls[0][0]).toEqual({ audience: "student", audience_ids: [5, 9], excluded_user_ids: [] });
+    expect(cardHead("Message").getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("?classroom= preselects that class (the class page's Message class) and opens the message", async () => {
     await render("classroom=61");
     expect(previewAudience.mock.calls[0][0]).toEqual({ audience: "group", audience_ids: [61], excluded_user_ids: [] });

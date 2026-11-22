@@ -4,149 +4,88 @@ import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 
 import { Icon } from "@/components/ui/Icon";
-import { cn } from "@/lib/cn";
-import { levelLabel } from "@/lib/levels";
-import { Badge, Button, HeaderCard, Menu, buttonClass, type GlanceFact } from "@/features/console/ui";
-import { LINK_CLASS } from "@/features/ops/people/Fieldset";
-import { formatDay } from "@/features/ops/people/format";
-import { rateVerdict } from "@/features/ops/people/PersonHeader";
+import { Badge, Button, CourseTag, Menu, buttonClass, courseLevelOf, courseName, signedAmount, type MenuItem } from "@/features/console/ui";
+import { dayText, groupTitle, scheduleLine, weekdayOf } from "@/features/ops/detail/groupFacts";
 import { NEW_CAMPAIGN_PATH } from "@/features/ops/sms/smsTabs";
-import { scheduleText, SUBJECT_LABEL } from "./ClassroomList";
+import { SUBJECT_LABEL } from "./ClassroomList";
 import type { ClassroomCore } from "./classroomsApi";
 
 /**
- * Which class this is, at the top of every tab (design handoff v0.3, DataDisplay · Header card; PR 11a): its
- * subject as the mark, when and where it meets and who teaches it, its state — then the facts, which answer the
- * desk's first question about a class ("Is there a lesson today, and is the register done?", scenario 5), and
- * the tab row at the card's foot. "Message class" opens the SMS composer with this class as the audience; a
- * class lc-up manages offers no archive and no delete and says so instead.
+ * The group page's header card (Group board, lc-up structure, 22 Nov 2026): the group's name and its teacher's
+ * surname as the title, then one line of facts as badges — the course as its tag, the room, the days and time, the
+ * teacher, the price a month, the start, today's lesson — only those the class has. Actions on the right: SMS all
+ * (the composer with this class as the audience), ⋮ (details, archive, delete — lc-up's own while it runs the class)
+ * and the primary "Mark …'s lesson", which opens the register.
  */
-
-/** Each subject in its own colour and mark. */
-const SUBJECT_MARK: Record<string, { icon: "sigma" | "book"; square: string }> = {
-  MATH: { icon: "sigma", square: "bg-ms-math-soft text-ms-math-fg" },
-  ENGLISH: { icon: "book", square: "bg-ms-rw-soft text-ms-rw-fg" },
-};
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
-/** "Is there a lesson today, and is the register done?" */
-export function todayFact(room: ClassroomCore): GlanceFact {
+/** Today's register in words: "Today 15:00 · 3 of 18 students marked", in the colour of how far it is. */
+export function todayBadge(room: ClassroomCore): { text: string; tone: "positive" | "attention" } | null {
   const today = room.glance.today;
-  if (!today) return { label: "Today", value: "No lesson", sub: room.is_active ? "it does not meet today" : "the class is archived" };
-  const when = today.lesson_time ? `lesson ${today.lesson_time}` : "lesson today";
+  if (!today) return null;
+  const when = today.lesson_time ? `Today ${today.lesson_time}` : "Today";
   const m = today.marked;
-  if (!m) return { label: "Today", value: "Not marked yet", sub: `${when} · ${plural(today.students, "student")}` };
+  if (!m) return { text: `${when} · not marked yet`, tone: "attention" };
   const marked = m.present + m.late + m.absent + m.excused;
-  const parts = [m.present ? `${m.present} came` : "", m.late ? `${m.late} late` : "", m.absent ? `${m.absent} absent` : "", m.excused ? `${m.excused} excused` : ""];
-  return {
-    label: "Today",
-    value: `${marked} of ${today.students}`,
-    unit: "marked",
-    tone: marked >= today.students ? "positive" : "attention",
-    sub: [when, ...parts].filter(Boolean).join(" · "),
-  };
+  return { text: `${when} · ${marked} of ${plural(today.students, "student")} marked`, tone: marked >= today.students ? "positive" : "attention" };
 }
 
-function facts(room: ClassroomCore): GlanceFact[] {
-  const g = room.glance;
-  const full = room.max_students != null && room.students >= room.max_students;
-  const hwRate = g.homework.expected > 0 ? Math.round((100 * g.homework.handed_in) / g.homework.expected) : null;
-  return [
-    todayFact(room),
-    {
-      label: "Students",
-      value: room.students,
-      unit: room.max_students ? `of ${room.max_students}` : undefined,
-      tone: full ? "attention" : undefined,
-      sub: room.max_students == null ? "no size limit" : full ? "the class is full" : `${plural(room.max_students - room.students, "seat")} left`,
-    },
-    {
-      label: "Attendance",
-      value: g.attendance_rate == null ? "—" : `${Math.round(g.attendance_rate)}%`,
-      tone: rateVerdict(g.attendance_rate),
-      sub: g.last_lesson ? `last lesson ${formatDay(g.last_lesson)}` : "no lesson marked yet",
-    },
-    room.lcup
-      ? {
-          label: "Owe lc-up",
-          value: g.owing,
-          tone: g.owing > 0 ? "critical" : "positive",
-          sub: g.owing > 0 ? `${g.owing === 1 ? "student owes" : "students owe"} money` : "everyone paid up",
-        }
-      : {
-          label: "Homework",
-          value: hwRate == null ? "—" : `${hwRate}%`,
-          tone: rateVerdict(hwRate),
-          sub: g.homework.assignments > 0 ? `handed in · ${plural(g.homework.assignments, "assignment")}` : "none set yet",
-        },
-  ];
+/** The lesson "Mark …'s lesson" opens: today's when the class meets today, else the last one held. */
+export function lessonToMark(room: ClassroomCore, todayIso: string): { date: string; today: boolean } | null {
+  if (room.glance.today) return { date: todayIso, today: true };
+  if (room.glance.last_lesson) return { date: room.glance.last_lesson, today: room.glance.last_lesson === todayIso };
+  return null;
 }
 
-function badges(room: ClassroomCore): ReactNode {
-  const full = room.max_students != null && room.students >= room.max_students;
-  const mark = SUBJECT_MARK[room.subject] ?? SUBJECT_MARK.MATH;
-  return (
-    <>
-      <Badge tone="line" icon={mark.icon}>
-        {SUBJECT_LABEL[room.subject] ?? room.subject}
-      </Badge>
-      {room.level ? <Badge tone="neutral">{levelLabel(room.level as never)}</Badge> : null}
-      {room.is_active ? (
-        <Badge tone="positive" dot>
-          Active
-        </Badge>
-      ) : (
-        <Badge tone="neutral" icon="archive">
-          Archived
-        </Badge>
-      )}
-      {room.lcup ? (
-        room.lcup.managed ? (
-          <Badge tone="line" icon="ms-sync">
-            Synced from lc-up
-          </Badge>
-        ) : (
-          <Badge tone="attention" icon="warn">
-            lc-up group not followed
-          </Badge>
-        )
-      ) : null}
-      {full ? (
-        <Badge tone="attention" dot>
-          Full
-        </Badge>
-      ) : null}
-    </>
-  );
-}
-
-function meta(room: ClassroomCore): ReactNode[] {
-  const out: ReactNode[] = [scheduleText(room.lesson_days, room.lesson_time)];
-  if (room.room_number) out.push(`Room ${room.room_number}`);
-  if (room.branch) out.push(room.branch.name);
+function facts(room: ClassroomCore, canMoney: boolean): ReactNode[] {
+  const out: ReactNode[] = [];
+  const level = courseLevelOf(room.level, room.name);
+  const course = courseName(room.level, room.subject) || SUBJECT_LABEL[room.subject] || room.subject;
+  if (course) {
+    out.push(
+      <CourseTag level={level} title="Course">
+        {course}
+      </CourseTag>,
+    );
+  }
+  if (room.room_number) out.push(<Badge tone="line" icon="ms-room">Room {room.room_number}</Badge>);
+  const schedule = scheduleLine(room.lesson_days, room.lesson_time);
+  if (schedule) out.push(<Badge tone="line" icon="clock">{schedule}</Badge>);
   out.push(
     room.teacher ? (
-      <Link href={`/ops/staff/${room.teacher.id}`} prefetch={false} className={LINK_CLASS}>
-        {room.teacher.name}
+      <Link href={`/ops/staff/${room.teacher.id}`} prefetch={false} className="rounded-ms-badge">
+        <Badge tone="line" icon="user">{room.teacher.name}</Badge>
       </Link>
     ) : (
-      <span className="font-medium text-ms-attention-fg">No teacher</span>
+      <Badge tone="attention" icon="user">No teacher</Badge>
     ),
   );
   if (room.tas.length) {
     out.push(
-      <span>
+      <Badge tone="line" icon="users">
         Support:{" "}
         {room.tas.map((t, i) => (
           <Fragment key={t.id}>
             {i ? ", " : ""}
-            <Link href={`/ops/staff/${t.id}`} prefetch={false} className={LINK_CLASS}>
+            <Link href={`/ops/staff/${t.id}`} prefetch={false} className="hover:underline">
               {t.name}
             </Link>
           </Fragment>
         ))}
-      </span>,
+      </Badge>,
+    );
+  }
+  if (canMoney && room.monthly_price != null) out.push(<Badge tone="line" icon="wallet">{signedAmount(room.monthly_price)} so&apos;m a month</Badge>);
+  if (room.start_date) out.push(<Badge tone="line" icon="cal">Started {dayText(room.start_date)}</Badge>);
+  if (room.branch) out.push(<Badge tone="line" icon="building">{room.branch.name}</Badge>);
+  if (room.lcup) {
+    out.push(
+      room.lcup.managed ? (
+        <Badge tone="line" icon="ms-sync">Synced from lc-up</Badge>
+      ) : (
+        <Badge tone="attention" icon="warn">lc-up group not followed</Badge>
+      ),
     );
   }
   return out;
@@ -157,9 +96,12 @@ export function ClassHeader({
   busy,
   canMessage,
   canManage,
+  canMoney,
+  mark,
+  onMark,
+  onDetails,
   onToggleActive,
   onDelete,
-  children,
 }: {
   room: ClassroomCore;
   busy: boolean;
@@ -167,49 +109,63 @@ export function ClassHeader({
   canMessage: boolean;
   /** Whoever holds `manage_groups`: archiving and deleting a class go through its governance endpoints. */
   canManage: boolean;
+  /** `view_money`: the group's price. */
+  canMoney: boolean;
+  /** The lesson the primary button marks; null hides it (no lesson yet, or the viewer cannot mark). */
+  mark: { date: string; today: boolean } | null;
+  onMark: () => void;
+  /** ⋮ "Group details": the Details tab (the class's form). */
+  onDetails: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
-  /** The tab row, at the card's foot. */
-  children?: ReactNode;
 }) {
   const managed = room.lcup?.managed ?? false;
-  const mark = SUBJECT_MARK[room.subject] ?? SUBJECT_MARK.MATH;
+  const full = room.max_students != null && room.students >= room.max_students;
+  const today = todayBadge(room);
+  const items: MenuItem[] = [{ label: "Group details", icon: "pencil", onSelect: onDetails }];
+  if (!managed && canManage) {
+    items.push({ label: room.is_active ? "Archive" : "Restore", icon: room.is_active ? "archive" : "undo", onSelect: onToggleActive });
+    items.push("separator", { label: "Delete class", icon: "trash", danger: true, onSelect: onDelete });
+  }
   return (
-    <HeaderCard
-      avatar={
-        <span aria-hidden className={cn("grid size-16 shrink-0 place-items-center rounded-[18px]", mark.square)}>
-          <Icon name={mark.icon} size="xl" className="size-8" />
-        </span>
-      }
-      title={room.name}
-      badges={badges(room)}
-      meta={meta(room)}
-      actions={
-        <>
+    <section aria-label="Group" className="flex flex-col gap-3 rounded-ms-card border border-ms-border bg-ms-card px-5 py-5 md:px-[22px]">
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-ms-title min-w-0 break-words text-ms-fg">{groupTitle(room.name, room.teacher?.name)}</h1>
+            {room.is_active ? null : <Badge tone="neutral" icon="archive">Archived</Badge>}
+            {full ? <Badge tone="attention" dot>Full</Badge> : null}
+            {today ? <Badge tone={today.tone} icon="ms-today">{today.text}</Badge> : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {facts(room, canMoney).map((f, i) => (
+              <Fragment key={i}>{f}</Fragment>
+            ))}
+          </div>
+        </div>
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
           {canMessage ? (
-            <Link href={`${NEW_CAMPAIGN_PATH}?classroom=${room.id}`} className={buttonClass()}>
+            <Link href={`${NEW_CAMPAIGN_PATH}?classroom=${room.id}`} className={buttonClass({ className: "max-md:flex-1" })}>
               <Icon name="msg" />
-              Message class
+              SMS all
             </Link>
           ) : null}
-          {managed || !canManage ? null : (
-            <>
-              <Button icon={room.is_active ? "archive" : "undo"} disabled={busy} onClick={onToggleActive}>
-                {room.is_active ? "Archive" : "Restore"}
-              </Button>
-              <Menu label="More actions" disabled={busy} items={[{ label: "Delete class", icon: "trash", danger: true, onSelect: onDelete }]} />
-            </>
-          )}
-        </>
-      }
-      facts={facts(room)}
-      notice={
-        managed
-          ? { tone: "info", icon: "lock", title: "Managed in lc-up.", body: "Its details, teacher and students come from lc-up: change them there. Archive and delete are lc-up's too." }
-          : undefined
-      }
-    >
-      {children}
-    </HeaderCard>
+          <Menu label="More actions" variant="secondary" items={items} disabled={busy} />
+          {mark ? (
+            <Button variant="primary" icon="ms-present" className="max-md:w-full" onClick={onMark}>
+              Mark {weekdayOf(mark.date)}’s lesson
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {managed ? (
+        <p className="flex items-start gap-2 rounded-ms-ctl bg-ms-info-soft px-3.5 py-2.5 text-[14px] text-ms-info-fg">
+          <Icon name="lock" size="sm" className="mt-0.5" />
+          <span>
+            <b>Managed in lc-up.</b> Its details, teacher and students come from lc-up: change them there. Archive and delete are lc-up&apos;s too.
+          </span>
+        </p>
+      ) : null}
+    </section>
   );
 }

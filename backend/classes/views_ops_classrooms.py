@@ -14,9 +14,8 @@ from users.changelist import apply_search, facets, paginate
 
 from .lessons_today import lessons_today
 from .models import Classroom
-from .ops_classrooms import (
-    CLASS_FILTERS, CLASS_ORDERING, CLASS_PARTS, CLASS_SEARCH, STUDENT_SEATS, class_row, classroom_core,
-)
+from .ops_classrooms import CLASS_ORDERING, CLASS_PARTS, CLASS_SEARCH, STUDENT_SEATS, classroom_core
+from .ops_groups_list import TRIAL_SEATS, lessons_for, list_filters, list_row, price_filter
 
 
 #: Reading the classes and their lessons; changing one is ``manage_groups``. "Admins only." is the 403 these
@@ -33,19 +32,22 @@ class ClassroomChangeListView(APIView):
         from lcup.guards import lcup_managed_ids
 
         params = request.query_params
+        today = timezone.localdate()
         qs = Classroom.objects.all()
         # A teacher-name search joins one teacher per class (a foreign key), so it cannot repeat a row.
         qs = apply_search(qs, params.get("q") or "", CLASS_SEARCH)
-        qs, filters = facets(qs, CLASS_FILTERS, params)
+        qs = price_filter(qs, params)
+        qs, filters = facets(qs, list_filters(today), params)
         # Seats are counted after the facets, so no facet query carries the memberships join.
-        qs = qs.select_related("teacher", "branch").annotate(students=STUDENT_SEATS)
+        qs = qs.select_related("teacher", "branch").annotate(students=STUDENT_SEATS, trial=TRIAL_SEATS)
         ordering = params.get("o") or "-created"
         if ordering not in CLASS_ORDERING:
             ordering = "-created"
         window, meta = paginate(qs.order_by(*CLASS_ORDERING[ordering], "-pk"), params)
         rooms = list(window)
         managed = lcup_managed_ids(r.pk for r in rooms)
-        return Response({**meta, "ordering": ordering, "results": [class_row(r, managed) for r in rooms],
+        lessons = lessons_for(rooms, today)
+        return Response({**meta, "ordering": ordering, "results": [list_row(r, managed, lessons) for r in rooms],
                          "filters": filters})
 
 

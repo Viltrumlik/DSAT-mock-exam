@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -20,9 +20,12 @@ import {
   SearchField,
   Sheet,
   bulkButtonClass,
+  buttonClass,
   chipClass,
   follow,
+  pageWindow,
   usePresence,
+  type Verdict,
 } from "@/features/console/ui";
 import { cn } from "@/lib/cn";
 import { PAGE_SIZES, useChangeListParams, type ChangeListPatch } from "./useChangeListParams";
@@ -69,6 +72,47 @@ export type ChangeListColumn<R> = {
   sortKeys?: { asc?: string; desc?: string };
   /** Classes for the column's header and cells (width, alignment, truncation). */
   className?: string;
+  /** A money or status cell's verdict: `globals.css` tints the cell (red owes, green paid, amber attention). */
+  verdict?: (row: R) => Verdict | undefined;
+  /** The cell holds its own controls (a menu, a chip that opens a card): a click in it does not open the row. */
+  interactive?: boolean;
+  /** The header names the column for a screen reader only (a row's ⋮ menu). */
+  hideLabel?: boolean;
+  /**
+   * For the first column, instead of `render`: the column decides which part opens the row (`link` wraps it) —
+   * a name is the link, the badges and the line under it are not.
+   */
+  renderLinked?: (row: R, link: (children: ReactNode) => ReactNode) => ReactNode;
+};
+
+/**
+ * lc-up's list shape (canvas boards "Students" and "Groups", 22 Nov 2026), instead of the one-card changelist: the
+ * title with its count and the page size on the page, the quick chips under it, a filter card of fields, then the
+ * table in its own card with "1–20 of 573" and the pages under it. Errors and empty results take the table's place
+ * and keep the filters above them.
+ */
+export type ChangeListBoard = {
+  /** The chip row under the title (All / Owe money / …). */
+  chips?: ReactNode;
+  /** The filter card's fields, in a grid; "Clear filters" follows them while anything is set. */
+  filters?: ReactNode;
+  /** Fields after the board's own (the existing list's other filters): folded behind "More filters" on a phone. */
+  moreFilters?: ReactNode;
+  /** How many of `moreFilters` are set, for the fold's button. */
+  moreActive?: number;
+  /** Whether a search or filter is in force (offers "Clear filters"). */
+  narrowed: boolean;
+  /** Clears every search and filter the page owns. */
+  onClear: () => void;
+  /** Number the rows down the page, as lc-up does ("#"). */
+  numbered?: boolean;
+  /** The table's least width before its card scrolls sideways (phones): "min-w-[1040px]". */
+  minWidthClass?: string;
+  /** "Could not load students." */
+  errorTitle: string;
+  /** "No students match these filters". */
+  emptyTitle: string;
+  emptyDetail?: string;
 };
 
 export type ChangeListAction = {
@@ -115,6 +159,8 @@ export type ChangeListProps<R extends { id: number }> = {
    * (the SMS journal's dates are not facets). By default: each chosen filter, "Status: Frozen".
    */
   filterChips?: { key: string; label: string }[];
+  /** lc-up's list shape instead of the one-card changelist (the Students and Groups lists). */
+  board?: ChangeListBoard;
 };
 
 function sortKeysOf<R>(col: ChangeListColumn<R>): { asc?: string; desc?: string } | null {
@@ -153,6 +199,7 @@ export function ChangeList<R extends { id: number }>({
   groupLabel,
   mobileCard,
   filterChips,
+  board,
 }: ChangeListProps<R>) {
   const router = useRouter();
   const pathname = usePathname();
@@ -199,6 +246,8 @@ export function ChangeList<R extends { id: number }>({
 
   // ── Filters sheet (below 1600 px, where the column does not fit) ──
   const [sheetOpen, setSheetOpen] = useState(false);
+  // The board's further filters, folded away on a phone until asked for.
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // ── The bulk bar sinks out after the last tick is cleared, still saying how many it held ──
   const barOpen = hasActions && selectedIds.length > 0;
@@ -219,10 +268,14 @@ export function ChangeList<R extends { id: number }>({
   }, [flashId, rowsShown]);
 
   const go = (patch: ChangeListPatch, keepPage = false) => update(patch, keepPage);
-  const colSpan = columns.length + (hasActions ? 1 : 0);
+  const numbered = Boolean(board?.numbered);
+  const colSpan = columns.length + (hasActions ? 1 : 0) + (numbered ? 1 : 0);
   const count = data?.count ?? 0;
   const page = data?.page ?? params.page;
   const pages = data?.pages ?? 1;
+  const pageSize = data?.page_size || params.pageSize;
+  /** The "#" of the page's first row: lc-up numbers down the whole list, not each page. */
+  const firstNumber = (page - 1) * pageSize + 1;
   const countText = `${count.toLocaleString("en-US")} ${count === 1 ? noun.singular : noun.plural}`;
 
   // The filters in force, as chips; "Clear all" clears exactly these.
@@ -257,6 +310,402 @@ export function ChangeList<R extends { id: number }>({
       }}
     />
   );
+
+  const table = (
+    <table
+      className={cn(
+        "w-full text-(length:--ms-fs-row)",
+        board ? board.minWidthClass : "border-separate border-spacing-0",
+      )}
+    >
+      <thead>
+        <tr>
+          {hasActions ? (
+            <th scope="col" className={cn(board ? "" : "sticky top-0 z-10", "w-px border-b border-ms-border bg-ms-card pl-5 pr-1 text-left")}>
+              <Checkbox
+                label="Select all on this page"
+                checked={allSelected}
+                indeterminate={someSelected}
+                onChange={toggleAll}
+                disabled={!rows || rows.length === 0}
+              />
+            </th>
+          ) : null}
+          {numbered ? (
+            <th scope="col" className="w-px whitespace-nowrap px-3 text-left text-[13px] tabular-nums">
+              #
+            </th>
+          ) : null}
+          {columns.map((col, i) => {
+            const keys = sortKeysOf(col);
+            const dir = keys ? (ordering === keys.asc ? "asc" : ordering === keys.desc ? "desc" : null) : null;
+            return (
+              <th
+                key={col.key}
+                scope="col"
+                aria-sort={keys ? (dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none") : undefined}
+                className={cn(
+                  board ? "" : "sticky top-0 z-10",
+                  "h-11 whitespace-nowrap border-b border-ms-border bg-ms-card px-3 text-left text-[13px] font-medium text-ms-fg-3",
+                  i === 0 && !hasActions && "pl-5",
+                  i === columns.length - 1 && "pr-5",
+                  col.className,
+                )}
+              >
+                {keys ? (
+                  <button
+                    type="button"
+                    data-dir={dir ?? undefined}
+                    onClick={() => go({ o: nextOrdering(keys, ordering) })}
+                    className={cn("ms-transition inline-flex items-center gap-1 rounded-[6px] hover:text-ms-fg", dir && "text-ms-fg")}
+                  >
+                    {col.label}
+                    <Icon
+                      name={dir ? "up" : "sort"}
+                      size="sm"
+                      className={cn("ms-transition size-3.5", dir === "desc" && "rotate-180", !dir && "opacity-50")}
+                    />
+                  </button>
+                ) : col.hideLabel ? (
+                  <span className="sr-only">{col.label}</span>
+                ) : (
+                  col.label
+                )}
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {loading && !rows ? (
+          Array.from({ length: 8 }, (_, i) => (
+            <tr key={i} data-skeleton>
+              {Array.from({ length: colSpan }, (_, j) => (
+                <td key={j} className={cn("h-(--ms-h-row) border-b border-ms-line px-3", j === 0 && "pl-5")}>
+                  <div className="animate-ms-shimmer h-3 rounded-[6px]" style={{ width: j === 0 && hasActions ? 20 : `${[70, 55, 80, 45, 60][(i + j) % 5]}%` }} />
+                </td>
+              ))}
+            </tr>
+          ))
+        ) : !rows || rows.length === 0 ? (
+          <tr>
+            <td colSpan={colSpan}>
+              <EmptyState
+                title={`No ${noun.plural} match`}
+                art={narrowed ? "magnifier" : undefined}
+                detail={narrowed ? "Try another search, or clear the filters." : undefined}
+                action={
+                  chips.length ? (
+                    <Button size="sm" onClick={clearAll}>
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </td>
+          </tr>
+        ) : (
+          rows.map((row, index) => {
+            const group = groupBy?.(row);
+            const newGroup = group !== undefined && (index === 0 || groupBy?.(rows[index - 1]) !== group);
+            const isSelected = selected.has(row.id);
+            const href = rowHref?.(row);
+            const openRow = href
+              ? (e: MouseEvent<HTMLTableRowElement>) => {
+                  // A held modifier asks for a new tab: that is the first cell's link,
+                  // never a navigation in place that throws the list away.
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  markReturn(pathname, row.id);
+                  router.push(href);
+                }
+              : onRowClick
+                ? () => onRowClick(row)
+                : undefined;
+            const cell = cn(
+              "h-(--ms-h-row) border-b border-ms-line px-3 py-1.5 align-middle text-ms-fg",
+              isSelected ? "bg-ms-primary-soft" : "group-hover/row:bg-ms-surface",
+              flashLive && flashId === String(row.id) && "animate-ms-flash",
+            );
+            return (
+              <Fragment key={row.id}>
+                {newGroup ? (
+                  <tr>
+                    <td
+                      colSpan={colSpan}
+                      data-group-header
+                      className="sticky top-11 z-[1] border-b border-ms-border bg-ms-surface px-5 py-1.5 text-[13px] font-semibold text-ms-fg-2"
+                    >
+                      {groupLabel ? groupLabel(group!) : group}
+                    </td>
+                  </tr>
+                ) : null}
+                <tr
+                  data-row-id={row.id}
+                  onClick={openRow}
+                  className={cn("group/row animate-ms-fade-in [&:last-child>td]:border-b-0", openRow && "cursor-pointer")}
+                  style={{ animationDelay: `${Math.min(index, 12) * 18}ms` }}
+                >
+                  {hasActions ? (
+                    <td className={cn(cell, "w-px pl-5 pr-1")} onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        label={`Select ${rowLabel ? rowLabel(row) : row.id}`}
+                        checked={isSelected}
+                        onChange={() => toggleOne(row.id)}
+                      />
+                    </td>
+                  ) : null}
+                  {numbered ? (
+                    <td data-row-number className={cn(cell, "w-px whitespace-nowrap tabular-nums text-ms-fg-3")}>
+                      {firstNumber + index}
+                    </td>
+                  ) : null}
+                  {columns.map((col, i) => (
+                    <td
+                      key={col.key}
+                      data-verdict={col.verdict?.(row)}
+                      onClick={col.interactive ? (e) => e.stopPropagation() : undefined}
+                      className={cn(
+                        cell,
+                        "whitespace-nowrap",
+                        i === 0 && !hasActions && "pl-5",
+                        i === columns.length - 1 && "pr-5",
+                        col.className,
+                      )}
+                    >
+                      {/* The first column opens the row, as Django links it to the change form —
+                          and gives the keyboard a way in, which a clickable <tr> does not.
+                          With `rowHref` it is a real link: cmd-click and middle-click open
+                          a new tab, and its click stops here so the row does not navigate
+                          a second time. */}
+                      {i === 0 && href && col.renderLinked ? (
+                        col.renderLinked(row, (children) => (
+                          <Link
+                            href={href}
+                            prefetch={false}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              markReturn(pathname, row.id);
+                            }}
+                            className="rounded-[6px] font-semibold text-ms-fg hover:text-ms-primary-text hover:underline"
+                          >
+                            {children}
+                          </Link>
+                        ))
+                      ) : i === 0 && href ? (
+                        <Link
+                          href={href}
+                          // A page of 50–100 rows would otherwise prefetch every change form on view.
+                          prefetch={false}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markReturn(pathname, row.id);
+                          }}
+                          className="block max-w-full truncate rounded-[6px] text-left font-semibold text-ms-fg hover:text-ms-primary-text hover:underline"
+                        >
+                          {col.render(row)}
+                        </Link>
+                      ) : i === 0 && onRowClick ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRowClick(row);
+                          }}
+                          className="block max-w-full truncate rounded-[6px] text-left font-semibold text-ms-fg hover:text-ms-primary-text hover:underline"
+                        >
+                          {col.render(row)}
+                        </button>
+                      ) : (
+                        col.render(row)
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              </Fragment>
+            );
+          })
+        )}
+      </tbody>
+    </table>
+  );
+
+  const bulkBar = bar.mounted ? (
+    <div className="pointer-events-none sticky bottom-4 z-30 mt-3 flex justify-center px-4">
+      <BulkBar count={selectedIds.length || barCount} closing={bar.closing} onClear={() => setSelected(new Set())}>
+        {actions!.map((a) => (
+          <button
+            key={a.key}
+            type="button"
+            aria-label={a.label}
+            title={a.label}
+            disabled={running}
+            onClick={() => void runAction(a)}
+            className={bulkButtonClass}
+          >
+            {a.icon ? <Icon name={a.icon} size="sm" /> : null}
+            {a.short ?? a.label}
+          </button>
+        ))}
+      </BulkBar>
+    </div>
+  ) : null;
+
+  if (board) {
+    const empty = !loading && !error && Boolean(rows) && rows!.length === 0;
+    const from = count === 0 ? 0 : firstNumber;
+    const to = Math.min(count, page * pageSize);
+    const fmt = (n: number) => n.toLocaleString("en-US");
+    const pageLink = (p: number, content: ReactNode, label: string) => (
+      <a
+        key={label}
+        href={hrefFor({ p }, true)}
+        aria-label={label}
+        onClick={(e) => follow(e, () => go({ p }, true))}
+        className={buttonClass({ variant: "ghost", size: "sm", square: true, className: "tabular-nums" })}
+      >
+        {content}
+      </a>
+    );
+    const step = (p: number, icon: "left" | "right", label: string) =>
+      p >= 1 && p <= pages ? (
+        pageLink(p, <Icon name={icon} size="sm" />, label)
+      ) : (
+        <button key={label} type="button" disabled aria-label={label} className={buttonClass({ variant: "ghost", size: "sm", square: true })}>
+          <Icon name={icon} size="sm" />
+        </button>
+      );
+    return (
+      <div className="flex min-w-0 flex-col gap-4">
+        {/* ── title, how many, rows per page, the page's own buttons ── */}
+        <header className="flex flex-wrap items-center gap-3">
+          <h1 className="text-ms-title text-ms-fg">{title}</h1>
+          {data ? (
+            <span
+              data-list-count
+              title={countText}
+              className="inline-flex h-7 items-center rounded-ms-badge bg-ms-surface-2 px-2.5 text-[14px] font-semibold tabular-nums text-ms-fg-2"
+            >
+              <RollNumber value={count.toLocaleString("en-US")} />
+            </span>
+          ) : null}
+          <label className="inline-flex items-center gap-2 text-[14px] text-ms-fg-2">
+            <select
+              value={pageSize}
+              onChange={(e) => go({ ps: Number(e.target.value) })}
+              className="ms-transition h-[30px] rounded-ms-ctl border border-ms-border-input bg-ms-card pl-2 pr-1 text-[14px] tabular-nums text-ms-fg focus-visible:border-ms-primary"
+            >
+              {PAGE_SIZES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            per page
+          </label>
+          {headerAction ? <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">{headerAction}</div> : null}
+        </header>
+
+        {board.chips ? <div className="flex min-w-0 flex-wrap items-center gap-2">{board.chips}</div> : null}
+
+        {board.filters ? (
+          <div
+            role="group"
+            aria-label="Filters"
+            // Fields are 40 px here, as on the board (lc-up's compact filter row).
+            className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,150px),1fr))] items-center gap-2 rounded-ms-card border border-ms-border bg-ms-card p-4 [--ms-h-ctl:40px]"
+          >
+            {board.filters}
+            {board.moreFilters ? (
+              <>
+                <div data-more-filters className={cn("contents", !moreOpen && "max-md:hidden")}>
+                  {board.moreFilters}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="sliders"
+                  aria-expanded={moreOpen}
+                  onClick={() => setMoreOpen((v) => !v)}
+                  className="justify-self-start md:hidden"
+                >
+                  {moreOpen ? "Fewer filters" : `More filters${board.moreActive ? ` (${board.moreActive})` : ""}`}
+                </Button>
+              </>
+            ) : null}
+            <Button variant="ghost" size="sm" onClick={board.onClear} disabled={!board.narrowed} className="justify-self-start">
+              Clear filters
+            </Button>
+          </div>
+        ) : null}
+
+        {error ? (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-3 rounded-ms-card border border-ms-critical-line bg-ms-critical-soft px-4 py-3 text-[14px] text-ms-critical-fg"
+          >
+            <Icon name="alert" className="shrink-0" />
+            <p className="min-w-0 flex-1">
+              <b className="font-semibold">{board.errorTitle}</b> The server did not answer. Your filters are kept.
+            </p>
+            <Button size="sm" icon="refresh" onClick={onRetry}>
+              Retry
+            </Button>
+          </div>
+        ) : empty ? (
+          <div className="rounded-ms-card border border-ms-border bg-ms-card">
+            <EmptyState
+              title={board.emptyTitle}
+              art={board.narrowed ? "magnifier" : undefined}
+              detail={board.emptyDetail}
+              action={
+                board.narrowed ? (
+                  <Button size="sm" onClick={board.onClear}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          </div>
+        ) : (
+          <section className="min-w-0 rounded-ms-card border border-ms-border bg-ms-card">
+            <BoardScroll fetching={fetching} busy={loading || fetching}>
+              {table}
+            </BoardScroll>
+            {data ? (
+              <nav aria-label="Pagination" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ms-border px-4 py-3 text-[14px]">
+                <span className="tabular-nums text-ms-fg-2">{count > 0 ? `${fmt(from)}–${fmt(to)} of ${fmt(count)}` : `0 ${noun.plural}`}</span>
+                {pages > 1 ? (
+                  <div className="ml-auto flex flex-wrap items-center gap-1">
+                    {step(page - 1, "left", "Previous page")}
+                    {pageWindow(page, pages).map((n, i) =>
+                      n === "…" ? (
+                        <span key={`gap-${i}`} aria-hidden="true" className="px-1 text-ms-fg-3">
+                          …
+                        </span>
+                      ) : n === page ? (
+                        <span
+                          key={n}
+                          aria-current="page"
+                          className={buttonClass({ variant: "subtle", size: "sm", square: true, className: "tabular-nums" })}
+                        >
+                          {n}
+                        </span>
+                      ) : (
+                        pageLink(n, n, `Page ${n}`)
+                      ),
+                    )}
+                    {step(page + 1, "right", "Next page")}
+                  </div>
+                ) : null}
+              </nav>
+            ) : null}
+          </section>
+        )}
+
+        {bulkBar}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col">
@@ -352,187 +801,7 @@ export function ChangeList<R extends { id: number }>({
                 )}
                 aria-busy={loading || fetching || undefined}
               >
-                <table className="w-full border-separate border-spacing-0 text-(length:--ms-fs-row)">
-                  <thead>
-                    <tr>
-                      {hasActions ? (
-                        <th scope="col" className="sticky top-0 z-10 w-px border-b border-ms-border bg-ms-card pl-5 pr-1 text-left">
-                          <Checkbox
-                            label="Select all on this page"
-                            checked={allSelected}
-                            indeterminate={someSelected}
-                            onChange={toggleAll}
-                            disabled={!rows || rows.length === 0}
-                          />
-                        </th>
-                      ) : null}
-                      {columns.map((col, i) => {
-                        const keys = sortKeysOf(col);
-                        const dir = keys ? (ordering === keys.asc ? "asc" : ordering === keys.desc ? "desc" : null) : null;
-                        return (
-                          <th
-                            key={col.key}
-                            scope="col"
-                            aria-sort={keys ? (dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none") : undefined}
-                            className={cn(
-                              "sticky top-0 z-10 h-11 whitespace-nowrap border-b border-ms-border bg-ms-card px-3 text-left text-[13px] font-medium text-ms-fg-3",
-                              i === 0 && !hasActions && "pl-5",
-                              i === columns.length - 1 && "pr-5",
-                              col.className,
-                            )}
-                          >
-                            {keys ? (
-                              <button
-                                type="button"
-                                data-dir={dir ?? undefined}
-                                onClick={() => go({ o: nextOrdering(keys, ordering) })}
-                                className={cn("ms-transition inline-flex items-center gap-1 rounded-[6px] hover:text-ms-fg", dir && "text-ms-fg")}
-                              >
-                                {col.label}
-                                <Icon
-                                  name={dir ? "up" : "sort"}
-                                  size="sm"
-                                  className={cn("ms-transition size-3.5", dir === "desc" && "rotate-180", !dir && "opacity-50")}
-                                />
-                              </button>
-                            ) : (
-                              col.label
-                            )}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading && !rows ? (
-                      Array.from({ length: 8 }, (_, i) => (
-                        <tr key={i} data-skeleton>
-                          {Array.from({ length: colSpan }, (_, j) => (
-                            <td key={j} className={cn("h-(--ms-h-row) border-b border-ms-line px-3", j === 0 && "pl-5")}>
-                              <div className="animate-ms-shimmer h-3 rounded-[6px]" style={{ width: j === 0 && hasActions ? 20 : `${[70, 55, 80, 45, 60][(i + j) % 5]}%` }} />
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    ) : !rows || rows.length === 0 ? (
-                      <tr>
-                        <td colSpan={colSpan}>
-                          <EmptyState
-                            title={`No ${noun.plural} match`}
-                            art={narrowed ? "magnifier" : undefined}
-                            detail={narrowed ? "Try another search, or clear the filters." : undefined}
-                            action={
-                              chips.length ? (
-                                <Button size="sm" onClick={clearAll}>
-                                  Clear filters
-                                </Button>
-                              ) : undefined
-                            }
-                          />
-                        </td>
-                      </tr>
-                    ) : (
-                      rows.map((row, index) => {
-                        const group = groupBy?.(row);
-                        const newGroup = group !== undefined && (index === 0 || groupBy?.(rows[index - 1]) !== group);
-                        const isSelected = selected.has(row.id);
-                        const href = rowHref?.(row);
-                        const openRow = href
-                          ? (e: MouseEvent<HTMLTableRowElement>) => {
-                              // A held modifier asks for a new tab: that is the first cell's link,
-                              // never a navigation in place that throws the list away.
-                              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                              markReturn(pathname, row.id);
-                              router.push(href);
-                            }
-                          : onRowClick
-                            ? () => onRowClick(row)
-                            : undefined;
-                        const cell = cn(
-                          "h-(--ms-h-row) border-b border-ms-line px-3 py-1.5 align-middle text-ms-fg",
-                          isSelected ? "bg-ms-primary-soft" : "group-hover/row:bg-ms-surface",
-                          flashLive && flashId === String(row.id) && "animate-ms-flash",
-                        );
-                        return (
-                          <Fragment key={row.id}>
-                            {newGroup ? (
-                              <tr>
-                                <td
-                                  colSpan={colSpan}
-                                  data-group-header
-                                  className="sticky top-11 z-[1] border-b border-ms-border bg-ms-surface px-5 py-1.5 text-[13px] font-semibold text-ms-fg-2"
-                                >
-                                  {groupLabel ? groupLabel(group!) : group}
-                                </td>
-                              </tr>
-                            ) : null}
-                            <tr
-                              data-row-id={row.id}
-                              onClick={openRow}
-                              className={cn("group/row animate-ms-fade-in [&:last-child>td]:border-b-0", openRow && "cursor-pointer")}
-                              style={{ animationDelay: `${Math.min(index, 12) * 18}ms` }}
-                            >
-                              {hasActions ? (
-                                <td className={cn(cell, "w-px pl-5 pr-1")} onClick={(e) => e.stopPropagation()}>
-                                  <Checkbox
-                                    label={`Select ${rowLabel ? rowLabel(row) : row.id}`}
-                                    checked={isSelected}
-                                    onChange={() => toggleOne(row.id)}
-                                  />
-                                </td>
-                              ) : null}
-                              {columns.map((col, i) => (
-                                <td
-                                  key={col.key}
-                                  className={cn(
-                                    cell,
-                                    "whitespace-nowrap",
-                                    i === 0 && !hasActions && "pl-5",
-                                    i === columns.length - 1 && "pr-5",
-                                    col.className,
-                                  )}
-                                >
-                                  {/* The first column opens the row, as Django links it to the change form —
-                                      and gives the keyboard a way in, which a clickable <tr> does not.
-                                      With `rowHref` it is a real link: cmd-click and middle-click open
-                                      a new tab, and its click stops here so the row does not navigate
-                                      a second time. */}
-                                  {i === 0 && href ? (
-                                    <Link
-                                      href={href}
-                                      // A page of 50–100 rows would otherwise prefetch every change form on view.
-                                      prefetch={false}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        markReturn(pathname, row.id);
-                                      }}
-                                      className="block max-w-full truncate rounded-[6px] text-left font-semibold text-ms-fg hover:text-ms-primary-text hover:underline"
-                                    >
-                                      {col.render(row)}
-                                    </Link>
-                                  ) : i === 0 && onRowClick ? (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onRowClick(row);
-                                      }}
-                                      className="block max-w-full truncate rounded-[6px] text-left font-semibold text-ms-fg hover:text-ms-primary-text hover:underline"
-                                    >
-                                      {col.render(row)}
-                                    </button>
-                                  ) : (
-                                    col.render(row)
-                                  )}
-                                </td>
-                              ))}
-                            </tr>
-                          </Fragment>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                {table}
               </div>
             )}
 
@@ -589,31 +858,48 @@ export function ChangeList<R extends { id: number }>({
       </section>
 
       {/* ── bulk bar: floats at the bottom of the screen while rows are ticked ── */}
-      {bar.mounted ? (
-        <div className="pointer-events-none sticky bottom-4 z-30 mt-3 flex justify-center px-4">
-          <BulkBar count={selectedIds.length || barCount} closing={bar.closing} onClear={() => setSelected(new Set())}>
-            {actions!.map((a) => (
-              <button
-                key={a.key}
-                type="button"
-                aria-label={a.label}
-                title={a.label}
-                disabled={running}
-                onClick={() => void runAction(a)}
-                className={bulkButtonClass}
-              >
-                {a.icon ? <Icon name={a.icon} size="sm" /> : null}
-                {a.short ?? a.label}
-              </button>
-            ))}
-          </BulkBar>
-        </div>
-      ) : null}
+      {bulkBar}
 
       {/* ── filters as a side sheet below 1600 px (in a portal: a transformed ancestor would trap `fixed`) ── */}
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Filters" className="min-[1600px]:hidden">
         {filterColumn(() => setSheetOpen(false))}
       </Sheet>
+    </div>
+  );
+}
+
+// ─── Board table frame ───────────────────────────────────────────────────────
+
+/**
+ * The board's table frame. It scrolls sideways only while the table is wider than its card (a phone): a card that
+ * always scrolls would clip every row's ⋮ menu, which opens below its button inside the card.
+ */
+function BoardScroll({ children, fetching, busy }: { children: ReactNode; fetching: boolean; busy: boolean }) {
+  const frame = useRef<HTMLDivElement | null>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useLayoutEffect(() => {
+    const el = frame.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const check = () => {
+      const inner = el.firstElementChild as HTMLElement | null;
+      setScrolls(Boolean(inner) && inner!.scrollWidth > el.clientWidth + 1);
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div
+      ref={frame}
+      data-scrolls={scrolls || undefined}
+      aria-busy={busy || undefined}
+      // `relative`: an absolutely placed child (a checkbox's hidden input, a header named for screen readers only)
+      // must be clipped here, not stretch the page sideways from an ancestor's corner.
+      className={cn("relative transition-opacity", scrolls ? "overflow-x-auto" : "overflow-visible", fetching && "opacity-60")}
+    >
+      {children}
     </div>
   );
 }

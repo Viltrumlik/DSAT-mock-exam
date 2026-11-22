@@ -302,24 +302,54 @@ function ResultCards({ kinds: list }: { kinds: Kind[] }) {
   );
 }
 
+/**
+ * The student profile splits the results into lc-up's tabs (22 Nov 2026): "exams" (Imtihonlar — mocks, practice
+ * tests, midterms, assessments, events), "exercises" (Mashqlar — homework and what is overdue) and "rewards"
+ * (Tanga/Kristal — XP and coins). Without `only` every part shows, as a public user's page has it.
+ */
+export type ResultsPart = "exams" | "exercises" | "rewards";
+
+const EXERCISES = new Set(["Homework", "Overdue homework"]);
+
+const PART_HEAD: Record<ResultsPart, { title: string; description: string }> = {
+  exams: { title: "Exams", description: "Mock exams, practice tests, midterms, assessments and events, newest first" },
+  exercises: { title: "Exercises", description: "Homework in each class, and what is overdue" },
+  rewards: { title: "Coins & crystals", description: "What the student earned and can spend in the shop" },
+};
+
 /** `target`: the SAT total the student set for themself (the mock scores' target line). */
-export function ResultsSection({ id, section, target = null }: { id: number; section: PeopleSection; target?: number | null }) {
+export function ResultsSection({
+  id,
+  section,
+  target = null,
+  only,
+}: {
+  id: number;
+  section: PeopleSection;
+  target?: number | null;
+  only?: ResultsPart;
+}) {
   const query = usePersonPart<PersonResults>(id, "results");
   const centre = section !== "public";
+  const head = only ? PART_HEAD[only] : { title: "Results", description: "Everything graded, newest first" };
+  const pick = (all: Kind[]) =>
+    only === "exams" ? all.filter((k) => !EXERCISES.has(k.title)) : only === "exercises" ? all.filter((k) => EXERCISES.has(k.title)) : all;
 
   return (
-    <Fieldset title="Results" icon={Trophy} tone="accent" description="Everything graded, newest first">
+    <Fieldset title={head.title} icon={Trophy} tone="accent" description={head.description}>
       <PartBody
         query={query}
         isEmpty={() => false}
         render={(d) => (
           <div className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-2" data-testid="rewards">
-              <StatTile label="XP" value={num(d.rewards.xp)} icon={Zap} tone="accent" sub="earned in total" />
-              <StatTile label="Coins" value={num(d.rewards.coins)} icon={Coins} tone="warning" sub="to spend in the shop" />
-            </div>
-            <MockScores mocks={d.mocks} target={target} />
-            <ResultCards kinds={kinds(d, centre)} />
+            {only === undefined || only === "rewards" ? (
+              <div className="grid gap-3 sm:grid-cols-2" data-testid="rewards">
+                <StatTile label="XP" value={num(d.rewards.xp)} icon={Zap} tone="accent" sub="earned in total" />
+                <StatTile label="Coins" value={num(d.rewards.coins)} icon={Coins} tone="warning" sub="to spend in the shop" />
+              </div>
+            ) : null}
+            {only === undefined || only === "exams" ? <MockScores mocks={d.mocks} target={target} /> : null}
+            {only === "rewards" ? null : <ResultCards kinds={pick(kinds(d, centre))} />}
           </div>
         )}
       />

@@ -208,7 +208,7 @@ describe("visibleNav / visibleCategories", () => {
     // The month's totals only: Finance keeps just its Overview.
     const reportsOnly = { role: "admin", permissions: ["view_reports"] };
     expect(tabsFor(reportsOnly, "/ops/finance")).toEqual(["Overview"]);
-    expect(tabsFor(ADMIN, "/ops/finance")).toEqual(["Overview", "Debtors", "Payments", "Ledger"]);
+    expect(tabsFor(ADMIN, "/ops/finance")).toEqual(["Debtors", "Payments", "Ledger", "Overview"]);
   });
 
   it("shows nothing super-admin-only before `me` has loaded", () => {

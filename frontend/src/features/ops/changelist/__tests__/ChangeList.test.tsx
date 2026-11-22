@@ -492,3 +492,106 @@ describe("pageWindow", () => {
     expect(pageWindow(9, 9)).toEqual([1, "…", 8, 9]);
   });
 });
+
+describe("ChangeList board layout (lc-up's list shape)", () => {
+  const BOARD = {
+    chips: <div data-testid="chips">chips</div>,
+    filters: <input aria-label="Name" />,
+    narrowed: false,
+    onClear: vi.fn(),
+    numbered: true,
+    errorTitle: "Could not load students.",
+    emptyTitle: "No students match these filters",
+  };
+
+  it("puts the title, the count and the page size above the chips, the filter card and the table", () => {
+    render({ board: BOARD, data: data({ page: 2, page_size: 25 }) });
+    expect(host.querySelector("h1")?.textContent).toBe("Students");
+    expect(host.querySelector("[data-list-count]")?.textContent).toBe("219");
+    expect(host.querySelector('[data-testid="chips"]')).not.toBeNull();
+    expect(host.querySelector('[role="group"][aria-label="Filters"] input[aria-label="Name"]')).not.toBeNull();
+    // No facet column or filter sheet: the page's filter card replaces them.
+    expect(host.querySelector('aside[aria-label="Filters"]')).toBeNull();
+    expect(text()).toContain("26–50 of 219");
+    // Rows are numbered down the whole list.
+    expect([...host.querySelectorAll("[data-row-number]")].map((td) => td.textContent)).toEqual(["26", "27", "28"]);
+    expect([...host.querySelectorAll("thead th")].map((th) => th.textContent?.trim())).toEqual(["#", "Name", "Joined", "Note"]);
+  });
+
+  it("changes the page size from beside the title, starting again at page 1", () => {
+    search = "p=3";
+    render({ board: BOARD });
+    choose(host.querySelector("header select") as HTMLSelectElement, "100");
+    const { params } = lastAddress();
+    expect(params.get("ps")).toBe("100");
+    expect(params.get("p")).toBeNull();
+  });
+
+  it("keeps the list's other filters after the board's own, folded behind More filters on a phone", () => {
+    render({ board: { ...BOARD, moreFilters: <input aria-label="Signed in" />, moreActive: 1 } });
+    const fold = host.querySelector("[data-more-filters]") as HTMLElement;
+    expect(fold.querySelector('input[aria-label="Signed in"]')).not.toBeNull();
+    expect(fold.className).toContain("max-md:hidden");
+    const toggle = buttons("More filters (1)")[0];
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    click(toggle);
+    expect(fold.className).not.toContain("max-md:hidden");
+    expect(buttons("Fewer filters")[0].getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("a failed load is an alert with Retry above nothing — the filter card stays", () => {
+    const props = render({ board: BOARD, error: true, data: undefined });
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("Could not load students.");
+    expect(alert?.textContent).toContain("Your filters are kept.");
+    expect(host.querySelector('input[aria-label="Name"]')).not.toBeNull();
+    expect(host.querySelector("table")).toBeNull();
+    click(buttons("Retry")[0]);
+    expect(props.onRetry).toHaveBeenCalled();
+  });
+
+  it("an empty result says what matched nothing and offers Clear filters", () => {
+    const onClear = vi.fn();
+    render({ board: { ...BOARD, narrowed: true, onClear, emptyDetail: "Teacher “Vali” is on." }, data: data({ results: [], count: 0 }) });
+    expect(text()).toContain("No students match these filters");
+    expect(text()).toContain("Teacher “Vali” is on.");
+    expect(host.querySelector("table")).toBeNull();
+    const clears = buttons("Clear filters");
+    expect(clears).toHaveLength(2); // the filter card's and the empty state's
+    click(clears[1]);
+    expect(onClear).toHaveBeenCalled();
+  });
+
+  it("tints a verdict cell, keeps a click in an interactive cell off the row, and links only what renderLinked wraps", () => {
+    const columns: ChangeListColumn<Row>[] = [
+      {
+        key: "name",
+        label: "Name",
+        render: (r) => r.name,
+        renderLinked: (r, link) => (
+          <span>
+            {link(r.name)}
+            <i data-sub>sub</i>
+          </span>
+        ),
+      },
+      { key: "balance", label: "Balance", render: () => "−5", verdict: (r) => (r.id === 1 ? "critical" : undefined) },
+      { key: "menu", label: "Actions", hideLabel: true, interactive: true, render: () => <button type="button">menu</button> },
+    ];
+    render({ board: BOARD, columns, rowHref: (r) => `/ops/students/${r.id}` });
+    const [first, second] = [...host.querySelectorAll("tbody tr")];
+    expect(first.querySelector('td[data-verdict="critical"]')?.textContent).toBe("−5");
+    expect(second.querySelector("td[data-verdict]")).toBeNull();
+    const a = first.querySelector("a") as HTMLAnchorElement;
+    expect(a.getAttribute("href")).toBe("/ops/students/1");
+    expect(a.textContent).toBe("Aziz Tursunov");
+    expect(a.querySelector("[data-sub]")).toBeNull();
+    click([...first.querySelectorAll("button")].find((b) => b.textContent === "menu"));
+    expect(push).not.toHaveBeenCalled();
+    click(first.querySelector("td:last-child") ?? undefined);
+    expect(push).not.toHaveBeenCalled();
+    click(first.querySelector("td[data-verdict]") ?? undefined);
+    expect(push).toHaveBeenCalledWith("/ops/students/1");
+    expect(host.querySelector("thead th:last-child .sr-only")?.textContent).toBe("Actions");
+  });
+});

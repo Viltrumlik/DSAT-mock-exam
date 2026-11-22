@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { cn } from "@/lib/cn";
@@ -70,6 +70,16 @@ export function IconSquare({ icon: Icon, tone = "primary", size = "md" }: { icon
   );
 }
 
+/**
+ * Inside a card that is already the box (the student profile's and the group page's tab card, lc-up structure
+ * 22 Nov 2026), every `Fieldset` below drops its own card and icon square: the tab above names the subject.
+ */
+const PlainContext = createContext(false);
+
+export function PlainBoxes({ children }: { children: ReactNode }) {
+  return <PlainContext.Provider value={true}>{children}</PlainContext.Provider>;
+}
+
 /** A box for one subject: an icon and a title over its content. */
 export function Fieldset({
   title,
@@ -89,6 +99,21 @@ export function Fieldset({
   children: ReactNode;
   className?: string;
 }) {
+  const plain = useContext(PlainContext);
+  if (plain) {
+    return (
+      <section className={cn("min-w-0", className)} aria-label={title}>
+        <header className="flex flex-wrap items-start justify-between gap-3 pb-1">
+          <div className="min-w-[min(100%,16rem)] flex-1">
+            <h2 className="text-ms-h text-ms-fg">{title}</h2>
+            {description ? <p className="mt-0.5 text-[13px] text-ms-fg-3">{description}</p> : null}
+          </div>
+          {right}
+        </header>
+        <div className="pt-3 text-[14px] text-ms-fg">{children}</div>
+      </section>
+    );
+  }
   return (
     <section
       className={cn("animate-ms-card-in min-w-0 rounded-ms-card bg-ms-card shadow-ms-1", className)}
@@ -200,8 +225,10 @@ export type Column = string | { label: string; className?: string };
 
 /** A table that runs to the box's edges, its header on a soft band and its rows spaced to be read. */
 export function Table({ head, children }: { head: Column[]; children: ReactNode }) {
+  // Inside a tab card the table keeps to the panel's padding (a ruled table needs its own edge).
+  const plain = useContext(PlainContext);
   return (
-    <div className="-mx-[22px] overflow-x-auto">
+    <div className={cn("overflow-x-auto", plain ? "rounded-ms-ctl border border-ms-grid" : "-mx-[22px]")}>
       <table className="w-full border-separate border-spacing-0 text-[14px] text-ms-fg lining-nums">
         <thead>
           <tr>

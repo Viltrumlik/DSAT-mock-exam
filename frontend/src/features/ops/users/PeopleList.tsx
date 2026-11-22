@@ -6,7 +6,12 @@ import api from "@/lib/api";
 import type { IconName } from "@/components/ui/Icon";
 import { toast } from "@/features/console/toast";
 import { ConfirmDialog } from "@/features/console/ui";
-import { ChangeList, type ChangeListAction, type ChangeListColumn } from "@/features/ops/changelist/ChangeList";
+import {
+  ChangeList,
+  type ChangeListAction,
+  type ChangeListBoard,
+  type ChangeListColumn,
+} from "@/features/ops/changelist/ChangeList";
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import { withListFilters } from "@/features/ops/changelist/backLink";
 import {
@@ -34,6 +39,10 @@ type PeopleListProps<S extends PeopleSection> = {
   searchPlaceholder?: string;
   /** Beside the list's title: the Staff page's "New staff account". */
   headerAction?: ReactNode;
+  /** lc-up's list shape (the Students list): see `ChangeListBoard`. */
+  board?: ChangeListBoard;
+  /** Bulk actions the page adds after freeze / unfreeze / delete (the Students list's "Send SMS"). */
+  extraActions?: ChangeListAction[];
 };
 
 type Pending = {
@@ -138,6 +147,8 @@ function PeopleListInner<S extends PeopleSection>({
   bulk,
   searchPlaceholder,
   headerAction,
+  board,
+  extraActions,
 }: PeopleListProps<S>) {
   const { params, queryString } = useChangeListParams(PEOPLE_FILTER_KEYS[section]);
   const query = usePeople(section, params);
@@ -153,27 +164,30 @@ function PeopleListInner<S extends PeopleSection>({
   }, [queryClient]);
 
   const rows = query.data?.results;
-  const actions: ChangeListAction[] = bulk.map((action) => ({
-    key: action,
-    label: `${ACTION_LABEL[action]} selected ${noun.plural}`,
-    // The bulk bar's words; Delete asks first (the confirm dialog), so it ends in an ellipsis.
-    short: action === "delete" ? `${ACTION_LABEL[action]}…` : ACTION_LABEL[action],
-    icon: action === "freeze" ? "snow" : action === "delete" ? "trash" : undefined,
-    run: (ids) =>
-      new Promise<boolean>((resolve) => {
-        const picked = (rows ?? []).filter((r) => ids.includes(r.id));
-        succeeded.current = false;
-        setPending({
-          action,
-          ids,
-          resolve,
-          attempts: picked.reduce((sum, r) => sum + (r.attempt_count ?? 0), 0),
-          names: picked.map((r) => r.name || r.username || `User ${r.id}`),
-          debtFrozen: picked.filter((r) => r.status === "frozen_debt").length,
-        });
-        setOpen(true);
-      }),
-  }));
+  const actions: ChangeListAction[] = [
+    ...bulk.map((action): ChangeListAction => ({
+      key: action,
+      label: `${ACTION_LABEL[action]} selected ${noun.plural}`,
+      // The bulk bar's words; Delete asks first (the confirm dialog), so it ends in an ellipsis.
+      short: action === "delete" ? `${ACTION_LABEL[action]}…` : ACTION_LABEL[action],
+      icon: action === "freeze" ? "snow" : action === "delete" ? "trash" : undefined,
+      run: (ids) =>
+        new Promise<boolean>((resolve) => {
+          const picked = (rows ?? []).filter((r) => ids.includes(r.id));
+          succeeded.current = false;
+          setPending({
+            action,
+            ids,
+            resolve,
+            attempts: picked.reduce((sum, r) => sum + (r.attempt_count ?? 0), 0),
+            names: picked.map((r) => r.name || r.username || `User ${r.id}`),
+            debtFrozen: picked.filter((r) => r.status === "frozen_debt").length,
+          });
+          setOpen(true);
+        }),
+    })),
+    ...(extraActions ?? []),
+  ];
 
   // Runs inside the dialog: the button shows its progress, and a failure shakes the dialog and stays
   // there to be read (never only in a toast).
@@ -227,6 +241,7 @@ function PeopleListInner<S extends PeopleSection>({
         searchPlaceholder={searchPlaceholder}
         headerAction={headerAction}
         rowLabel={(row) => row.name || row.username}
+        board={board}
       />
 
       {pending && copy ? (

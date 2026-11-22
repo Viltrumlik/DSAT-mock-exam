@@ -75,6 +75,14 @@ def _groups(user) -> list[dict]:
             "teacher": display_name(s.classroom.teacher),
             "joined_at": iso(s.joined_at),
             "lcup_managed": s.classroom_id in managed,
+            # The group card's fields (lc-up's "Guruhlar" tab, 22 Nov 2026): the class's own and this seat's.
+            "level": s.classroom.level or "",
+            "lesson_days": s.classroom.lesson_days or "",
+            "lesson_time": s.classroom.lesson_time or "",
+            "monthly_price": s.classroom.monthly_price,
+            "start_date": iso(s.classroom.start_date),
+            "seat_status": s.seat_status,
+            "seat_start_date": iso(s.seat_start_date),
         }
         for s in seats
     ]
@@ -257,6 +265,25 @@ def _lcup_locked_fields(user) -> list[str]:
     return locked_fields(user)
 
 
+def _coins(user):
+    """The learner's coin balance, or None when they never had a wallet (the page then shows no coins at all)."""
+    from rewards.models import StudentWallet
+
+    return StudentWallet.objects.filter(student=user).values_list("coins_balance", flat=True).first()
+
+
+def _ledger(user):
+    """Where the profile's Take payment writes: this learner's account in the centre's own ledger, and whether money
+    is entered there yet (``billing.conf.payments_open``). None when the ledger has no account for them."""
+    from billing import conf as billing_conf
+    from billing.models import Account
+
+    account_id = Account.objects.filter(user=user).values_list("pk", flat=True).first()
+    if account_id is None:
+        return None
+    return {"account_id": account_id, "payments_open": billing_conf.payments_open()}
+
+
 def _parent(user, request):
     """Whom to call about this learner. The desk's alone (``view_people``), though anyone who manages users can open
     this page."""
@@ -265,6 +292,7 @@ def _parent(user, request):
 
 
 def person_core(user, request=None) -> dict:
+    from lcup.guards import seats_locked
     from lcup.models import LcupStudentLink, LinkStatus
 
     from .photos import profile_image_url
@@ -311,6 +339,11 @@ def person_core(user, request=None) -> dict:
         "open_classes": _open_classes(user) if learner else [],
         # lc-up's money (balance, monthly cost, payments): ``view_money``'s alone.
         "lcup": _lcup(user) if learner and authorize(getattr(request, "user", None), C.PERM_VIEW_MONEY) else None,
+        # The centre's own ledger account (Take payment): ``view_money``'s alone too.
+        "ledger": _ledger(user) if learner and authorize(getattr(request, "user", None), C.PERM_VIEW_MONEY) else None,
+        # Whether a seat's actions (freeze, leave, fix date) are open: lc-up no longer runs (``classes.seat_actions``).
+        "seats_open": not seats_locked(),
+        "coins": _coins(user) if learner else None,
         "duplicates": same_name_accounts(user) if learner else [],
         "staff": None if learner else _staff(user),
     }

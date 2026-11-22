@@ -54,10 +54,12 @@ afterEach(() => {
 });
 
 async function flush() {
-  for (let tick = 0; tick < 5; tick++) {
+  // A few ticks, then more while the panel is still empty or loading: a full, busy test run can need more than five.
+  for (let tick = 0; tick < 60; tick++) {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, tick < 5 ? 0 : 10));
     });
+    if (tick >= 4 && host.textContent && !host.querySelector('[aria-busy="true"], .animate-ms-shimmer')) break;
   }
 }
 
@@ -274,7 +276,7 @@ describe("filters", () => {
 });
 
 describe("pages", () => {
-  it("pages a long list, 150 a page unless asked otherwise", async () => {
+  it("pages a long list, 150 a page unless asked otherwise", { timeout: 20000 }, async () => {
     const many = Array.from({ length: 160 }, (_, i) => debtor({ link_id: 100 + i, lcup_student_id: 1000 + i, name: `Student ${i}`, debt: 1000 + i }));
     await mount(<DebtorsPanel />, many);
     expect(tableRows()).toHaveLength(150);

@@ -39,8 +39,26 @@ export interface PeopleRowBase {
   attempt_count?: number;
 }
 
+/** One seat on the Students list: the group as lc-up shows it (absent fields on an older server). */
+export interface StudentGroupCell {
+  id: number;
+  /** The class's name; a paired class carries lc-up's "Junior G21 | Math | Bekzod". */
+  name: string;
+  /** "foundation" | "junior" | "middle" | "senior" | "". */
+  level?: string;
+  /** "MATH" | "ENGLISH". */
+  subject?: string;
+  /** "304", "" when none. */
+  room?: string;
+  teacher?: { id: number; name: string; first_name: string; last_name?: string } | null;
+  /** lc-up's seat status: "active" | "trial" | "frozen". */
+  seat_status?: string;
+  /** "YYYY-MM-DD": when the seat began. */
+  joined?: string | null;
+}
+
 export interface StudentRow extends PeopleRowBase {
-  groups: { id: number; name: string }[];
+  groups: StudentGroupCell[];
   /** `balance` is lc-up's, in whole UZS; negative is a debt. */
   lcup: { linked: boolean; balance: number | null };
 }
@@ -68,7 +86,8 @@ export interface PeoplePage<R extends PeopleRowBase = PeopleRow> extends ChangeL
 
 /** The filter keys each section understands (anything else in the address is not sent). */
 export const PEOPLE_FILTER_KEYS: Record<PeopleSection, readonly string[]> = {
-  students: ["status", "group", "teacher", "lcup", "debt", "dupes", "signin"],
+  // `phone` and `parent_phone` are typed (the digits match anywhere); `show` is the chip row, `course` level + subject.
+  students: ["status", "group", "teacher", "course", "show", "phone", "parent_phone", "lcup", "debt", "dupes", "signin"],
   public: ["status", "joined", "verified", "dupes", "signin"],
   staff: ["role", "subject", "status"],
 };
