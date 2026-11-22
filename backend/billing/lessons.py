@@ -54,9 +54,9 @@ def lesson_days(days, start: date, end: date) -> list[date]:
     return out
 
 
-def seat_lesson_price(base: int, group_price: int, personal_price: int | None) -> int:
-    """One lesson for this seat: the base price, scaled by a personal monthly price to the nearest 500 so'm
-    (400,000 of 500,000 → 31,000). A grant (0) is free."""
-    if personal_price is None or not group_price:
-        return base
-    return round(base * personal_price / group_price / 500) * 500
+def seat_lesson_price(monthly_price: int, lessons_per_month: int) -> int:
+    """One lesson: the seat's monthly price (a personal one when it has one) ÷ the lessons of a month, to the nearest
+    500 so'm (owner, 2026-11-22: 500,000 ÷ 13 → 38,500; 400,000 → 31,000). A grant (0) is free."""
+    if not monthly_price or lessons_per_month <= 0:
+        return 0
+    return round(monthly_price / lessons_per_month / 500) * 500

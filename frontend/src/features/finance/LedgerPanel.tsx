@@ -251,9 +251,14 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
         </p>
         {account.rules?.mode === "lesson" ? (
           <p className="text-[13px] text-ms-fg-3">
-            Pays per lesson: {money(account.rules.lesson_price)} {SOM} a lesson · top-up at least{" "}
-            {money(account.rules.least_payment ?? account.rules.min_topup)} {SOM}
-            {account.rules.first_month_fee ? ` · new student: first month ${money(account.rules.first_month_fee)} ${SOM}` : ""}
+            Pays per lesson
+            {account.rules.lesson_price ? `: ${money(account.rules.lesson_price)} ${SOM} a lesson` : ""} (monthly price ÷{" "}
+            {account.rules.lessons_per_month}) · top-up at least {money(account.rules.least_payment ?? account.rules.min_topup)}{" "}
+            {SOM}
+            {account.rules.first_month_fee
+              ? ` · first month ${money(account.rules.first_month_fee)} ${SOM}` +
+                (account.rules.first_month_until ? `, covers lessons to ${account.rules.first_month_until}` : "")
+              : ""}
             {" · frozen below zero"}
           </p>
         ) : null}

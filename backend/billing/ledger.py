@@ -15,7 +15,7 @@ It knows seats, spans and rows, and nothing about where a change came from: duri
 
 import logging
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, timedelta
 
 from django.db import IntegrityError, transaction
 from django.db.models import F as models_F, Q, Sum
@@ -27,6 +27,7 @@ from .models import (
     Account,
     BillingRun,
     BillingState,
+    EndReason,
     Entry,
     EntryKind,
     PaymentMethod,
@@ -265,26 +266,56 @@ def _first_paid_span(account):
     return spans.order_by("start", "id").first()
 
 
-def _first_month(span, today: date) -> tuple[date, date] | None:
-    """The days the new student's first month covers on this span's seat, [from, until); the row is written by the
-    student's first paid span. None when the seat has no first month."""
+def lesson_price(seat) -> int:
+    return seat_lesson_price(seat.charge_price, conf.lessons_per_month())
+
+
+def _write_first_fee(span, today: date) -> None:
+    """The new student's first month, written once by their first paid span on its first day."""
     seat, account = span.seat, span.seat.account
     key = f"{FIRST_KEY}{account.pk}"
-    row = Entry.objects.filter(key=key, voided_at__isnull=True).first()
-    if row is None:
-        first = _first_paid_span(account)
-        if first is None or first.pk != span.pk or span.start > today:
-            return None
-        post(
-            account, EntryKind.CHARGE, -seat.charge_price, span.start, key, span=span, seat=seat,
-            month=month_of(span.start), note=f"First month, until {add_one_month(span.start).isoformat()}",
-        )
-        row = Entry.objects.filter(key=key, voided_at__isnull=True).first()
-        if row is None:
-            return None
-    if row.seat_id != seat.pk:
+    if span.start > today or Entry.objects.filter(key=key, voided_at__isnull=True).exists():
+        return
+    first = _first_paid_span(account)
+    if first is None or first.pk != span.pk:
+        return
+    post(
+        account, EntryKind.CHARGE, -seat.charge_price, span.start, key, span=span, seat=seat,
+        month=month_of(span.start), note=f"First month from {span.start.isoformat()}",
+    )
+
+
+def first_month_window(account) -> tuple[Entry, date, set[int]] | None:
+    """A new student's first month: its row, the day after it ends, and the spans whose lessons it covers.
+
+    One month of studying from the first day (owner, 2026-11-22). Days the seat is frozen inside it are added on
+    ("ha"). A move to another group inside it takes the rest of the month along; a move after it does not, and a
+    second group beside the first pays per lesson ("birinchi oyda guruh almashtirilsa qoladi, ikkinchi oydan
+    boshqa guruhga o'tsa yo'q")."""
+    row = Entry.objects.filter(key=f"{FIRST_KEY}{account.pk}", voided_at__isnull=True).first()
+    if row is None or row.seat_id is None:
         return None
-    return row.day, add_one_month(row.day)
+    end = add_one_month(row.day)
+    seat_id, chain, last = row.seat_id, set(), None
+    spans = (
+        Span.objects.filter(seat__account=account, rule=SpanRule.LESSON, start__gte=row.day)
+        .exclude(end__lt=models_F("start"))
+        .order_by("start", "id")
+    )
+    for span in spans:
+        if span.seat_id == seat_id:
+            if last is not None and last.ended_by == EndReason.FREEZE and last.end is not None and last.end < end:
+                end += timedelta(days=max((span.start - last.end).days - 1, 0))
+        elif (
+            last is not None and last.ended_by == EndReason.LEAVE and last.end is not None
+            and last.end <= span.start <= last.end + timedelta(days=1) and span.start < end
+        ):
+            seat_id = span.seat_id
+        else:
+            continue
+        chain.add(span.pk)
+        last = span
+    return row, end, chain
 
 
 def _bill_lessons(span, today: date) -> None:
@@ -294,8 +325,10 @@ def _bill_lessons(span, today: date) -> None:
     seat = span.seat
     if span.start > today or (span.end is not None and span.end < span.start):
         return  # not begun yet, or called off before it began
-    covered = _first_month(span, today)
-    price = seat_lesson_price(conf.lesson_price(), seat.price, seat.personal_price)
+    _write_first_fee(span, today)
+    window = first_month_window(seat.account)
+    covered = (window[0].day, window[1]) if window and span.pk in window[2] else None
+    price = lesson_price(seat)
     if not price:
         return  # a grant
     last = min(span.end, today) if span.end else today

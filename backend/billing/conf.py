@@ -39,9 +39,9 @@ def _money_setting(name: str, default: int) -> int:
     return value if value >= 0 else default
 
 
-def lesson_price() -> int:
-    """One lesson at the group's full price (owner, 2026-11-22: 38,500 so'm)."""
-    return _money_setting("BILLING_LESSON_PRICE", 38_500)
+def lessons_per_month() -> int:
+    """One lesson costs the seat's monthly price ÷ this (owner, 2026-11-22: "ikkinchi variant", 500,000 ÷ 13)."""
+    return _money_setting("BILLING_LESSONS_PER_MONTH", 13) or 13
 
 
 def min_topup() -> int:

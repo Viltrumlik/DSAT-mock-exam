@@ -355,7 +355,8 @@ BILLING_PAYMENTS_OPEN = os.getenv("BILLING_PAYMENTS_OPEN", "False").lower() == "
 # new student's first month in full, then each lesson from a balance topped up in advance, frozen below zero
 # (billing.lessons). Anything but the literal "lesson" is "month".
 BILLING_MODE = os.getenv("BILLING_MODE", "month").strip().lower()
-BILLING_LESSON_PRICE = int(os.getenv("BILLING_LESSON_PRICE", "38500"))
+# One lesson = the seat's monthly price ÷ this, to the nearest 500 so'm (owner, 2026-11-22: 500,000 → 38,500).
+BILLING_LESSONS_PER_MONTH = int(os.getenv("BILLING_LESSONS_PER_MONTH", "13"))
 BILLING_MIN_TOPUP = int(os.getenv("BILLING_MIN_TOPUP", "160000"))
 
 # SMS through eskiz.uz (backend/sms, docs/superpowers/plans/2026-10-18-eskiz-sms-debt-warnings.md): days

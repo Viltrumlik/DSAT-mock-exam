@@ -31,12 +31,17 @@ export interface LedgerProblem {
 /** How the ledger charges (owner, 22 Nov 2026): by the month, or per lesson from a balance topped up in advance. */
 export interface LedgerRules {
   mode: "month" | "lesson";
-  lesson_price: number;
+  /** A lesson costs the seat's monthly price ÷ this (13), to the nearest 500. */
+  lessons_per_month: number;
+  /** Per lesson, on an account: what one lesson of its group costs; null with no group. */
+  lesson_price?: number | null;
   min_topup: number;
   /** Per lesson only: the least this student's next payment may be (a new student's first: the whole first month). */
   least_payment?: number;
   /** Per lesson only: a new student's first month, or null for someone who is not new. */
   first_month_fee?: number | null;
+  /** Per lesson only: the last day the first month covers (it grows while the seat is frozen). */
+  first_month_until?: string | null;
 }
 
 export interface LedgerSummary {
@@ -91,6 +96,8 @@ export interface LedgerSeat {
   personal_price: number | null;
   /** How its latest stretch is billed; null before it ever paid. */
   rule?: "month" | "lesson" | null;
+  /** What one lesson of this seat costs when it pays per lesson. */
+  lesson_price?: number;
   price_changes: { at: string; old_price: number | null; new_price: number | null; reason: string; by: string }[];
 }
 

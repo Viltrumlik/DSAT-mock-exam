@@ -19,7 +19,7 @@ from users import audience as A
 
 User = get_user_model()
 MWF, TTS = [1, 3, 5], [2, 4, 6]
-LESSON_MODE = override_settings(BILLING_MODE="lesson", BILLING_LESSON_PRICE=38_500, BILLING_MIN_TOPUP=160_000)
+LESSON_MODE = override_settings(BILLING_MODE="lesson", BILLING_LESSONS_PER_MONTH=13, BILLING_MIN_TOPUP=160_000)
 
 
 def seat_for(account, *, days=MWF, price=500_000, group=1, personal=None):
@@ -49,10 +49,11 @@ class HelperTests(TestCase):
         self.assertEqual(days, [date(2026, 11, 2), date(2026, 11, 4), date(2026, 11, 6), date(2026, 11, 9)])
         self.assertEqual(lesson_days(MWF, date(2026, 11, 9), date(2026, 11, 2)), [])
 
-    def test_a_personal_price_scales_the_lesson_and_a_grant_is_free(self):
-        self.assertEqual(seat_lesson_price(38_500, 500_000, None), 38_500)
-        self.assertEqual(seat_lesson_price(38_500, 500_000, 400_000), 31_000)
-        self.assertEqual(seat_lesson_price(38_500, 500_000, 0), 0)
+    def test_a_lesson_is_the_monthly_price_over_13_to_the_nearest_500(self):
+        self.assertEqual(seat_lesson_price(500_000, 13), 38_500)
+        self.assertEqual(seat_lesson_price(400_000, 13), 31_000)
+        self.assertEqual(seat_lesson_price(450_000, 13), 34_500)
+        self.assertEqual(seat_lesson_price(0, 13), 0)
 
 
 @LESSON_MODE
@@ -103,12 +104,38 @@ class NewStudentTests(TestCase):
             [(date(2026, 11, 3), -38_500), (date(2026, 11, 5), -38_500), (date(2026, 11, 7), -38_500)],
         )
 
-    def test_coming_back_from_a_freeze_inside_the_first_month_is_still_covered(self):
+    def test_a_freeze_inside_the_first_month_adds_its_days_on(self):
+        # First month 2 Nov - 1 Dec; frozen after 9 Nov, back on 23 Nov: 13 days off, so it covers to 14 Dec.
         span = ledger.start_span(self.seat, date(2026, 11, 2), today=date(2026, 11, 9))
         ledger.end_span(span, date(2026, 11, 9), EndReason.FREEZE, today=date(2026, 11, 9))
-        ledger.start_span(self.seat, date(2026, 11, 23), today=date(2026, 12, 4))
+        ledger.start_span(self.seat, date(2026, 11, 23), today=date(2026, 12, 18))
         lessons = self.account.entries.filter(key__startswith="lesson:", voided_at__isnull=True)
-        self.assertEqual(sorted(lessons.values_list("day", flat=True)), [date(2026, 12, 2), date(2026, 12, 4)])
+        self.assertEqual(sorted(lessons.values_list("day", flat=True)), [date(2026, 12, 16), date(2026, 12, 18)])
+        self.assertEqual(ledger.first_month_window(self.account)[1], date(2026, 12, 15))
+
+    def test_a_freeze_after_the_first_month_adds_nothing(self):
+        span = ledger.start_span(self.seat, date(2026, 11, 2), today=date(2026, 12, 4))
+        ledger.end_span(span, date(2026, 12, 4), EndReason.FREEZE, today=date(2026, 12, 4))
+        ledger.start_span(self.seat, date(2026, 12, 14), today=date(2026, 12, 14))
+        self.assertEqual(ledger.first_month_window(self.account)[1], date(2026, 12, 2))
+        lessons = self.account.entries.filter(key__startswith="lesson:", voided_at__isnull=True)
+        self.assertEqual(sorted(lessons.values_list("day", flat=True)), [date(2026, 12, 2), date(2026, 12, 4), date(2026, 12, 14)])
+
+    def test_a_move_inside_the_first_month_takes_the_rest_of_it_along(self):
+        span = ledger.start_span(self.seat, date(2026, 11, 2), today=date(2026, 11, 16))
+        ledger.end_span(span, date(2026, 11, 16), EndReason.LEAVE, today=date(2026, 11, 16))
+        other = seat_for(self.account, days=TTS, group=2)
+        ledger.start_span(other, date(2026, 11, 16), today=date(2026, 12, 5))
+        self.assertEqual(sorted(other.entries.values_list("day", "amount")), [(date(2026, 12, 3), -38_500), (date(2026, 12, 5), -38_500)])
+        self.assertEqual(ledger.balance(self.account), -500_000 - 2 * 38_500)
+
+    def test_a_move_after_the_first_month_pays_per_lesson_in_the_new_group(self):
+        span = ledger.start_span(self.seat, date(2026, 11, 2), today=date(2026, 12, 7))
+        ledger.end_span(span, date(2026, 12, 7), EndReason.LEAVE, today=date(2026, 12, 7))
+        other = seat_for(self.account, days=TTS, group=2)
+        ledger.start_span(other, date(2026, 12, 8), today=date(2026, 12, 10))
+        self.assertEqual(sorted(other.entries.values_list("day", flat=True)), [date(2026, 12, 8), date(2026, 12, 10)])
+        self.assertFalse(self.account.entries.filter(key__startswith="first:").exclude(seat=self.seat).exists())
 
     def test_leaving_takes_back_the_lessons_after_it_but_not_the_first_month(self):
         span = ledger.start_span(self.seat, date(2026, 11, 2), today=date(2026, 12, 9))
@@ -314,8 +341,8 @@ class LessonApiTests(EntryApiCase, TestCase):
     def test_the_account_says_how_it_is_charged(self):
         rules = self.get(f"/api/billing/accounts/{self.account().pk}/").json()["rules"]
         self.assertEqual(
-            (rules["mode"], rules["lesson_price"], rules["min_topup"], rules["least_payment"]),
-            ("lesson", 38_500, 160_000, 160_000),
+            (rules["mode"], rules["lesson_price"], rules["lessons_per_month"], rules["min_topup"], rules["least_payment"]),
+            ("lesson", 38_500, 13, 160_000, 160_000),
         )
 
     def test_a_payment_lifts_the_debt_freeze_at_once(self):
@@ -335,3 +362,20 @@ class LessonApiTests(EntryApiCase, TestCase):
         ledger.post(account, EntryKind.CHARGE, -38_500, date.today() - timedelta(days=1), f"lesson:{span.pk}:x", span=span)
         rows = self.get(f"/api/billing/accounts/{account.pk}/").json()["rows"]
         self.assertIn("Lesson", [row["label"] for row in rows])
+
+
+@LESSON_MODE
+class WindowApiTests(TestCase):
+    def test_the_account_says_until_when_the_first_month_covers(self):
+        from billing.views import AccountDetailView  # noqa: F401 - the URL is what is tested
+        from rest_framework.test import APIClient
+
+        account = Account.objects.create(name="New")
+        seat = seat_for(account)
+        ledger.start_span(seat, date(2026, 11, 2), today=date(2026, 11, 2))
+        boss = User.objects.create_user(None, password=None, username="boss", role="admin")
+        api = APIClient()
+        api.force_authenticate(boss)
+        with override_settings(ALLOWED_HOSTS=["admin.mastersat.uz"]):
+            body = api.get(f"/api/billing/accounts/{account.pk}/", HTTP_HOST="admin.mastersat.uz").json()
+        self.assertEqual((body["rules"]["first_month_until"], body["seats"][0]["lesson_price"]), ("2026-12-01", 38_500))

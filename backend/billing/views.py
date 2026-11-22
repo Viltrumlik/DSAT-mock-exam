@@ -2,6 +2,7 @@
 permission it needs (plan 2026-11-12-crm-roles)."""
 
 import uuid
+from datetime import timedelta
 
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
@@ -30,7 +31,7 @@ def _rules() -> dict:
     """How the ledger charges, for the console's words (owner, 2026-11-22: pay per lesson)."""
     return {
         "mode": conf.default_rule(),
-        "lesson_price": conf.lesson_price(),
+        "lessons_per_month": conf.lessons_per_month(),
         "min_topup": conf.min_topup(),
     }
 
@@ -127,6 +128,7 @@ class AccountDetailView(APIView):
                 "personal_price": seat.personal_price,
                 # How its latest stretch is billed: "month" or "lesson".
                 "rule": next((span.rule for span in sorted(seat.spans.all(), key=lambda s: s.pk, reverse=True)), None),
+                "lesson_price": ledger.lesson_price(seat),
                 "price_changes": [
                     {
                         "at": _iso(change.changed_at), "old_price": change.old_price, "new_price": change.new_price,
@@ -141,6 +143,11 @@ class AccountDetailView(APIView):
         if conf.lesson_billing():
             rules["least_payment"] = ledger.least_payment(account)
             rules["first_month_fee"] = ledger.first_month_fee(account)
+            window = ledger.first_month_window(account)
+            # The last day the first month covers, once it is written (it grows while the seat is frozen).
+            rules["first_month_until"] = _iso(window[1] - timedelta(days=1)) if window else None
+            live = [seat for seat in seats if seat["state"] != SeatState.LEFT]
+            rules["lesson_price"] = live[0]["lesson_price"] if live else None
         return Response({
             "id": account.pk, "name": account.name, "phone": account.phone, "balance": running,
             "seats": seats, "rows": rows, "payments_open": conf.payments_open(), "rules": rules,
