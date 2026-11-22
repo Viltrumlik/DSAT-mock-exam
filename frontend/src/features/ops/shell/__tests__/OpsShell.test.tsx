@@ -83,19 +83,6 @@ const key = (k: string, target: EventTarget = document) =>
     target.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
   });
 
-/** Clicks a link without letting jsdom try a real document navigation (no app router here). */
-function follow(link: Element) {
-  const stop = (e: Event) => e.preventDefault();
-  document.addEventListener("click", stop, true);
-  try {
-    act(() => {
-      link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    });
-  } finally {
-    document.removeEventListener("click", stop, true);
-  }
-}
-
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   window.localStorage.clear();

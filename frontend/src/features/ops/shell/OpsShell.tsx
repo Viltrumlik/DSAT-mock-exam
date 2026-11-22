@@ -30,7 +30,6 @@ import {
   firstHref,
   flattenCategories,
   visibleCategories,
-  type ConsoleCategory,
   type ConsoleConfig,
   type MeLike,
 } from "./opsNav";
