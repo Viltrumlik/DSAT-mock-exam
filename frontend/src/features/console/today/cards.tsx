@@ -66,6 +66,20 @@ export function markAttendanceHref(d: LessonsToday | undefined): string {
   return lesson ? `/ops/classrooms/${lesson.classroom.id}?tab=attendance` : "/ops/classrooms";
 }
 
+/** The classroom list's answer: every class, and how many are active (its Status facet; null when it has none). */
+export type ClassCounts = { total: number; active: number | null };
+export function classCounts(page: { count: number; filters?: { key: string; options: { value: string; count: number }[] }[] }): ClassCounts {
+  const status = page.filters?.find((f) => f.key === "status");
+  const active = status?.options.find((o) => o.value === "active")?.count;
+  return { total: page.count, active: typeof active === "number" ? active : null };
+}
+
+/** One request for Today's Groups tile and the Classrooms shortcut. */
+export const classCountsKey = ["console", "today", "class-counts"] as const;
+export async function fetchClassCounts(): Promise<ClassCounts> {
+  return classCounts((await api.get<{ count: number; filters?: { key: string; options: { value: string; count: number }[] }[] }>("/classes/admin/classrooms/", { params: { page_size: 1 } })).data);
+}
+
 /** What the debt bars say that the numbers alone do not: how concentrated the debt is. */
 export function debtFinding(groups: readonly Pick<FinanceGroupRow, "group" | "debt">[]): string | null {
   const owing = groups.filter((g) => g.debt > 0).sort((a, b) => b.debt - a.debt);
@@ -128,13 +142,15 @@ function Tile({ href, label, value, sub, tone, icon, delay }: { href: string; la
     <Link
       href={href}
       style={{ animationDelay: `${delay}ms` }}
-      className={`animate-ms-fade-in ms-hover-lift flex min-w-0 flex-col items-start gap-1 rounded-[16px] p-3.5 ${frozen ? "bg-ms-frozen-soft" : "bg-ms-surface"}`}
+      className={`animate-ms-fade-in ms-transition flex min-w-0 flex-col items-start gap-1 rounded-ms-card border p-3.5 ${
+        frozen ? "border-ms-frozen-line bg-ms-frozen-soft hover:border-ms-frozen" : "border-ms-border bg-ms-card hover:border-ms-border-strong hover:bg-ms-row-hover"
+      }`}
     >
       <span className={`flex items-center gap-1.5 text-[13px] ${frozen ? "text-ms-frozen-fg" : "text-ms-fg-2"}`}>
         {icon ? <Icon name={icon} size="sm" /> : null}
         {label}
       </span>
-      <RollNumber value={value} className={`text-[26px] font-bold leading-8 tabular-nums ${frozen ? "text-ms-frozen-fg" : "text-ms-fg"}`} />
+      <RollNumber value={value} className={`text-[24px] font-semibold leading-[30px] tabular-nums ${frozen ? "text-ms-frozen-fg" : "text-ms-fg"}`} />
       {/* items-start sizes children to their text, so truncate never clipped on a phone: wrap to 2 lines instead. */}
       <span className="line-clamp-2 w-full text-[13px] text-ms-fg-3">{sub}</span>
     </Link>
@@ -191,10 +207,10 @@ export function RecentlyOpened({ delay }: { delay: number }) {
               href={r.href}
               title={r.name}
               style={{ animationDelay: `${delay + 60 + i * 40}ms` }}
-              className="animate-ms-fade-in ms-hover-lift flex w-[76px] shrink-0 flex-col items-center gap-1.5 rounded-[14px] p-1 text-center text-[12.5px] font-medium leading-4 text-ms-fg"
+              className="animate-ms-fade-in ms-transition flex w-[76px] shrink-0 flex-col items-center gap-1.5 rounded-[10px] p-1 text-center text-[12.5px] font-medium leading-4 text-ms-fg hover:bg-ms-row-hover"
             >
               {r.kind === "class" ? (
-                <span className={`grid size-14 place-items-center rounded-[16px] ${AVATAR_TONE[toneOf(r.name)]}`}>
+                <span className={`grid size-14 place-items-center rounded-[12px] ${AVATAR_TONE[toneOf(r.name)]}`}>
                   <Icon name="cap" size="lg" />
                 </span>
               ) : (
@@ -352,7 +368,7 @@ export function IncomeCard({ enabled, delay }: { enabled: boolean; delay: number
 function Row({ icon, label, children, href }: { icon: IconName; label: string; children: React.ReactNode; href?: string }) {
   const body = (
     <>
-      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-ms-surface-2 text-ms-fg-2">
+      <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-ms-surface-2 text-ms-fg-2">
         <Icon name={icon} size="sm" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
@@ -362,7 +378,7 @@ function Row({ icon, label, children, href }: { icon: IconName; label: string; c
     </>
   );
   return href ? (
-    <Link href={href} className="ms-transition -mx-2 flex items-center gap-3 rounded-[12px] px-2 py-2 hover:bg-ms-surface">
+    <Link href={href} className="ms-transition -mx-2 flex items-center gap-3 rounded-[8px] px-2 py-2 hover:bg-ms-row-hover">
       {body}
     </Link>
   ) : (
@@ -440,7 +456,7 @@ const SHORTCUTS: Shortcut[] = [
   { href: "/ops/students", icon: "users", title: "Students", cta: "manage", count: (c) => (c.centre !== undefined ? fmt(c.centre) : null) },
   { href: "/ops/public", icon: "user", title: "Public users", cta: "manage", count: (c) => (c.public !== undefined ? fmt(c.public) : null) },
   { href: "/ops/staff", icon: "shield", title: "Staff", cta: "manage" },
-  { href: "/ops/classrooms", icon: "cap", title: "Classrooms", cta: "view", count: (c) => (c.classes !== undefined ? `${fmt(c.classes)} classes` : null) },
+  { href: "/ops/classrooms", icon: "layers", title: "Groups", cta: "view", count: (c) => (c.classes !== undefined ? `${fmt(c.classes)} groups` : null) },
   { href: "/ops/access", icon: "key", title: "Access", cta: "manage" },
   { href: "/ops/events", icon: "ticket", title: "Events", cta: "check-in", count: (c) => (c.events !== undefined ? `${c.events} this week` : null) },
   { href: "/ops/midterms", icon: "ms-midterm", title: "Midterm results", cta: "report" },
@@ -456,17 +472,12 @@ export function ShortcutsCard({ me, delay }: { me: MeLike; delay: number }) {
     queryFn: usersAdminApi.population,
     enabled: Boolean(me) && holds(me, P.viewPeople) && (shown("/ops/students") || shown("/ops/public")),
   });
-  const classes = useQuery({
-    queryKey: ["console", "today", "classes-count"],
-    queryFn: async () => (await api.get<{ count: number }>("/classes/admin/classrooms/", { params: { page_size: 1 } })).data.count,
-    enabled: shown("/ops/classrooms"),
-    staleTime: 5 * 60_000,
-  });
+  const classes = useQuery({ queryKey: classCountsKey, queryFn: fetchClassCounts, enabled: shown("/ops/classrooms"), staleTime: 5 * 60_000 });
   const events = useQuery({ queryKey: ["events", "admin"], queryFn: () => eventsApi.adminList(), enabled: shown("/ops/events"), staleTime: 5 * 60_000 });
   const counts: Counts = {
     centre: pop.data?.centre,
     public: pop.data?.public,
-    classes: classes.data,
+    classes: classes.data?.total,
     events: events.data ? eventsThisWeek(events.data) : undefined,
   };
   return (
@@ -478,7 +489,7 @@ export function ShortcutsCard({ me, delay }: { me: MeLike; delay: number }) {
             <Link
               key={l.href}
               href={l.href}
-              className="animate-ms-fade-in ms-hover-lift flex min-h-[76px] flex-col justify-between gap-2 rounded-[14px] bg-ms-surface p-3 text-ms-fg"
+              className="animate-ms-fade-in ms-transition flex min-h-[76px] flex-col justify-between gap-2 rounded-ms-card border border-ms-border bg-ms-card p-3 text-ms-fg hover:border-ms-border-strong hover:bg-ms-row-hover"
               style={{ animationDelay: `${delay + 60 + i * 35}ms` }}
             >
               <Icon name={l.icon} className="text-ms-fg-2" />

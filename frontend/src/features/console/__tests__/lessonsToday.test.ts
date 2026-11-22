@@ -1,7 +1,7 @@
-/** Lessons today: each block says its state in words, and the "not marked" item only for registers still fixable. */
+/** Lessons today: each timetable card says its state in words, and the "not marked" item only for registers still fixable. */
 import { describe, expect, it } from "vitest";
 
-import { lessonLine, lessonLook } from "../today/LessonsTimeline";
+import { lessonHref, lessonState, nowState } from "../timetable/timetable";
 import { isNotMarked, notMarkedItem, type LessonRow, type LessonsToday } from "../lessonsToday";
 
 const row = (phase: LessonRow["phase"], register: Partial<LessonRow["register"]> = {}, teacher: LessonRow["teacher"] = { id: 1, name: "Shohruh" }): LessonRow => ({
@@ -13,38 +13,31 @@ const row = (phase: LessonRow["phase"], register: Partial<LessonRow["register"]>
   register: { roster: 8, marked: 0, present: 0, late: 0, absent: 0, excused: 0, taken: false, state: "open", closes_at: null, ...register },
 });
 
-describe("a lesson's block", () => {
-  it("names each state in words", () => {
-    expect(lessonLine(row("now", { marked: 11, present: 10, late: 1, roster: 12 })).text).toBe("Now · 11 / 12 came");
-    expect(lessonLine(row("now")).text).toBe("Now · Shohruh");
-    expect(lessonLine(row("ended")).text).toBe("Not marked · Shohruh");
-    expect(lessonLine(row("ended", { taken: true, marked: 8 })).text).toBe("8 / 8 marked · Shohruh");
-    expect(lessonLine(row("upcoming", {}, null)).text).toBe("No teacher · 13:30");
-    expect(lessonLine(row("upcoming")).text).toBe("13:30 · Shohruh");
-    expect(lessonLine(row("ended", { state: "closed" })).text).toBe("Closed unmarked · Shohruh");
+describe("a lesson's card on the timetable", () => {
+  it("says the register's real state in words: in progress, not marked, next, and what an ended one held", () => {
+    expect(lessonState(row("now"))).toMatchObject({ key: "now", label: "In progress", tone: "info" });
+    expect(lessonState(row("ended"))).toMatchObject({ key: "not_marked", label: "Not marked", tone: "attention" });
+    expect(lessonState(row("upcoming"))).toMatchObject({ key: "next", label: "Next", tone: "line" });
+    expect(lessonState(row("ended", { taken: true, marked: 8, present: 7, late: 1 }))).toMatchObject({ key: "came", label: "Came 8 of 8", tone: "positive" });
+    expect(lessonState(row("ended", { state: "closed" }))).toMatchObject({ key: "closed", label: "Closed unmarked", tone: "attention" });
+    expect(lessonState(row("ended", { taken: true, roster: 0 }))).toMatchObject({ key: "done", label: "Ended" });
+    expect(lessonState(row("unknown"))).toMatchObject({ key: "unknown", label: "No time set" });
   });
 
-  it("flags in amber words what someone has to fix", () => {
-    expect(lessonLine(row("ended")).alert).toBe(true);
-    expect(lessonLine(row("upcoming", {}, null)).alert).toBe(true);
-    expect(lessonLine(row("ended", { taken: true, marked: 8 })).alert).toBeFalsy();
-    expect(lessonLine(row("upcoming")).alert).toBeFalsy();
+  it("opens the group, on its attendance while the register still waits", () => {
+    expect(lessonHref(row("ended"))).toBe("/ops/classrooms/6?tab=attendance");
+    expect(lessonHref(row("now"))).toBe("/ops/classrooms/6");
+    expect(lessonHref(row("ended", { taken: true, marked: 8 }))).toBe("/ops/classrooms/6");
   });
 
-  it("colours it: ended grey, now filled, to come outlined, to come with no teacher amber", () => {
-    expect(lessonLook(row("ended"))).toBe("done");
-    expect(lessonLook(row("ended", {}, null))).toBe("done");
-    expect(lessonLook(row("now"))).toBe("now");
-    expect(lessonLook(row("upcoming"))).toBe("next");
-    expect(lessonLook(row("upcoming", {}, null))).toBe("warn");
+  it("a lesson on now, in Today's list: who came so far, or not marked yet", () => {
+    expect(nowState(row("now", { marked: 11, present: 10, late: 1, roster: 12 }))).toEqual({ label: "Came 11 of 12", tone: "positive" });
+    expect(nowState(row("now"))).toEqual({ label: "Not marked", tone: "attention" });
+    expect(nowState(row("now", { roster: 0, taken: true }))).toEqual({ label: "No students", tone: "neutral" });
   });
+});
 
-  it("keeps a running class with no teacher amber, and says so in words", () => {
-    expect(lessonLook(row("now", {}, null))).toBe("warn");
-    expect(lessonLine(row("now", {}, null))).toEqual({ text: "Now · No teacher", alert: true });
-    expect(lessonLine(row("now", { marked: 11, present: 10, late: 1, roster: 12 }, null)).text).toBe("Now · No teacher · 11 / 12 came");
-  });
-
+describe("a register", () => {
   it("counts a register as fixable only when ended, unmarked and still open", () => {
     expect(isNotMarked(row("ended"))).toBe(true);
     expect(isNotMarked(row("ended", { state: "open" }))).toBe(true);

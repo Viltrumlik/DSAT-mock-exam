@@ -36,7 +36,7 @@ export function Card({
   return (
     <section
       {...sectionMark(title)}
-      className={`animate-ms-card-in flex min-w-0 flex-col gap-3.5 rounded-ms-card bg-ms-card px-[22px] py-5 shadow-ms-1 ${className}`}
+      className={`animate-ms-card-in flex min-w-0 flex-col gap-3.5 rounded-ms-card border border-ms-border bg-ms-card px-5 pb-5 pt-[18px] shadow-ms-1 ${className}`}
       style={{ animationDelay: `${delay}ms`, ...style }}
     >
       <div className="flex items-center gap-2.5">
