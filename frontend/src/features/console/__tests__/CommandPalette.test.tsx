@@ -94,7 +94,7 @@ describe("CommandPalette", () => {
     render(consoleCommands(visibleNav(OPS_NAV_GROUPS, SUPER_ADMIN), [extra]));
     key({ key: "k", metaKey: true });
     type("lcup");
-    expect(options().some((o) => o.includes("lc-up (CRM link)"))).toBe(true);
+    expect(options().some((o) => o.includes("lc-up link"))).toBe(true);
     expect(options().some((o) => o.includes("Students"))).toBe(false);
     type("o'quv");
     expect(options().some((o) => o.includes("Oʻquv markazi"))).toBe(true);

@@ -7,12 +7,13 @@ import { cn } from "@/lib/cn";
 export type BadgeTone = "positive" | "attention" | "critical" | "info" | "frozen" | "neutral" | "line";
 
 const TONE: Record<BadgeTone, string> = {
-  positive: "bg-ms-positive-soft text-ms-positive-fg",
-  attention: "bg-ms-attention-soft text-ms-attention-fg",
-  critical: "bg-ms-critical-soft text-ms-critical-fg",
-  info: "bg-ms-info-soft text-ms-info-fg",
-  frozen: "bg-ms-frozen-soft text-ms-frozen-fg",
-  neutral: "bg-ms-neutral-soft text-ms-neutral-fg",
+  // A hairline in the verdict's own hue keeps the pill readable on a tinted cell (v0.7 "calm vivid").
+  positive: "bg-ms-positive-soft text-ms-positive-fg shadow-[inset_0_0_0_1px_var(--ms-positive-line)]",
+  attention: "bg-ms-attention-soft text-ms-attention-fg shadow-[inset_0_0_0_1px_var(--ms-attention-line)]",
+  critical: "bg-ms-critical-soft text-ms-critical-fg shadow-[inset_0_0_0_1px_var(--ms-critical-line)]",
+  info: "bg-ms-info-soft text-ms-info-fg shadow-[inset_0_0_0_1px_var(--ms-info-line)]",
+  frozen: "bg-ms-frozen-soft text-ms-frozen-fg shadow-[inset_0_0_0_1px_var(--ms-frozen-line)]",
+  neutral: "bg-ms-neutral-soft text-ms-neutral-fg shadow-[inset_0_0_0_1px_var(--ms-neutral-line)]",
   line: "bg-transparent text-ms-fg-2 shadow-[inset_0_0_0_1px_var(--ms-border-strong)]",
 };
 
@@ -38,7 +39,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full font-semibold leading-none",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-ms-badge font-semibold leading-none",
         size === "lg" ? "h-7 px-[11px] text-[14px]" : "h-6 px-[9px] text-[13px]",
         TONE[tone],
         className,

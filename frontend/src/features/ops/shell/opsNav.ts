@@ -6,10 +6,13 @@ import { SMS_TAB_IDS, SMS_TAB_LABEL, SMS_TAB_NEEDS } from "@/features/ops/sms/sm
 
 export type { MeLike };
 
-/** The sections that can carry a waiting-work count beside their label. */
-export type OpsNavCountKey = "trials";
+/**
+ * The sections that can carry a count beside their label. Counts sit only on verdicts (owner, 22 Nov 2026):
+ * Today's "Needs you" and Finance's debtors.
+ */
+export type OpsNavCountKey = "debtors";
 
-/** One of a page's own tabs, drawn as a tree under it in the panel (synced with `?tab=`). */
+/** One of a page's own tabs (synced with `?tab=`): ⌘K lists them and the breadcrumb names the open one. */
 export type OpsNavTab = {
   id: string;
   label: string;
@@ -18,8 +21,10 @@ export type OpsNavTab = {
 };
 
 /**
- * The ops console's navigation (design handoff v0.4, Shell board): a dark rail of CATEGORIES, and a panel with the
- * sub-categories (groups) and pages of the one you are in.
+ * The ops console's navigation (lc-up structure canvas, 22 Nov 2026, Rail board option A): ONE light sidebar of
+ * sections, each a caption over its pages — Today / Daily work / Teaching / Centre / Content / People & system.
+ * The daily lc-up jobs (Students, Groups, Finance, Archive) come first and are a little taller; every other page the
+ * console had stays reachable below them.
  *
  * Serves admin.mastersat.uz. The console is governance only — the teacher workspace lives on its
  * own subdomain (teacher.mastersat.uz) and is reached from there, not from here.
@@ -30,14 +35,15 @@ export type OpsNavTab = {
  * - `superAdminOnly` items are the super admin's alone;
  * - `notForDesk` items are kept off the desk's console (the owner's list for admins, 2026-10): hidden from
  *   anyone who holds a CRM permission, unless they are the owner.
- * A group whose items are all filtered out is dropped, caption included, and a category left with no group
- * disappears from the rail (the desk has no System).
+ * A section whose items are all filtered out is dropped, caption included.
  */
 export type OpsNavItem = {
   href: string;
   label: string;
   /** A design icon (`<Icon name>`), from the redesign's set. */
   icon: IconName;
+  /** The sidebar tile's hue — one per section, never red / green / amber (those are verdicts). */
+  tone?: string;
   /** Match the path exactly rather than as a prefix — only the dashboards, since every page sits under their root. */
   exact?: boolean;
   superAdminOnly?: boolean;
@@ -45,7 +51,11 @@ export type OpsNavItem = {
   requires?: readonly string[];
   /** The owner keeps this off the desk's console: hidden from desk viewers (`isDeskViewer`). */
   notForDesk?: boolean;
-  /** Work waiting behind this section — the shell fetches it and the panel draws it beside the label. */
+  /** A page reached from another (Timetable from Groups and the top bar): routed and guarded, not listed. */
+  hidden?: boolean;
+  /** One of the daily lc-up jobs: drawn a little taller in the sidebar. */
+  main?: boolean;
+  /** A verdict waiting behind this page — the shell fetches it and the sidebar draws it beside the label. */
   countKey?: OpsNavCountKey;
   /** The page's own tabs, in its own words; the first is the one it opens on. */
   tabs?: readonly OpsNavTab[];
@@ -53,22 +63,19 @@ export type OpsNavItem = {
 
 export type OpsNavGroup = {
   id: string;
-  /** The sub-category's name above its pages; `null` for a category's single uncaptioned group. */
+  /** A sub-heading inside a section; `null` for a section's single uncaptioned group. */
   caption: string | null;
   items: readonly OpsNavItem[];
 };
 
-/** One tile of the rail: a big area of the console, its sub-categories inside. */
+/** One section of the sidebar: its caption over its pages. */
 export type ConsoleCategory = {
   id: string;
   label: string;
   icon: IconName;
   /** `G` then this letter jumps here from anywhere. */
   letter: string;
-  /**
-   * A category that is one page with sections of its own (Today, Studio home): its panel lists the cards on
-   * the page and the recently opened pages instead of groups.
-   */
+  /** A section that is one dashboard page (Today, Studio home): drawn without a caption, first. */
   home?: boolean;
   groups: readonly OpsNavGroup[];
 };
@@ -76,7 +83,19 @@ export type ConsoleCategory = {
 const tabsOf = <T extends string>(ids: readonly T[], label: Record<T, string>, needs?: Record<T, readonly string[]>): OpsNavTab[] =>
   ids.map((id) => (needs ? { id, label: label[id], requires: needs[id] } : { id, label: label[id] }));
 
-/** The board's "Full map": the groups stay the ones the staff know; only their form changed. */
+/** The tile hues of the Rail board (sky, indigo, violet, cyan, pink, purple, slate). */
+const HUE = {
+  blue: "#2a68c0",
+  indigo: "#6366f1",
+  violet: "#8b5cf6",
+  sky: "#0ea5e9",
+  cyan: "#0891b2",
+  pink: "#ec4899",
+  purple: "#a855f7",
+  slate: "#64748b",
+} as const;
+
+/** The Rail board's map: lc-up's daily places first, then every other page the console already had. */
 export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
   {
     id: "today",
@@ -84,29 +103,38 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
     icon: "ms-today",
     letter: "T",
     home: true,
-    groups: [{ id: "home", caption: null, items: [{ href: "/ops", label: "Today", icon: "ms-today", exact: true }] }],
+    groups: [{ id: "home", caption: null, items: [{ href: "/ops", label: "Today", icon: "ms-today", tone: HUE.blue, exact: true, main: true }] }],
   },
   {
-    // The old single "Users" list, split three ways (2026-10-14). `/ops/users` redirects to Students and is not listed.
-    id: "people",
-    label: "People",
+    // The lc-up desk's own places (owner 22 Nov 2026: "lc-up structure, our look"). `/ops/users` redirects to
+    // Students and is not listed.
+    id: "daily",
+    label: "Daily work",
     icon: "users",
-    letter: "P",
+    letter: "D",
     groups: [
       {
-        id: "learners",
-        caption: "Learners",
+        id: "daily",
+        caption: null,
         items: [
-          { href: "/ops/students", label: "Students", icon: "users", requires: [P.viewPeople] },
-          { href: "/ops/public", label: "Public users", icon: "user", requires: [P.viewPeople] },
-        ],
-      },
-      {
-        id: "team",
-        caption: "Team",
-        items: [
-          { href: "/ops/staff", label: "Staff", icon: "shield", requires: [P.manageUsers] },
-          { href: "/ops/access", label: "Access", icon: "key", requires: [P.manageUsers, P.assignAccess] },
+          { href: "/ops/students", label: "Students", icon: "users", tone: HUE.indigo, main: true, requires: [P.viewPeople] },
+          // lc-up calls them groups; the pages are still `/ops/classrooms`.
+          { href: "/ops/classrooms", label: "Groups", icon: "layers", tone: HUE.violet, main: true, requires: [P.viewPeople] },
+          // The whole week's lessons, rooms × hours — opened from Groups and the top bar's calendar.
+          { href: "/ops/timetable", label: "Timetable", icon: "cal", tone: HUE.violet, hidden: true, requires: [P.viewPeople] },
+          // Money as lc-up keeps it, Debtors first. Its own page, not a tab of lc-up — the owner wanted them apart.
+          {
+            href: "/ops/finance",
+            label: "Finance",
+            icon: "wallet",
+            tone: HUE.sky,
+            main: true,
+            countKey: "debtors",
+            requires: [P.viewMoney, P.viewReports],
+            tabs: tabsOf(FINANCE_TAB_IDS, FINANCE_TAB_LABEL, FINANCE_TAB_NEEDS),
+          },
+          // Students who left a group, with the group, the date and the balance they left with.
+          { href: "/ops/archive", label: "Archive", icon: "archive", tone: HUE.slate, main: true, requires: [P.viewPeople] },
         ],
       },
     ],
@@ -118,31 +146,18 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
     letter: "E",
     groups: [
       {
-        id: "classes",
-        caption: "Classes",
+        id: "teaching",
+        caption: null,
         items: [
-          { href: "/ops/classrooms", label: "Classrooms", icon: "cap", requires: [P.viewPeople] },
-          // Regions, branches, and which branch each classroom meets at. Without it the branch
-          // leaderboard has nothing to group by.
-          { href: "/ops/branches", label: "Branches", icon: "ms-branch", requires: [P.manageGroups] },
-        ],
-      },
-      {
-        id: "course",
-        caption: "Course",
-        items: [
-          { href: "/ops/journals", label: "Journals", icon: "ms-journal", notForDesk: true },
+          { href: "/ops/journals", label: "Journals", icon: "ms-journal", tone: HUE.cyan, notForDesk: true },
           // Reports only — midterm authoring still lives in the Builder console.
-          { href: "/ops/midterms", label: "Midterm results", icon: "ms-midterm", notForDesk: true },
-        ],
-      },
-      {
-        id: "exams",
-        caption: "Exams",
-        items: [
+          { href: "/ops/midterms", label: "Midterm results", icon: "ms-midterm", tone: HUE.indigo, notForDesk: true },
           // Invigilated full-mock sittings: mint the sitting + its code here, then a teacher runs the room on the day.
-          { href: "/ops/mock-sessions", label: "Mock sittings", icon: "ms-room", notForDesk: true },
-          { href: "/ops/exam-dates", label: "Exam dates", icon: "ms-examdate", notForDesk: true },
+          { href: "/ops/mock-sessions", label: "Mock sittings", icon: "ms-room", tone: HUE.violet, notForDesk: true },
+          { href: "/ops/exam-dates", label: "Exam dates", icon: "ms-examdate", tone: HUE.sky, notForDesk: true },
+          // Regions, branches, and which branch each group meets at. Without it the branch leaderboard has nothing
+          // to group by.
+          { href: "/ops/branches", label: "Branches", icon: "ms-branch", tone: HUE.slate, requires: [P.manageGroups] },
         ],
       },
     ],
@@ -150,63 +165,33 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
   {
     id: "centre",
     label: "Centre",
-    icon: "wallet",
+    icon: "building",
     letter: "C",
     groups: [
       {
-        id: "enrolment",
-        caption: "Enrolment",
+        id: "centre",
+        caption: null,
         items: [
-          // Trial students and lc-up members missing from a class list (owner, 2026-10-20); the count is what
-          // waits on the desk.
-          {
-            href: "/ops/trials",
-            label: "Trials",
-            icon: "ms-trial",
-            countKey: "trials",
-            requires: [P.enroll],
-            tabs: tabsOf(TRIALS_TAB_IDS, TRIALS_TAB_LABEL),
-          },
-          // The centre's CRM: pair lc-up groups with our classes, settle unmatched students. The name the
-          // staff know, plus what it is.
-          { href: "/ops/lcup", label: "lc-up (CRM link)", icon: "ms-sync", requires: [P.lcupTools], tabs: tabsOf(LCUP_TAB_IDS, LCUP_TAB_LABEL) },
-        ],
-      },
-      {
-        id: "money",
-        caption: "Money",
-        items: [
-          // Money as lc-up keeps it. Its own page, not a tab of lc-up — the owner wanted them apart.
-          {
-            href: "/ops/finance",
-            label: "Finance",
-            icon: "wallet",
-            requires: [P.viewMoney, P.viewReports],
-            tabs: tabsOf(FINANCE_TAB_IDS, FINANCE_TAB_LABEL, FINANCE_TAB_NEEDS),
-          },
-          // Stock, prices and the collection queue — a desk job, not super_admin-only.
-          { href: "/ops/shop", label: "Reward shop", icon: "ms-coins", requires: [P.eventsShop] },
-        ],
-      },
-      {
-        id: "messages",
-        caption: "Messages",
-        // The eskiz SMS account: balance, the journal of every SMS, campaigns, the debt warning, templates.
-        items: [
+          // Trial students and lc-up members missing from a class list (owner, 2026-10-20).
+          { href: "/ops/trials", label: "Trials", icon: "ms-trial", tone: HUE.sky, requires: [P.enroll], tabs: tabsOf(TRIALS_TAB_IDS, TRIALS_TAB_LABEL) },
+          // The eskiz SMS account: balance, the journal of every SMS, campaigns, the debt warning, templates.
           {
             href: "/ops/sms",
             label: "SMS",
             icon: "msg",
+            tone: HUE.purple,
             requires: [P.sendSms, P.sendDebtSms],
             tabs: tabsOf(SMS_TAB_IDS, SMS_TAB_LABEL, SMS_TAB_NEEDS),
           },
+          // What the class bot posts into the class Telegram groups: event posts and written ones.
+          { href: "/ops/telegram-posts", label: "Telegram posts", icon: "ms-classpost", tone: HUE.sky, requires: [P.eventsShop] },
+          // Who teaches support, and which hours they are available.
+          { href: "/ops/support", label: "Support hours", icon: "ms-support", tone: HUE.cyan, requires: [P.manageGroups] },
+          // Stock, prices and the collection queue — a desk job, not super_admin-only.
+          { href: "/ops/shop", label: "Reward shop", icon: "ms-coins", tone: HUE.pink, requires: [P.eventsShop] },
+          // The centre's CRM: pair lc-up groups with our classes, settle unmatched students.
+          { href: "/ops/lcup", label: "lc-up link", icon: "ms-sync", tone: HUE.slate, requires: [P.lcupTools], tabs: tabsOf(LCUP_TAB_IDS, LCUP_TAB_LABEL) },
         ],
-      },
-      {
-        id: "help",
-        caption: "Help",
-        // Who teaches support, and which hours they are available.
-        items: [{ href: "/ops/support", label: "Support hours", icon: "ms-support", requires: [P.manageGroups] }],
       },
     ],
   },
@@ -217,36 +202,38 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
     letter: "O",
     groups: [
       {
-        id: "engage",
-        caption: "Engage",
+        id: "content",
+        caption: null,
         items: [
           // Workshops, talks and open days: the desk publishes them and marks who came.
-          { href: "/ops/events", label: "Events", icon: "cal", requires: [P.eventsShop] },
-          { href: "/ops/surveys", label: "Surveys", icon: "clipboard", superAdminOnly: true },
-        ],
-      },
-      {
-        id: "publish",
-        caption: "Publish",
-        items: [
-          // What the class bot posts into the class Telegram groups: event posts and written ones.
-          { href: "/ops/telegram-posts", label: "Telegram posts", icon: "ms-classpost", requires: [P.eventsShop] },
+          { href: "/ops/events", label: "Events", icon: "cal", tone: HUE.pink, requires: [P.eventsShop] },
+          { href: "/ops/surveys", label: "Surveys", icon: "clipboard", tone: HUE.violet, superAdminOnly: true },
           // The ring of circles across the top of every student's dashboard.
-          { href: "/ops/stories", label: "Stories", icon: "ms-story", requires: [P.eventsShop], notForDesk: true },
+          { href: "/ops/stories", label: "Stories", icon: "ms-story", tone: HUE.purple, requires: [P.eventsShop], notForDesk: true },
         ],
       },
     ],
   },
   {
     id: "system",
-    label: "System",
+    label: "People & system",
     icon: "sliders",
     letter: "S",
     groups: [
-      // Raising the minimum iOS version stops every older app at an update screen.
-      { id: "app", caption: "App", items: [{ href: "/ops/mobile", label: "Mobile app", icon: "ms-appversion", superAdminOnly: true }] },
-      // A broadcast cannot be recalled — super admins only, like the endpoint.
-      { id: "reach", caption: "Reach", items: [{ href: "/ops/broadcast", label: "Broadcast", icon: "ms-broadcast", superAdminOnly: true }] },
+      {
+        id: "system",
+        caption: null,
+        items: [
+          // Accounts from the public site — they see only Mock Exam and Events.
+          { href: "/ops/public", label: "Public users", icon: "user", tone: HUE.indigo, requires: [P.viewPeople] },
+          { href: "/ops/staff", label: "Staff", icon: "shield", tone: HUE.slate, requires: [P.manageUsers] },
+          { href: "/ops/access", label: "Access", icon: "key", tone: HUE.slate, requires: [P.manageUsers, P.assignAccess] },
+          // Raising the minimum iOS version stops every older app at an update screen.
+          { href: "/ops/mobile", label: "Mobile app", icon: "ms-appversion", tone: HUE.cyan, superAdminOnly: true },
+          // A broadcast cannot be recalled — super admins only, like the endpoint.
+          { href: "/ops/broadcast", label: "Broadcast", icon: "ms-broadcast", tone: HUE.purple, superAdminOnly: true },
+        ],
+      },
     ],
   },
 ];
@@ -392,9 +379,10 @@ export function sectionLabel(pathname: string): string | null {
 export type Crumb = { label: string; href?: string };
 
 /**
- * The top bar's three levels (Shell board): category › page › the open tab or the open record —
- * "Centre › Finance › Debtors", "Teaching › Classrooms › Middle M5". A dashboard is its own name ("Today").
- * A console path the map does not list keeps the old "Admin › Users".
+ * The top bar's breadcrumb (TopBar board): the page, then the open tab or the open record — "Finance › Debtors",
+ * "Groups › Junior G21 · Math", "Students". A dashboard is its own name ("Today"). A page reached from another and
+ * not listed (Timetable) sits under the listed page before it: "Groups › Timetable". A console path the map does
+ * not list keeps "Admin › Users".
  *
  * `tabs` are the page's tabs as the page itself publishes them (or the map's), `tab` the open one;
  * `detail` names the record a deeper path shows (from the recently opened list), when known.
@@ -425,7 +413,15 @@ export function crumbsFor(
   const { category, item } = found;
   if (category.home && pathname === item.href) return [{ label: item.label }];
 
-  const crumbs: Crumb[] = [{ label: category.label, href: firstHref(category) }];
+  const crumbs: Crumb[] = [];
+  if (item.hidden) {
+    const siblings = category.groups.flatMap((g) => g.items);
+    const parent = siblings
+      .slice(0, siblings.indexOf(item))
+      .reverse()
+      .find((i) => !i.hidden);
+    if (parent) crumbs.push({ label: parent.label, href: parent.href });
+  }
   let third: string | null = null;
   if (pathname !== item.href) {
     third = detail ?? null;
@@ -450,7 +446,7 @@ export type ConsoleConfig = {
   brand: string;
   /** The console's name: "Admin", "Builder" — the first crumb of an unlisted path, the nav's accessible labels. */
   crumb: string;
-  /** Where the folded-panel preference is remembered. */
+  /** Where the folded-sidebar preference is remembered. */
   collapseKey: string;
   /** The rail's categories, each with its groups. */
   categories: readonly ConsoleCategory[];
@@ -470,7 +466,7 @@ export const OPS_CONSOLE: ConsoleConfig = {
   root: "/ops",
   brand: "admin",
   crumb: "Admin",
-  collapseKey: "mastersat.ops.sidebar.collapsed",
+  collapseKey: "mastersat.ops.sidebar.v2.folded",
   categories: OPS_CATEGORIES,
   groups: OPS_NAV_GROUPS,
   visible: visibleNav,

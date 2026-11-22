@@ -48,6 +48,7 @@ export function CommandPalette({
   commands,
   entityKinds = [],
   placeholder,
+  hotkey = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,6 +56,8 @@ export function CommandPalette({
   /** What else this person may search on the server, in this console (see `entityScope`). */
   entityKinds?: readonly EntityKind[];
   placeholder?: string;
+  /** Whether ⌘K / Ctrl+K toggles this one. A console with two (data search + sections) gives it to one only. */
+  hotkey?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -66,6 +69,7 @@ export function CommandPalette({
 
   // ⌘K / Ctrl+K toggles it from anywhere.
   useEffect(() => {
+    if (!hotkey) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -74,7 +78,7 @@ export function CommandPalette({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onOpenChange]);
+  }, [open, onOpenChange, hotkey]);
 
   // Opening remembers where focus was and starts fresh; closing puts focus back.
   useEffect(() => {

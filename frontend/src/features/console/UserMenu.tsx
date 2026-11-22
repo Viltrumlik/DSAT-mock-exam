@@ -33,7 +33,7 @@ function ReadOnlyBadge() {
  * the first item, arrows move, Escape closes and focus returns to the button. An auditor sees a
  * "Read-only" badge beside their name.
  */
-export function UserMenu({ me, variant = "bar" }: { me: MeLike; variant?: "bar" | "rail" }) {
+export function UserMenu({ me, variant = "bar" }: { me: MeLike; variant?: "bar" | "rail" | "avatar" }) {
   const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
@@ -103,7 +103,9 @@ export function UserMenu({ me, variant = "bar" }: { me: MeLike; variant?: "bar" 
         className={
           variant === "rail"
             ? "grid size-11 place-items-center rounded-full outline-none focus-visible:shadow-[0_0_0_2px_#7ea6f2]"
-            : "ms-transition flex min-h-11 items-center gap-2.5 rounded-full py-1 pl-1 pr-1 hover:bg-ms-surface-2 md:pr-2.5"
+            : variant === "avatar"
+              ? "ms-transition grid size-11 shrink-0 place-items-center rounded-full outline-none hover:bg-ms-surface-2 focus-visible:shadow-[0_0_0_2px_var(--ms-ring)]"
+              : "ms-transition flex min-h-11 items-center gap-2.5 rounded-full py-1 pl-1 pr-1 hover:bg-ms-surface-2 md:pr-2.5"
         }
       >
         <Avatar
@@ -111,7 +113,7 @@ export function UserMenu({ me, variant = "bar" }: { me: MeLike; variant?: "bar" 
           tone={avatarTone(me)}
           className={variant === "rail" ? "size-10 text-[14px] shadow-[0_0_0_2px_var(--ms-rail-bg),0_0_0_3.5px_var(--ms-rail-line)]" : "size-9 text-[13px]"}
         />
-        <span className={variant === "rail" ? "hidden" : "hidden min-w-0 flex-col text-left leading-tight md:flex"}>
+        <span className={variant === "bar" ? "hidden min-w-0 flex-col text-left leading-tight md:flex" : "hidden"}>
           <span className="max-w-[14rem] truncate text-[14px] font-semibold text-ms-fg">{name}</span>
           <span className="text-[12px] text-ms-fg-3">{role}</span>
         </span>

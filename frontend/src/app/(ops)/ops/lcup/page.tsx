@@ -35,7 +35,7 @@ function LcupPage() {
   return (
     <div className="flex flex-col gap-4">
       <header className="animate-ms-fade-in flex flex-col gap-1">
-        <h1 className="text-ms-title text-ms-fg">lc-up (CRM link)</h1>
+        <h1 className="text-ms-title text-ms-fg">lc-up link</h1>
         <p className="max-w-3xl text-[14px] text-ms-fg-2">
           Groups and their members follow the centre&apos;s CRM. Pair lc-up groups with our classes, link students and
           teachers the sync could not match, and keep an eye on each sync.

@@ -1,7 +1,7 @@
 /**
- * The ops console's map (design handoff v0.4, Shell board · Full map): six categories, the groups inside them, every
- * page with the same label and href it had in the long sidebar; who sees what by the permissions each page's API
- * checks (plan 2026-11-12-crm-roles, PR 3); the breadcrumb's three levels.
+ * The ops console's map (lc-up structure canvas, Rail board, 22 Nov 2026): six captioned sections, every page the
+ * console had plus Archive and Timetable; who sees what by the permissions each page's API checks (plan
+ * 2026-11-12-crm-roles, PR 3); the breadcrumb.
  */
 import { describe, expect, it } from "vitest";
 
@@ -46,36 +46,20 @@ const tabsFor = (me: Record<string, unknown>, href: string) =>
     ?.tabs?.map((t) => t.label);
 
 describe("OPS_CATEGORIES", () => {
-  it("is the board's map: six categories, their groups, every page", () => {
-    expect(OPS_CATEGORIES.map((c) => c.label)).toEqual(["Today", "People", "Teaching", "Centre", "Content", "System"]);
-    const [today, people, teaching, centre, content, system] = OPS_CATEGORIES;
+  it("is the Rail board's map: Today, Daily work, Teaching, Centre, Content, People & system", () => {
+    expect(OPS_CATEGORIES.map((c) => c.label)).toEqual(["Today", "Daily work", "Teaching", "Centre", "Content", "People & system"]);
+    const [today, daily, teaching, centre, content, system] = OPS_CATEGORIES;
     expect(map(today)).toEqual([[null, ["Today"]]]);
-    expect(map(people)).toEqual([
-      ["Learners", ["Students", "Public users"]],
-      ["Team", ["Staff", "Access"]],
-    ]);
-    expect(map(teaching)).toEqual([
-      ["Classes", ["Classrooms", "Branches"]],
-      ["Course", ["Journals", "Midterm results"]],
-      ["Exams", ["Mock sittings", "Exam dates"]],
-    ]);
-    expect(map(centre)).toEqual([
-      ["Enrolment", ["Trials", "lc-up (CRM link)"]],
-      ["Money", ["Finance", "Reward shop"]],
-      ["Messages", ["SMS"]],
-      ["Help", ["Support hours"]],
-    ]);
-    expect(map(content)).toEqual([
-      ["Engage", ["Events", "Surveys"]],
-      ["Publish", ["Telegram posts", "Stories"]],
-    ]);
-    expect(map(system)).toEqual([
-      ["App", ["Mobile app"]],
-      ["Reach", ["Broadcast"]],
-    ]);
+    // lc-up's daily places first; Timetable is routed under Groups but not listed.
+    expect(map(daily)).toEqual([[null, ["Students", "Groups", "Timetable", "Finance", "Archive"]]]);
+    expect(daily.groups[0].items.filter((i) => i.hidden).map((i) => i.href)).toEqual(["/ops/timetable"]);
+    expect(map(teaching)).toEqual([[null, ["Journals", "Midterm results", "Mock sittings", "Exam dates", "Branches"]]]);
+    expect(map(centre)).toEqual([[null, ["Trials", "SMS", "Telegram posts", "Support hours", "Reward shop", "lc-up link"]]]);
+    expect(map(content)).toEqual([[null, ["Events", "Surveys", "Stories"]]]);
+    expect(map(system)).toEqual([[null, ["Public users", "Staff", "Access", "Mobile app", "Broadcast"]]]);
   });
 
-  it("keeps every page of the old sidebar — same href, label and icon — and adds none", () => {
+  it("keeps every page the console had, adds Archive and Timetable, and keeps every rule", () => {
     const pages = OPS_NAV_GROUPS.flatMap((g) => g.items);
     expect(pages.map((p) => p.href).sort()).toEqual(
       [
@@ -85,6 +69,8 @@ describe("OPS_CATEGORIES", () => {
         "/ops/staff",
         "/ops/access",
         "/ops/classrooms",
+        "/ops/timetable",
+        "/ops/archive",
         "/ops/branches",
         "/ops/journals",
         "/ops/midterms",
@@ -106,18 +92,28 @@ describe("OPS_CATEGORIES", () => {
     );
     expect(pages.filter((p) => p.superAdminOnly).map((p) => p.href).sort()).toEqual(["/ops/broadcast", "/ops/mobile", "/ops/surveys"]);
     expect(pages.filter((p) => p.notForDesk).map((p) => p.href).sort()).toEqual(["/ops/exam-dates", "/ops/journals", "/ops/midterms", "/ops/mock-sessions", "/ops/stories"]);
-    expect(pages.find((p) => p.href === "/ops/trials")?.countKey).toBe("trials");
+    // Counts only on verdicts: Finance's debtors (Today's comes from "Needs you").
+    expect(pages.filter((p) => p.countKey).map((p) => [p.href, p.countKey])).toEqual([["/ops/finance", "debtors"]]);
+    expect(pages.filter((p) => p.main).map((p) => p.href)).toEqual(["/ops", "/ops/students", "/ops/classrooms", "/ops/finance", "/ops/archive"]);
     for (const item of pages) expect(ICON_NAMES).toContain(item.icon);
+    for (const item of pages) expect(item.tone).toMatch(/^#[0-9a-f]{6}$/);
     for (const c of OPS_CATEGORIES) expect(ICON_NAMES).toContain(c.icon);
   });
 
-  it("gives every category its own G-letter, and Today is the one home", () => {
-    expect(OPS_CATEGORIES.map((c) => c.letter)).toEqual(["T", "P", "E", "C", "O", "S"]);
+  it("never paints a section tile in a verdict colour (red, green, amber)", () => {
+    const verdicts = ["#dc2626", "#059669", "#d97706"];
+    for (const item of OPS_NAV_GROUPS.flatMap((g) => g.items)) expect(verdicts).not.toContain(item.tone);
+  });
+
+  it("gives every section its own G-letter, and Today is the one home", () => {
+    expect(OPS_CATEGORIES.map((c) => c.letter)).toEqual(["T", "D", "E", "C", "O", "S"]);
     expect(OPS_CATEGORIES.filter((c) => c.home).map((c) => c.id)).toEqual(["today"]);
   });
 
   it("carries the tab pages' own tabs, in their own words", () => {
-    expect(tabsFor(SUPER_ADMIN, "/ops/finance")).toEqual(["Overview", "Debtors", "Payments", "Ledger"]);
+    // lc-up's Moliya opens on Qarzdorlar: Debtors is Finance's first tab.
+    expect(tabsFor(SUPER_ADMIN, "/ops/finance")?.[0]).toBe("Debtors");
+    expect(tabsFor(SUPER_ADMIN, "/ops/finance")).toEqual(expect.arrayContaining(["Overview", "Debtors", "Payments", "Ledger"]));
     expect(tabsFor(SUPER_ADMIN, "/ops/sms")).toEqual(["Overview", "Journal", "Campaigns", "Debt warnings", "Templates"]);
     expect(tabsFor(SUPER_ADMIN, "/ops/lcup")).toEqual(["Status", "Groups", "Students", "Teachers", "Accounts", "Attendance", "Archive"]);
     expect(tabsFor(SUPER_ADMIN, "/ops/trials")).toEqual(["Trial students", "Not on class list"]);
@@ -133,7 +129,7 @@ describe("visibleNav / visibleCategories", () => {
     expect(hrefs(visibleNav(OPS_NAV_GROUPS, SUPER_ADMIN))).toEqual(hrefs(OPS_NAV_GROUPS));
     // A Django superuser counts too, whatever the role field says.
     expect(hrefs(visibleNav(OPS_NAV_GROUPS, DJANGO_SUPERUSER))).toEqual(hrefs(OPS_NAV_GROUPS));
-    expect(ids(visibleCategories(OPS_CATEGORIES, SUPER_ADMIN))).toEqual(["today", "people", "teaching", "centre", "content", "system"]);
+    expect(ids(visibleCategories(OPS_CATEGORIES, SUPER_ADMIN))).toEqual(["today", "daily", "teaching", "centre", "content", "system"]);
   });
 
   it("hides the super-admin-only items from everyone else", () => {
@@ -145,52 +141,53 @@ describe("visibleNav / visibleCategories", () => {
 
   it("shows a section only to someone holding a permission its API checks", () => {
     const seen = hrefs(visibleNav(OPS_NAV_GROUPS, TEACHER));
-    for (const href of ["/ops/classrooms", "/ops/trials", "/ops/finance", "/ops/sms", "/ops/lcup", "/ops/shop", "/ops/events", "/ops/telegram-posts", "/ops/stories"]) {
+    for (const href of ["/ops/classrooms", "/ops/timetable", "/ops/archive", "/ops/trials", "/ops/finance", "/ops/sms", "/ops/lcup", "/ops/shop", "/ops/events", "/ops/telegram-posts", "/ops/stories"]) {
       expect(seen).not.toContain(href);
     }
   });
 
-  it("drops a category with nothing the person may open — a teacher has no Centre, Content or System", () => {
+  it("drops a section with nothing the person may open — a teacher has no Daily work, Centre or Content", () => {
     const categories = visibleCategories(OPS_CATEGORIES, TEACHER);
     // Support hours and Branches are group desks (manage_groups); Teaching keeps the academic pages.
-    expect(ids(categories)).toEqual(["today", "people", "teaching"]);
-    expect(map(categories.find((c) => c.id === "teaching")!)).toEqual([
-      ["Course", ["Journals", "Midterm results"]],
-      ["Exams", ["Mock sittings", "Exam dates"]],
-    ]);
+    expect(ids(categories)).toEqual(["today", "teaching", "system"]);
+    expect(map(categories.find((c) => c.id === "teaching")!)).toEqual([[null, ["Journals", "Midterm results", "Mock sittings", "Exam dates"]]]);
+    expect(map(categories.find((c) => c.id === "system")!)).toEqual([[null, ["Access"]]]);
   });
 
-  it("shows an administrator exactly the school's sections: five categories, no System", () => {
+  it("shows an administrator the desk's pages: the same 15 as before, plus Timetable and Archive", () => {
     const categories = visibleCategories(OPS_CATEGORIES, ADMIN);
-    expect(ids(categories)).toEqual(["today", "people", "teaching", "centre", "content"]);
+    expect(ids(categories)).toEqual(["today", "daily", "teaching", "centre", "content", "system"]);
     expect(categories.flatMap((c) => hrefs(c.groups))).toEqual([
       "/ops",
       "/ops/students",
+      "/ops/classrooms",
+      "/ops/timetable",
+      "/ops/finance",
+      "/ops/archive",
+      "/ops/branches",
+      "/ops/trials",
+      "/ops/sms",
+      "/ops/telegram-posts",
+      "/ops/support",
+      "/ops/shop",
+      "/ops/lcup",
+      "/ops/events",
       "/ops/public",
       "/ops/staff",
       "/ops/access",
-      "/ops/classrooms",
-      "/ops/branches",
-      "/ops/trials",
-      "/ops/lcup",
-      "/ops/finance",
-      "/ops/shop",
-      "/ops/sms",
-      "/ops/support",
-      "/ops/events",
-      "/ops/telegram-posts",
     ]);
-    // Teaching keeps only Classes (Course and Exams are not the desk's).
-    expect(categories.find((c) => c.id === "teaching")!.groups.map((g) => g.caption)).toEqual(["Classes"]);
-    // Content keeps Engage (Events) and Publish (Telegram posts).
-    expect(labels(categories.find((c) => c.id === "content")!.groups)).toEqual(["Events", "Telegram posts"]);
+    // Teaching keeps only Branches (Journals, Midterm results, Mock sittings and Exam dates are not the desk's).
+    expect(labels(categories.find((c) => c.id === "teaching")!.groups)).toEqual(["Branches"]);
+    expect(labels(categories.find((c) => c.id === "content")!.groups)).toEqual(["Events"]);
+    // Mobile app and Broadcast stay the owner's.
+    expect(labels(categories.find((c) => c.id === "system")!.groups)).toEqual(["Public users", "Staff", "Access"]);
   });
 
   it("shows an accountant the money, and none of the desk's other sections", () => {
     // Branches and Support hours are group desks (manage_groups), not money.
     const seen = hrefs(visibleNav(OPS_NAV_GROUPS, ACCOUNTANT));
     // The people pages are view_people's (PR 5): the accountant reads students to take their money.
-    expect(seen).toEqual(["/ops", "/ops/students", "/ops/public", "/ops/classrooms", "/ops/finance", "/ops/sms"]);
+    expect(seen).toEqual(["/ops", "/ops/students", "/ops/classrooms", "/ops/timetable", "/ops/finance", "/ops/archive", "/ops/sms", "/ops/public"]);
     for (const href of ["/ops/branches", "/ops/support", "/ops/staff", "/ops/trials", "/ops/lcup", "/ops/shop", "/ops/events", "/ops/journals", "/ops/stories"]) {
       expect(seen).not.toContain(href);
     }
@@ -220,17 +217,18 @@ describe("visibleNav / visibleCategories", () => {
     expect(seen).toContain("/ops");
   });
 
-  it("goes to a category's first page the person may open", () => {
-    // An accountant's Centre starts at Finance: Trials and lc-up are not theirs.
+  it("goes to a section's first page the person may open", () => {
+    // An accountant's Centre starts at SMS: Trials is not theirs.
     const centre = visibleCategories(OPS_CATEGORIES, ACCOUNTANT).find((c) => c.id === "centre")!;
-    expect(firstHref(centre)).toBe("/ops/finance");
+    expect(firstHref(centre)).toBe("/ops/sms");
     expect(firstHref(OPS_CATEGORIES[3])).toBe("/ops/trials");
+    expect(firstHref(OPS_CATEGORIES[1])).toBe("/ops/students");
   });
 });
 
 describe("opsPathAllowed", () => {
   it("opens to an administrator the school's sections, nested pages included", () => {
-    for (const path of ["/ops", "/ops/classrooms/12", "/ops/students/42", "/ops/users", "/ops/users/5/edit", "/ops/sms/campaigns/7", "/ops/finance", "/ops/trials", "/ops/telegram-posts"]) {
+    for (const path of ["/ops", "/ops/classrooms/12", "/ops/students/42", "/ops/users", "/ops/users/5/edit", "/ops/sms/campaigns/7", "/ops/finance", "/ops/trials", "/ops/telegram-posts", "/ops/archive", "/ops/timetable"]) {
       expect(opsPathAllowed(path, ADMIN)).toBe(true);
     }
   });
@@ -254,7 +252,7 @@ describe("opsPathAllowed", () => {
   });
 
   it("closes to a teacher the pages the server refuses them, and leaves theirs open", () => {
-    for (const path of ["/ops/finance", "/ops/sms", "/ops/lcup", "/ops/classrooms/3", "/ops/events", "/ops/students", "/ops/users"]) {
+    for (const path of ["/ops/finance", "/ops/sms", "/ops/lcup", "/ops/classrooms/3", "/ops/events", "/ops/students", "/ops/users", "/ops/archive", "/ops/timetable"]) {
       expect(opsPathAllowed(path, TEACHER)).toBe(false);
     }
     for (const path of ["/ops", "/ops/access", "/ops/journals", "/ops/assignments"]) {
@@ -264,10 +262,12 @@ describe("opsPathAllowed", () => {
 });
 
 describe("categoryOf", () => {
-  it("finds a page's category, a record inside it, and a link with a query", () => {
-    expect(categoryOf("/ops/finance", OPS_CATEGORIES)?.category.id).toBe("centre");
-    expect(categoryOf("/ops/classrooms/12", OPS_CATEGORIES)?.item.label).toBe("Classrooms");
-    expect(categoryOf("/ops/classrooms?status=active", OPS_CATEGORIES)?.category.id).toBe("teaching");
+  it("finds a page's section, a record inside it, and a link with a query", () => {
+    expect(categoryOf("/ops/finance", OPS_CATEGORIES)?.category.id).toBe("daily");
+    expect(categoryOf("/ops/classrooms/12", OPS_CATEGORIES)?.item.label).toBe("Groups");
+    expect(categoryOf("/ops/classrooms?status=active", OPS_CATEGORIES)?.category.id).toBe("daily");
+    expect(categoryOf("/ops/timetable", OPS_CATEGORIES)?.item.label).toBe("Timetable");
+    expect(categoryOf("/ops/sms/campaigns/7", OPS_CATEGORIES)?.category.id).toBe("centre");
     expect(categoryOf("/ops", OPS_CATEGORIES)?.category.id).toBe("today");
   });
 
@@ -281,26 +281,32 @@ describe("crumbsFor", () => {
   const opts = { categories: OPS_CATEGORIES, root: "/ops", rootLabel: "Admin" };
   const words = (c: { label: string }[]) => c.map((x) => x.label);
 
-  it("is category › page › the open tab", () => {
+  it("is page › the open tab", () => {
     const crumbs = crumbsFor("/ops/finance", { ...opts, tab: "debtors" });
-    expect(words(crumbs)).toEqual(["Centre", "Finance", "Debtors"]);
-    expect(crumbs.map((c) => c.href)).toEqual(["/ops/trials", "/ops/finance", undefined]);
+    expect(words(crumbs)).toEqual(["Finance", "Debtors"]);
+    expect(crumbs.map((c) => c.href)).toEqual(["/ops/finance", undefined]);
   });
 
   it("names the first tab when none is chosen, and prefers the page's own published tabs", () => {
-    expect(words(crumbsFor("/ops/sms", opts))).toEqual(["Centre", "SMS", "Overview"]);
-    expect(words(crumbsFor("/ops/finance", { ...opts, tabs: [{ id: "x", label: "Published" }], tab: "x" }))).toEqual(["Centre", "Finance", "Published"]);
+    expect(words(crumbsFor("/ops/sms", opts))).toEqual(["SMS", "Overview"]);
+    expect(words(crumbsFor("/ops/finance", { ...opts, tabs: [{ id: "x", label: "Published" }], tab: "x" }))).toEqual(["Finance", "Published"]);
   });
 
-  it("is category › page for a page without tabs", () => {
+  it("is just the page for a page without tabs", () => {
     const crumbs = crumbsFor("/ops/students", opts);
-    expect(words(crumbs)).toEqual(["People", "Students"]);
-    expect(crumbs[1].href).toBeUndefined();
+    expect(words(crumbs)).toEqual(["Students"]);
+    expect(crumbs[0].href).toBeUndefined();
   });
 
   it("names the open record when it is known, else stops at its page", () => {
-    expect(words(crumbsFor("/ops/classrooms/12", { ...opts, detail: "Middle M5" }))).toEqual(["Teaching", "Classrooms", "Middle M5"]);
-    expect(words(crumbsFor("/ops/classrooms/12", opts))).toEqual(["Teaching", "Classrooms"]);
+    expect(words(crumbsFor("/ops/classrooms/12", { ...opts, detail: "Middle M5" }))).toEqual(["Groups", "Middle M5"]);
+    expect(words(crumbsFor("/ops/classrooms/12", opts))).toEqual(["Groups"]);
+  });
+
+  it("puts a page reached from another under it: Groups › Timetable", () => {
+    const crumbs = crumbsFor("/ops/timetable", opts);
+    expect(words(crumbs)).toEqual(["Groups", "Timetable"]);
+    expect(crumbs[0].href).toBe("/ops/classrooms");
   });
 
   it("is just Today on the dashboard", () => {
@@ -324,10 +330,10 @@ describe("sectionLabel", () => {
   });
 
   it("resolves a deeper path to its section", () => {
-    expect(sectionLabel("/ops/classrooms/12")).toBe("Classrooms");
+    expect(sectionLabel("/ops/classrooms/12")).toBe("Groups");
     expect(sectionLabel("/ops/journals/3/lessons/9")).toBe("Journals");
     expect(sectionLabel("/ops/students/42/edit")).toBe("Students");
-    expect(sectionFor("/ops/classrooms/12")).toEqual({ href: "/ops/classrooms", label: "Classrooms" });
+    expect(sectionFor("/ops/classrooms/12")).toEqual({ href: "/ops/classrooms", label: "Groups" });
   });
 
   it("does not let a look-alike prefix match", () => {

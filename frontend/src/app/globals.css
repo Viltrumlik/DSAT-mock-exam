@@ -2097,6 +2097,124 @@ mark.ts-annot {
   --ms-r-dlg: 28px;
 }
 
+/* Tokens the v0.7 admin look added (lc-up structure canvas, 22 Nov 2026). Neutral defaults for every console;
+   the admin temperature below gives them their values. */
+:root {
+  --ms-grid: var(--ms-line);
+  --ms-head: var(--ms-surface);
+  --ms-row-hover: var(--ms-surface);
+  --ms-r-badge: 999px;
+  /* Course tags: their own hues, never red / green / amber (those are verdicts). */
+  --ms-course-foundation: #0ea5e9;
+  --ms-course-junior: #8b5cf6;
+  --ms-course-middle: #ec4899;
+  --ms-course-senior: #6366f1;
+  /* The sidebar: 248 px with words, 76 px folded to icons. */
+  --ms-side: 248px;
+  --ms-side-folded: 76px;
+}
+
+/*
+  Admin temperature v0.7 "calm vivid" (canvas `console-v05.css`, owner 22 Nov 2026). In order the owner said:
+  parts melted together → the soft look read as AI-made → plain ruled grey read as old → "Vivid, but calm".
+  So: a firmer page/card contrast, 1 px edges with almost no shadow, radii 8/12, data ruled like Excel, colour
+  only with a meaning (verdict tints on cells, course hues on tags). Put on the admin shell AND on <html> while
+  it is mounted, so dialogs portalled into <body> wear it too.
+*/
+[data-ms-temp="admin"] {
+  --ms-bg: #f1f3f8;
+  --ms-surface: #f7f8fb;
+  --ms-surface-2: #eef1f6;
+  --ms-surface-3: #e2e6ee;
+  --ms-border: #dde2ea;
+  --ms-border-strong: #c3cad6;
+  --ms-line: #e3e7ee;
+  --ms-grid: #e1e5ec;
+  --ms-head: #ffffff;
+  --ms-row-hover: #f5f8ff;
+  --ms-chip-on-bg: #2a68c0;
+  --ms-chip-on-fg: #ffffff;
+  --ms-sh-1: 0 1px 2px rgba(16,24,40,.05);
+  --ms-r-btn: 8px;
+  --ms-r-ctl: 8px;
+  --ms-r-chip: 7px;
+  --ms-r-badge: 6px;
+  --ms-r-card: 12px;
+  --ms-r-pop: 12px;
+  --ms-r-dlg: 14px;
+  --ms-h-row: 48px;
+  --ms-fs-row: 14.5px;
+}
+.dark[data-ms-temp="admin"],
+.dark [data-ms-temp="admin"] {
+  --ms-bg: #0f1013;
+  --ms-card: #181a1e;
+  --ms-surface: #1d1f24;
+  --ms-surface-2: #23262c;
+  --ms-surface-3: #2e3138;
+  --ms-border: #2f333a;
+  --ms-border-strong: #454a53;
+  --ms-line: #2a2d33;
+  --ms-grid: #2f333a;
+  --ms-head: #181a1e;
+  --ms-row-hover: #1c2433;
+  --ms-chip-on-bg: #3170d6;
+  --ms-chip-on-fg: #ffffff;
+  --ms-sh-1: none;
+}
+
+/*
+  Every data table in the admin console is ruled like Excel / lc-up (owner 22 Nov 2026: "jadvallardek ajralib
+  turishi… exceldagi kabi"): each cell has a 1 px edge, the header sits on a firm 2 px line, rows are ~48 px, no
+  zebra, and hover tints the row. Unlayered on purpose: it beats each table's own Tailwind border utilities, so the
+  rule holds on every page at once. The card or wrapper draws the outer edge, so the outermost lines are dropped.
+  A table that is a layout and not data opts out with `data-plain`.
+*/
+[data-ms-temp="admin"] table:not([data-plain]) {
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-size: var(--ms-fs-row);
+}
+[data-ms-temp="admin"] table:not([data-plain]) > :is(thead, tbody, tfoot) > tr > :is(th, td) {
+  border: 1px solid var(--ms-grid);
+}
+[data-ms-temp="admin"] table:not([data-plain]) > thead > tr > th {
+  height: 44px;
+  background-color: var(--ms-head);
+  color: var(--ms-fg);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.2;
+  border-bottom: 2px solid var(--ms-border-strong);
+}
+[data-ms-temp="admin"] table:not([data-plain]) > tbody > tr > td {
+  height: var(--ms-h-row);
+  line-height: 1.45;
+}
+[data-ms-temp="admin"] table:not([data-plain]) > tbody > tr:hover > td {
+  background-color: var(--ms-row-hover);
+}
+[data-ms-temp="admin"] table:not([data-plain]) > * > tr > :first-child { border-left: 0; }
+[data-ms-temp="admin"] table:not([data-plain]) > * > tr > :last-child { border-right: 0; }
+[data-ms-temp="admin"] table:not([data-plain]) > :first-child > tr:first-child > * { border-top: 0; }
+[data-ms-temp="admin"] table:not([data-plain]) > :last-child > tr:last-child > * { border-bottom: 0; }
+/* A money or status cell takes a light tint of its verdict and a 3 px edge (`<td data-verdict="critical">`). */
+[data-ms-temp="admin"] table > tbody > tr > td[data-verdict="critical"],
+[data-ms-temp="admin"] table > tbody > tr:hover > td[data-verdict="critical"] {
+  background-color: color-mix(in srgb, var(--ms-critical) 8%, var(--ms-card));
+  box-shadow: inset 3px 0 0 var(--ms-critical);
+}
+[data-ms-temp="admin"] table > tbody > tr > td[data-verdict="positive"],
+[data-ms-temp="admin"] table > tbody > tr:hover > td[data-verdict="positive"] {
+  background-color: color-mix(in srgb, var(--ms-positive) 8%, var(--ms-card));
+  box-shadow: inset 3px 0 0 var(--ms-positive);
+}
+[data-ms-temp="admin"] table > tbody > tr > td[data-verdict="attention"],
+[data-ms-temp="admin"] table > tbody > tr:hover > td[data-verdict="attention"] {
+  background-color: color-mix(in srgb, var(--ms-attention) 9%, var(--ms-card));
+  box-shadow: inset 3px 0 0 var(--ms-attention);
+}
+
 /* Compact density: a per-person toggle for desktop lists and editors. */
 [data-ms-density="compact"] {
   --ms-h-ctl: 36px;
@@ -2195,6 +2313,10 @@ mark.ts-annot {
   --radius-ms-card: var(--ms-r-card);
   --radius-ms-pop: var(--ms-r-pop);
   --radius-ms-dlg: var(--ms-r-dlg);
+  --radius-ms-badge: var(--ms-r-badge);
+  --color-ms-grid: var(--ms-grid);
+  --color-ms-head: var(--ms-head);
+  --color-ms-row-hover: var(--ms-row-hover);
 
   --shadow-ms-1: var(--ms-sh-1);
   --shadow-ms-2: var(--ms-sh-2);
