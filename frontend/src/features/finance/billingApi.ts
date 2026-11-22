@@ -65,6 +65,9 @@ export interface LedgerEntry {
   voided_by: string;
   /** Money a person entered and nobody has taken back; what the ledger wrote itself is never voided by hand. */
   can_void: boolean;
+  /** The group the money is for (its seat); null / "" for a row written before payments carried one. */
+  seat_id?: number | null;
+  group?: string;
 }
 
 export interface LedgerSeat {
@@ -99,6 +102,8 @@ export interface EnterMoneyBody {
   note: string;
   /** One per open form: a retry of the same request is the same row. */
   request_id: string;
+  /** The seat (group) a payment or refund is for: required when the student has two or more groups. */
+  seat?: number;
 }
 
 export const billingApi = {
