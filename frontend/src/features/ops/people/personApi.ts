@@ -20,6 +20,19 @@ export type PersonGroup = {
   joined_at: string | null;
   /** Paired with lc-up: the seat comes and goes there, never here. */
   lcup_managed: boolean;
+  /** The group card's fields (absent on an older server): the class's level, days, time, price and start. */
+  level?: string;
+  /** "ODD" | "EVEN" | "". */
+  lesson_days?: string;
+  lesson_time?: string;
+  /** Whole so'm a month; null until someone states it. */
+  monthly_price?: number | null;
+  /** "YYYY-MM-DD": when the group starts. */
+  start_date?: string | null;
+  /** This learner's seat in it. */
+  seat_status?: "active" | "trial" | "frozen";
+  /** "YYYY-MM-DD": the day the seat was activated (lc-up's "Guruhda faollashtirilgan sana"). */
+  seat_start_date?: string | null;
 };
 
 /** One lc-up payment, `lcup.finance._payment_row`: whole UZS, always positive; `kind` says which way. */
@@ -121,12 +134,21 @@ export type PersonCore = {
   /** Active classes not paired with lc-up that the learner is not in — "Add to class". */
   open_classes: { id: number; name: string }[];
   lcup: PersonLcup | null;
+  /**
+   * The centre's own ledger account, where Take payment writes (`view_money`'s alone; null without an account).
+   * `payments_open` is false while lc-up is where money is entered: the server refuses a payment until the cutover.
+   */
+  ledger?: { account_id: number; payments_open: boolean } | null;
+  /** Whether a seat's actions (freeze, leave, fix date) are open: lc-up no longer runs. */
+  seats_open?: boolean;
+  /** The learner's coin balance; null when they never had a wallet. */
+  coins?: number | null;
   duplicates: PersonDuplicate[];
   /** Staff only (null for learners). */
   staff: PersonStaff | null;
 };
 
-export type PersonPartName = "attendance" | "results" | "security" | "history";
+export type PersonPartName = "attendance" | "results" | "security" | "history" | "purchases";
 
 // ── Parts (backend/users/people_parts.py) ─────────────────────────────────────────────────
 
@@ -197,6 +219,23 @@ export type PersonHistory = {
     by: string;
     /** A day without a time (an lc-up payment): show the date alone. */
     all_day?: boolean;
+  }[];
+  truncated: boolean;
+};
+
+/** `GET …/purchases/`: shop orders, newest first (≤ 100). */
+export type PersonPurchases = {
+  orders: {
+    id: number;
+    item: string;
+    /** "COIN" | "STRIKE". */
+    currency: string;
+    price: number;
+    status: "PENDING" | "FULFILLED" | "CANCELLED" | string;
+    status_label: string;
+    note: string;
+    at: string | null;
+    settled_at: string | null;
   }[];
   truncated: boolean;
 };

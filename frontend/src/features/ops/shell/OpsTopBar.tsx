@@ -6,36 +6,44 @@ import { Icon } from "@/components/ui/Icon";
 import { AttentionBell } from "@/features/console/AttentionBell";
 import type { AttentionSource } from "@/features/console/attention";
 import { UserMenu } from "@/features/console/UserMenu";
+import { Menu, type MenuItem } from "@/features/console/ui/Menu";
 import { cn } from "@/lib/cn";
 import type { Crumb, MeLike } from "./opsNav";
-import { MAX_PINS } from "./shellStore";
 
 /**
- * The bar across the top of the content column (design handoff v0.4, Shell board): the breadcrumb in the shell's
- * three levels (Centre › Finance › Debtors — every step but the last is a link), the ⌘K search pill, the bookmark
- * that pins this page, and the attention bell. The console switch and the person moved into the rail.
+ * The bar across the top of the content column (TopBar board, 22 Nov 2026): where you are, then lc-up's two
+ * searches — a data search (students, groups, phones) and "Sections ⌘K" (jump to a page) — "+ New", the branch,
+ * the week's timetable, the bell and the person. Each is drawn only when it does something for this viewer.
  *
- * Flat at the top of the page; once content scrolls under it a hairline and a soft shadow show the edge. On a phone
- * (no rail) it keeps the page's name, search, the bell and the person, each 44 × 44.
+ * White with a hairline under it, sticky. On a phone it keeps the page's name, search, the bell and the person.
  */
 export function OpsTopBar({
   crumbs,
   me,
   onOpenSearch,
+  onOpenSections,
   attention = [],
-  searchLabel = "Search pages…",
-  pin,
+  searchLabel,
+  newItems = [],
+  branch = null,
+  timetableHref = null,
 }: {
   crumbs: readonly Crumb[];
   me: MeLike;
-  /** Opens ⌘K. */
-  onOpenSearch: () => void;
+  /** Opens the data search (students, groups, questions…); `null` when this viewer may search none. */
+  onOpenSearch: (() => void) | null;
+  /** Opens ⌘K over the console's sections. */
+  onOpenSections: () => void;
   /** "Needs you" for the bell; empty for a role that reads none of it (no bell then). */
   attention?: readonly AttentionSource[];
-  /** What the pill says ⌘K searches here: "Search students, classes, pages…". */
-  searchLabel?: string;
-  /** This page's bookmark: whether it is pinned, how many pins there are, and the toggle. */
-  pin: { pinned: boolean; count: number; onToggle: () => void } | null;
+  /** What the data search finds: "Search students, groups, phones". */
+  searchLabel: string;
+  /** "+ New": the create flows this viewer may start; none → no button. */
+  newItems?: MenuItem[];
+  /** The branch switcher: its words and menu; `null` → none. */
+  branch?: { label: string; items: MenuItem[] } | null;
+  /** Where the calendar button goes (the week's timetable); `null` → no button. */
+  timetableHref?: string | null;
 }) {
   const [scrolled, setScrolled] = useState(false);
 
@@ -47,20 +55,19 @@ export function OpsTopBar({
   }, []);
 
   const last = crumbs[crumbs.length - 1];
-  const full = pin ? !pin.pinned && pin.count >= MAX_PINS : false;
 
   return (
     <header
       data-scrolled={scrolled || undefined}
       className={cn(
-        "ms-transition sticky top-0 z-20 flex h-(--ms-topbar) shrink-0 items-center gap-1.5 border-b bg-ms-bg pl-4 pr-2 sm:gap-3 md:px-6",
-        scrolled ? "border-ms-border shadow-[0_4px_12px_rgba(0,0,0,.06)]" : "border-transparent",
+        "ms-transition sticky top-0 z-20 flex min-h-(--ms-topbar) shrink-0 items-center gap-1.5 border-b border-ms-border bg-ms-card pl-4 pr-2 sm:gap-2.5 md:px-6",
+        scrolled && "shadow-[0_2px_8px_rgba(16,24,40,.06)]",
       )}
     >
-      <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+      <nav aria-label="Breadcrumb" className="min-w-0 flex-1 lg:flex-none">
         {/* A phone has room for where you are, not the way there. */}
-        <p className="truncate text-[20px] font-extrabold leading-7 tracking-[-.02em] text-ms-fg md:hidden">{last?.label}</p>
-        <ol className="hidden min-w-0 items-center gap-1.5 text-[14px] leading-5 md:flex">
+        <p className="truncate text-[19px] font-bold leading-7 tracking-[-.01em] text-ms-fg md:hidden">{last?.label}</p>
+        <ol className="hidden min-w-0 items-center gap-1.5 text-[15px] leading-5 md:flex">
           {crumbs.map((c, i) => {
             const isLast = i === crumbs.length - 1;
             return (
@@ -86,56 +93,67 @@ export function OpsTopBar({
           })}
         </ol>
       </nav>
+      <div aria-hidden className="hidden flex-1 lg:block" />
 
-      <button
-        type="button"
-        onClick={onOpenSearch}
-        aria-keyshortcuts="Meta+K Control+K"
-        className="ms-transition hidden h-[42px] w-[min(340px,30vw)] items-center gap-2.5 rounded-full border border-ms-border-strong bg-ms-card pl-4 pr-2 text-[15px] text-ms-fg-3 hover:border-ms-border-input md:flex"
-      >
-        <Icon name="search" />
-        <span className="flex-1 truncate text-left">{searchLabel}</span>
-        <kbd className="rounded-[6px] border border-ms-border-strong px-1.5 font-ms-mono text-[12px] text-ms-fg-2">⌘ K</kbd>
-      </button>
-      <button
-        type="button"
-        onClick={onOpenSearch}
-        aria-label="Search"
-        className="ms-transition grid size-11 shrink-0 place-items-center rounded-full text-ms-fg-2 hover:bg-ms-surface-2 hover:text-ms-fg md:hidden"
-      >
-        <Icon name="search" size="lg" />
-      </button>
-
-      {pin ? (
-        <span className="relative hidden md:inline-flex">
+      {onOpenSearch ? (
+        <>
           <button
             type="button"
-            onClick={pin.onToggle}
-            aria-pressed={pin.pinned}
-            aria-disabled={full || undefined}
-            aria-describedby={full ? "ops-pin-full" : undefined}
-            aria-label={pin.pinned ? "Pinned — unpin this page" : "Pin this page"}
-            title={full ? `Up to ${MAX_PINS} pins — unpin one first` : pin.pinned ? "Pinned — unpin this page" : "Pin this page"}
-            className={cn(
-              "ms-transition grid size-11 shrink-0 place-items-center rounded-full hover:bg-ms-surface-2",
-              pin.pinned ? "text-ms-primary-text" : "text-ms-fg-2 hover:text-ms-fg",
-              full && "cursor-not-allowed opacity-50 hover:bg-transparent",
-            )}
+            onClick={onOpenSearch}
+            data-search="data"
+            className="ms-transition hidden h-10 min-w-[200px] max-w-[420px] flex-[0_1_420px] items-center gap-2.5 rounded-ms-ctl border border-ms-border-strong bg-ms-card px-3 text-[14.5px] text-ms-fg-3 hover:border-ms-border-input lg:flex"
           >
-            <Icon name="bookmark" size="lg" className={pin.pinned ? "fill-current" : undefined} />
+            <Icon name="search" className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-left">{searchLabel}</span>
           </button>
-          {full ? (
-            <span id="ops-pin-full" className="sr-only">
-              Up to {MAX_PINS} pins — unpin one first
-            </span>
-          ) : null}
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            aria-label={searchLabel}
+            className="ms-transition grid size-11 shrink-0 place-items-center rounded-full text-ms-fg-2 hover:bg-ms-surface-2 hover:text-ms-fg lg:hidden"
+          >
+            <Icon name="search" size="lg" />
+          </button>
+        </>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={onOpenSections}
+        aria-keyshortcuts="Meta+K Control+K"
+        aria-label="Jump to a section"
+        className="ms-transition hidden h-10 shrink-0 items-center gap-2 rounded-ms-btn border border-ms-border-strong bg-ms-card px-3 text-[14px] font-semibold text-ms-fg hover:bg-ms-surface-2 md:inline-flex"
+      >
+        <Icon name="grid" size="sm" />
+        Sections
+        <kbd className="rounded-[5px] border border-ms-border-strong px-1.5 font-ms-mono text-[11.5px] font-medium text-ms-fg-2">⌘K</kbd>
+      </button>
+
+      {newItems.length > 0 ? (
+        <span className="hidden md:inline-flex">
+          <Menu label="Create new" text="New" icon="plus" variant="subtle" items={newItems} />
         </span>
       ) : null}
 
+      {branch ? (
+        <span className="hidden xl:inline-flex">
+          <Menu label={`Branch: ${branch.label}`} text={branch.label} icon="ms-branch" variant="secondary" items={branch.items} />
+        </span>
+      ) : null}
+
+      {timetableHref ? (
+        <Link
+          href={timetableHref}
+          aria-label="Timetable of all groups"
+          title="Timetable"
+          className="ms-transition hidden size-11 shrink-0 place-items-center rounded-full text-ms-fg-2 hover:bg-ms-surface-2 hover:text-ms-fg md:grid"
+        >
+          <Icon name="cal" size="lg" />
+        </Link>
+      ) : null}
+
       <AttentionBell sources={attention} />
-      <div className="md:hidden">
-        <UserMenu me={me} />
-      </div>
+      <UserMenu me={me} variant="avatar" />
     </header>
   );
 }

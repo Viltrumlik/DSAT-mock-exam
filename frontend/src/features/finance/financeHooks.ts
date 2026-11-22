@@ -35,8 +35,9 @@ export function useFinanceSummary(month: string, enabled = true) {
   return useQuery({ queryKey: financeKeys.summary(month), queryFn: () => financeApi.summary(month), enabled });
 }
 
-export function useDebtors() {
-  return useQuery({ queryKey: financeKeys.debtors, queryFn: () => financeApi.debtors() });
+/** `enabled` false for a viewer without `view_money`: the list's endpoint refuses them. */
+export function useDebtors(enabled = true) {
+  return useQuery({ queryKey: financeKeys.debtors, queryFn: () => financeApi.debtors(), enabled });
 }
 
 export function useMonthPayments(month: string) {

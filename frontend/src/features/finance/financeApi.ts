@@ -56,12 +56,26 @@ export interface FinanceSummary {
   freeze: { enabled: boolean; day: number };
 }
 
+/** A debtor's group, for its course tag: the class's own level when it is paired, and the class to open. */
+export interface DebtorGroup {
+  name: string;
+  level: string;
+  classroom_id: number | null;
+}
+
+/** One lc-up student who owes — one row per student, never per family. */
 export interface Debtor {
   link_id: number;
   lcup_student_id: number;
   name: string;
-  user: { id: number; name: string; username: string } | null;
+  /** `section` is where their page lives (`/ops/<section>/<id>`). */
+  user: { id: number; name: string; username: string; section?: string } | null;
+  /** The student's own phone (lc-up's, else the account's); "" when none. */
+  phone?: string;
+  /** Only for `view_people` holders, as on the person page; "" otherwise or when none was given. */
+  parent_phone?: string;
   groups: string[];
+  group_rows?: DebtorGroup[];
   teachers: string[];
   in_group: boolean;
   debt: number;

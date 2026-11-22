@@ -16,8 +16,9 @@ export function useRegions() {
   return useQuery({ queryKey: keys.regions, queryFn: () => orgApi.regions() });
 }
 
-export function useBranches() {
-  return useQuery({ queryKey: keys.branches, queryFn: () => orgApi.branches() });
+/** `enabled` false for a viewer the branches endpoint would refuse (the console's switcher asks only `manage_groups`). */
+export function useBranches(enabled = true) {
+  return useQuery({ queryKey: keys.branches, queryFn: () => orgApi.branches(), enabled });
 }
 
 export function useCreateRegion() {

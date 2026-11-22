@@ -2,28 +2,23 @@
 
 import { Suspense, useState } from "react";
 import { Tabs, useTabParam } from "@/features/console/ui";
-import {
-  DebtorsPanel,
-  FinanceOverviewPanel,
-  MonthPicker,
-  PaymentsPanel,
-  currentMonth,
-} from "@/features/finance/FinancePanels";
-import { useFinanceSummary } from "@/features/finance/financeHooks";
+import { DebtorsPanel, SmsDebtorsLink } from "@/features/finance/DebtorsPanel";
+import { FinanceOverviewPanel, MonthPicker, PaymentsPanel, currentMonth } from "@/features/finance/FinancePanels";
+import { useDebtors } from "@/features/finance/financeHooks";
 import { FINANCE_TAB_IDS, FINANCE_TAB_LABEL, FINANCE_TAB_NEEDS, type FinanceTab } from "@/features/finance/financeTabs";
 import { LedgerPanel } from "@/features/finance/LedgerPanel";
 import { P } from "@/features/ops/permissions";
 import { useCan } from "@/features/ops/useCan";
 
 /**
- * Money as lc-up keeps it: who owes and how much, who is frozen for it (or exempt from the
- * freeze), and what was paid each month. lc-up is the ledger — nothing here changes a balance;
- * the one write is exempting a student from the monthly debt freeze. Its own page, not a tab of
- * /ops/lcup: the owner wanted the money apart from the sync. The Ledger tab is the centre's own
- * ledger, running beside lc-up until the cutover.
+ * Money as lc-up keeps it: who owes and how much, who is frozen for it (or exempt from the freeze), and what was paid
+ * each month. lc-up is the ledger — nothing here changes a balance; the one write is exempting a student from the
+ * monthly debt freeze. Its own page, not a tab of /ops/lcup: the owner wanted the money apart from the sync. The
+ * Ledger tab is the centre's own ledger, running beside lc-up until the cutover.
  *
- * In the console's look (PR 12a): its header, the tabs in the address (`?tab=debtors`) so a link
- * and Back land on the tab, and the month picker beside them where a tab belongs to a month.
+ * lc-up's structure, our look (Debtors board, owner 22 Nov 2026): a plain title with the tab's actions beside it,
+ * then the tabs — Debtors first, as lc-up's Moliya opens on Qarzdorlar. The open tab is in the address (`?tab=`),
+ * so a link and Back land on it; the old `?tab=overview` links still open the overview.
  */
 
 const TAB_IDS = FINANCE_TAB_IDS;
@@ -35,17 +30,14 @@ function FinancePage() {
   const tabIds = TAB_IDS.filter((id) => can(...NEEDS[id]));
   const [tab, setTab] = useTabParam(tabIds, tabIds[0] ?? "overview");
   const [month, setMonth] = useState(currentMonth);
-  // The overview reads the same summary, so this is one request; it gives the Debtors tab its count.
-  const summary = useFinanceSummary(month, can(P.viewReports));
-  const debtors = summary.data?.debtors;
+  // The same list the Debtors tab shows (one request, cached): its length is the tab's count — students, not families.
+  const debtors = useDebtors(can(P.viewMoney)).data?.length;
   return (
-    <div className="flex flex-col gap-4">
-      <header className="animate-ms-fade-in flex flex-col gap-1">
+    <div className="flex flex-col gap-5">
+      <header className="animate-ms-fade-in flex flex-wrap items-center gap-3">
         <h1 className="text-ms-title text-ms-fg">Finance</h1>
-        <p className="max-w-3xl text-[14px] text-ms-fg-2">
-          Debts, freezes and payments as lc-up records them. Balances follow the latest sync; exempt a student from the
-          monthly debt freeze when they should not be frozen, for example on a grant.
-        </p>
+        <span className="flex-1" />
+        {tab === "debtors" ? <SmsDebtorsLink /> : null}
       </header>
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b border-ms-border">
         <Tabs<FinanceTab>
@@ -54,7 +46,7 @@ function FinancePage() {
           value={tab}
           onChange={setTab}
           tree
-          className="border-b-0"
+          className="min-w-0 border-b-0"
           tabs={tabIds.map((id) => ({
             id,
             label: LABEL[id],
@@ -69,11 +61,11 @@ function FinancePage() {
           </div>
         ) : null}
       </div>
-      <div role="tabpanel" id={`finance-${tab}-panel`} aria-labelledby={`finance-${tab}`} className="min-w-0">
-        {tab === "overview" ? <FinanceOverviewPanel month={month} debtorsHref="/ops/finance?tab=debtors" /> : null}
+      <div role="tabpanel" id={`finance-${tab}-panel`} aria-labelledby={`finance-${tab}`} className="min-w-0 pt-2">
         {tab === "debtors" ? <DebtorsPanel /> : null}
         {tab === "payments" ? <PaymentsPanel month={month} /> : null}
         {tab === "ledger" ? <LedgerPanel /> : null}
+        {tab === "overview" ? <FinanceOverviewPanel month={month} debtorsHref="/ops/finance?tab=debtors" /> : null}
       </div>
     </div>
   );

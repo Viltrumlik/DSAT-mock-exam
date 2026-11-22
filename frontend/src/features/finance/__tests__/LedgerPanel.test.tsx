@@ -123,9 +123,10 @@ describe("LedgerPanel", () => {
   it("lists each difference with both balances", async () => {
     await mount(<LedgerPanel />, { "/billing/summary/": SUMMARY });
     const row = [...document.querySelectorAll("tr")].find((tr) => tr.textContent?.includes("Big Difference"));
-    expect(row?.textContent).toContain("-500,000 UZS");
-    expect(row?.textContent).toContain("-400,000 UZS");
-    expect(row?.textContent).toContain("-100,000 UZS");
+    // Signed numbers only, a true minus and space groups (owner, 22 Nov 2026).
+    expect(row?.textContent).toContain("−500 000");
+    expect(row?.textContent).toContain("−400 000");
+    expect(row?.textContent).toContain("−100 000");
   });
 
   it("does not offer an account for someone the ledger does not know", async () => {
@@ -182,8 +183,8 @@ describe("LedgerPanel", () => {
     expect(document.body.textContent).toContain("Junior G1");
     const rows = [...document.querySelectorAll("tbody tr")].map((tr) => tr.textContent ?? "");
     expect(rows[0]).toContain("Opening balance");
-    expect(rows[2]).toContain("200,000 UZS");
-    expect(rows[2]).toContain("-300,000 UZS");
+    expect(rows[2]).toContain("200 000");
+    expect(rows[2]).toContain("−300 000");
   });
 
   it("keeps a voided row visible with its reason", async () => {
@@ -191,7 +192,7 @@ describe("LedgerPanel", () => {
     await click("Big Difference");
     const voided = [...document.querySelectorAll("tbody tr")][1];
     expect(voided.textContent).toContain("Voided: lc-up changed this payment");
-    expect(voided.querySelector(".line-through")?.textContent).toContain("900,000 UZS");
+    expect(voided.querySelector(".line-through")?.textContent).toContain("900 000");
   });
 
   it("goes back from a person to the list", async () => {
@@ -213,7 +214,7 @@ describe("LedgerPanel", () => {
     expect(get).toHaveBeenCalledWith("/billing/accounts/", { params: { scope: "current" } });
     const names = [...document.querySelectorAll("tbody tr")].map((tr) => tr.textContent ?? "");
     expect(names[0]).toContain("Most Owed");
-    expect(names[0]).toContain("-900,000 UZS");
+    expect(names[0]).toContain("−900 000");
   });
 
   it("asks for former students apart", async () => {

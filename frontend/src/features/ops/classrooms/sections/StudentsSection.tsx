@@ -45,7 +45,7 @@ export const SMALL_BUTTON = buttonClass({ size: "sm" });
 const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}%`);
 
 /** What fits each seat, in the order they read; the server refuses anything else anyway. */
-const SEAT_ACTIONS: Record<SeatStatus, { action: SeatAction; label: string }[]> = {
+export const SEAT_ACTIONS: Record<SeatStatus, { action: SeatAction; label: string }[]> = {
   trial: [
     { action: "activate", label: "Activate" },
     { action: "move", label: "Move" },
@@ -66,11 +66,11 @@ const SEAT_ACTIONS: Record<SeatStatus, { action: SeatAction; label: string }[]> 
 };
 
 /** Which date Fix date is about: the one the seat is standing on. */
-const FIXED_DATE: Record<SeatStatus, string> = { trial: "Start date", active: "Start date", frozen: "Frozen from" };
+export const FIXED_DATE: Record<SeatStatus, string> = { trial: "Start date", active: "Start date", frozen: "Frozen from" };
 
 type Found = (StudentRow | PublicRow) & { groups?: StudentRow["groups"] };
 
-function AddStudent({
+export function AddStudent({
   room,
   onAdded,
   onChoose,

@@ -279,13 +279,16 @@ class CountsTests(LessonsFixture):
         self.assertTrue(rows[nobody.pk]["register"]["taken"])  # nobody to mark
         self.assertEqual(rows[later.pk]["phase"], "upcoming")
 
-    def test_the_classroom_names_its_room_and_branch(self):
+    def test_the_classroom_names_its_room_branch_and_level(self):
         branch = Branch.objects.create(region=Region.objects.create(name="Tashkent"), name="Chilonzor")
-        placed = self.room("Middle M5 · Math", room_number="3", branch=branch)
+        placed = self.room("Middle M5 · Math", room_number="3", branch=branch, level=Classroom.LEVEL_MIDDLE)
         unplaced = self.room("Nowhere", time="16:00")
         rows = {r["classroom"]["id"]: r["classroom"] for r in self.body()["lessons"]}
-        self.assertEqual(rows[placed.pk], {"id": placed.pk, "name": "Middle M5 · Math", "room": "3", "branch": "Chilonzor"})
-        self.assertEqual(rows[unplaced.pk], {"id": unplaced.pk, "name": "Nowhere", "room": "", "branch": ""})
+        self.assertEqual(
+            rows[placed.pk],
+            {"id": placed.pk, "name": "Middle M5 · Math", "room": "3", "branch": "Chilonzor", "level": "middle"},
+        )
+        self.assertEqual(rows[unplaced.pk], {"id": unplaced.pk, "name": "Nowhere", "room": "", "branch": "", "level": ""})
 
     def test_the_exact_shape(self):
         room = self.room("G21 Math")
@@ -324,6 +327,40 @@ class PermissionTests(LessonsFixture):
                 self.assertEqual(self.get(date=bad).status_code, 400)
 
 
+class OtherDayTests(LessonsFixture):
+    """The timetable's day tabs ask for a day that is not today: a later day is a plan with no register yet, an
+    earlier one says what its register held, and a Sunday is empty. The clock is still today's."""
+
+    def test_a_later_day_is_all_upcoming_and_no_register_is_open_yet(self):
+        room = self.room("G21 Math", time="14:00-16:00")
+        self.seat(room)
+        wednesday = MONDAY + timedelta(days=2)
+        body = self.body(wednesday, now=at(MONDAY, 15))
+        [row] = body["lessons"]
+        self.assertEqual((row["phase"], row["register"]["state"], row["register"]["marked"]), ("upcoming", "not_yet", 0))
+        self.assertEqual(row["starts_at"], iso(wednesday, 14))
+        self.assertEqual(body["counts"], {"lessons": 1, "now": 0, "not_marked": 0, "no_teacher": 0})
+
+    def test_an_earlier_day_says_what_its_register_held(self):
+        room = self.room("G21 Math", time="14:00-16:00")
+        came, missed = self.seat(room), self.seat(room)
+        self.mark(room, came, "PRESENT")
+        self.mark(room, missed, "ABSENT")
+        row = self.row(room, MONDAY, now=at(MONDAY + timedelta(days=2), 12))
+        self.assertEqual((row["phase"], row["register"]["state"], row["register"]["taken"]), ("ended", "closed", True))
+        self.assertEqual((row["register"]["present"], row["register"]["absent"], row["register"]["roster"]), (1, 1, 2))
+
+    def test_the_view_serves_a_later_day_and_an_empty_sunday_by_todays_clock(self):
+        self.seat(self.room("G21 Math", time="14:00-16:00"))
+        with mock.patch("django.utils.timezone.now", return_value=at(MONDAY, 15)):
+            later = self.get(date="2026-11-11").json()
+            sunday = self.get(date="2026-11-15").json()
+        self.assertEqual(later["date"], "2026-11-11")
+        self.assertEqual([(r["phase"], r["register"]["state"]) for r in later["lessons"]], [("upcoming", "not_yet")])
+        self.assertEqual(later["counts"]["not_marked"], 0)
+        self.assertEqual(sunday, {"date": "2026-11-15", "lessons": [], "counts": {"lessons": 0, "now": 0, "not_marked": 0, "no_teacher": 0}})
+
+
 @override_settings(**LCUP_ON)
 class QueryCountTests(LessonsFixture):
     def build(self, count):
@@ -355,6 +392,12 @@ class QueryCountTests(LessonsFixture):
         three = self.count(lambda: self.get(date="2026-11-09"))
         self.build(9)
         self.assertEqual(self.count(lambda: self.get(date="2026-11-09")), three)
+
+    def test_another_day_costs_the_same(self):
+        self.build(3)
+        today = self.count(lambda: self.get(date="2026-11-09"))
+        self.build(9)
+        self.assertEqual(self.count(lambda: self.get(date="2026-11-11")), today)
 
 
 @override_settings(**LCUP_ON)

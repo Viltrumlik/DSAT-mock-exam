@@ -29,6 +29,17 @@ export { follow } from "./follow";
 export { Kbd, Shortcut, isMacLike, useModKey } from "./Kbd";
 export { Menu, type MenuItem } from "./Menu";
 export { Pagination, pageWindow } from "./Pagination";
+export {
+  CourseTag,
+  balanceVerdict,
+  courseColor,
+  courseLevelOf,
+  courseName,
+  signedAmount,
+  verdictText,
+  type CourseLevel,
+  type Verdict,
+} from "./ruled";
 export { EXIT_MS, prefersReducedMotion, usePresence } from "./presence";
 export { SearchField } from "./SearchField";
 export { OptionRow, Select, nextEnabled, typeAhead, type ListOption } from "./Select";

@@ -3,7 +3,8 @@ import type { AttentionItem } from "./attention";
 
 /** `GET /api/classes/admin/lessons/today/` — every active class meeting today and its register. */
 export type LessonRow = {
-  classroom: { id: number; name: string; room?: string | null; branch?: string | null };
+  /** `level`: "foundation" | "junior" | "middle" | "senior", "" when untagged (the timetable's course hue). */
+  classroom: { id: number; name: string; room?: string | null; branch?: string | null; level?: string | null };
   teacher: { id: number; name: string } | null;
   starts_at: string | null;
   ends_at: string | null;
@@ -31,6 +32,13 @@ export const lessonsTodayKey = ["classes", "admin", "lessons", "today"] as const
 
 export async function fetchLessonsToday(): Promise<LessonsToday> {
   return (await api.get<LessonsToday>("/classes/admin/lessons/today/")).data;
+}
+
+/** Another day's lessons ("YYYY-MM-DD", the timetable's day tabs): the same endpoint with `?date=`. */
+export const lessonsOnKey = (date: string) => ["classes", "admin", "lessons", "on", date] as const;
+
+export async function fetchLessonsOn(date: string): Promise<LessonsToday> {
+  return (await api.get<LessonsToday>("/classes/admin/lessons/today/", { params: { date } })).data;
 }
 
 /** "15:00" by the learning center's clock. */

@@ -172,6 +172,8 @@ def lessons_today(day: date, *, now: datetime | None = None) -> dict:
                 "name": room.name,
                 "room": room.room_number or "",
                 "branch": room.branch.name if room.branch_id else "",
+                # The course hue on the timetable (``Classroom.level``, "" when untagged).
+                "level": room.level or "",
             },
             # The class's teacher, as the /ops classroom list names them.
             "teacher": {"id": room.teacher_id, "name": display_name(room.teacher)} if room.teacher_id else None,

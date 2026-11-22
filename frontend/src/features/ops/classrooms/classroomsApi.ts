@@ -97,6 +97,8 @@ export type ClassroomRoster = {
     /** Their profile photo, null when none is set. */
     avatar_url: string | null;
     section: PeopleSection;
+    /** Their phone, under the name in the group page's roster ("" when none; absent on an older server). */
+    phone?: string;
     joined_at: string | null;
     seat_status: SeatStatus;
     /** "YYYY-MM-DD": when this stretch of the seat began, null when nobody said. */
@@ -153,7 +155,35 @@ export type ClassroomTelegram = {
   members: ClassroomTelegramMember[];
 };
 
-export type ClassroomPartName = "roster" | "attendance" | "homework" | "history" | "telegram";
+/**
+ * `GET …/register/?month=YYYY-MM`: the group page's register grid — one month's lesson dates (the registers held,
+ * and the days it meets still ahead) by every student, with each mark (`ops_classrooms.register_part`).
+ */
+export type ClassroomRegister = {
+  /** "YYYY-MM": the month shown. */
+  month: string;
+  /** Every month with a register, and this one: the year and month pickers. */
+  months: string[];
+  /** "YYYY-MM-DD" on the school's calendar. */
+  today: string;
+  dates: { date: string; held: boolean }[];
+  students: {
+    id: number;
+    name: string;
+    section: PeopleSection;
+    /** "YYYY-MM-DD": a lesson before it is not theirs. Null for someone who has left. */
+    joined: string | null;
+    seat_status: SeatStatus | null;
+    /** "YYYY-MM-DD": the day a frozen seat froze, when the ledger knows it. */
+    frozen_on: string | null;
+    /** Marked this month, and has left the group since. */
+    left: boolean;
+    /** By "YYYY-MM-DD": "PRESENT" | "LATE" | "ABSENT" | "EXCUSED". */
+    marks: Record<string, string>;
+  }[];
+};
+
+export type ClassroomPartName = "roster" | "register" | "attendance" | "homework" | "history" | "telegram";
 
 /** The filter keys the list understands (anything else in the address is not sent). */
 export const CLASSROOM_FILTER_KEYS = ["subject", "level", "teacher", "branch", "days", "lcup", "status"] as const;
@@ -203,6 +233,16 @@ export function useClassroomPart<T>(id: number, part: ClassroomPartName) {
   return useQuery({
     queryKey: classroomKeys.part(id, part),
     queryFn: async () => (await api.get<T>(`/classes/admin/classrooms/${id}/${part}/`)).data,
+  });
+}
+
+/** One month of the register grid; the month shown stays on screen while the next loads. */
+export function useClassroomRegister(id: number, month: string | null) {
+  return useQuery({
+    queryKey: [...classroomKeys.part(id, "register"), month ?? "now"] as const,
+    queryFn: async () =>
+      (await api.get<ClassroomRegister>(`/classes/admin/classrooms/${id}/register/`, { params: month ? { month } : {} })).data,
+    placeholderData: keepPreviousData,
   });
 }
 

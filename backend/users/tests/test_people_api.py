@@ -60,10 +60,11 @@ class PeopleListTests(TestCase):
 
     def test_a_student_row_carries_groups_lcup_and_status(self):
         rows = {r["id"]: r for r in self.get(section="students").json()["results"]}
-        self.assertEqual(rows[self.aziz.pk]["groups"], [{"id": self.room.pk, "name": "Junior G21 Math"}])
+        group = lambda r: [(g["id"], g["name"]) for g in r["groups"]]  # noqa: E731
+        self.assertEqual(group(rows[self.aziz.pk]), [(self.room.pk, "Junior G21 Math")])
         self.assertEqual(rows[self.aziz.pk]["lcup"], {"linked": True, "balance": -250000})
         # The archived class is not a group.
-        self.assertEqual(rows[self.malika.pk]["groups"], [{"id": self.room.pk, "name": "Junior G21 Math"}])
+        self.assertEqual(group(rows[self.malika.pk]), [(self.room.pk, "Junior G21 Math")])
         self.assertEqual((rows[self.aziz.pk]["status"], rows[self.malika.pk]["status"]), ("centre", "frozen_admin"))
         # The editor saves first and last name apart, and a delete warns with the work it would take.
         self.assertEqual((rows[self.aziz.pk]["first_name"], rows[self.aziz.pk]["last_name"]), ("Aziz", "Tursunov"))

@@ -1,0 +1,166 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { cn } from "@/lib/cn";
+import { Button, Segmented, Select } from "@/features/console/ui";
+import { monthShort, shortDay } from "@/features/ops/detail/groupFacts";
+import { useClassroomRegister, type ClassroomRegister } from "../classroomsApi";
+
+/**
+ * The group page's Attendance tab, lc-up's "Davomat" (Group board, 22 Nov 2026): a year and a month, then a ruled
+ * register — students down, the month's lesson dates across — with a mark in every cell: ✓ came, ✓ late, ✕ absent,
+ * a flag for excused, a snowflake for a frozen seat, a dash before the student joined, an empty ring for a lesson
+ * not marked yet. Read-only: a register is marked from "Mark …'s lesson" in the header.
+ */
+
+const MONTH_NAME = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+type Cell = { icon: IconName | null; title: string; tone: string };
+
+const RING = "shadow-[inset_0_0_0_1.5px_var(--ms-border-strong)]";
+
+const MARK: Record<string, Cell> = {
+  PRESENT: { icon: "check", title: "Came", tone: "bg-ms-positive-soft text-ms-positive-fg" },
+  LATE: { icon: "ms-late", title: "Late", tone: "bg-ms-attention-soft text-ms-attention-fg" },
+  ABSENT: { icon: "x", title: "Absent", tone: "bg-ms-critical-soft text-ms-critical-fg" },
+  EXCUSED: { icon: "flag", title: "Excused", tone: "bg-ms-attention-soft text-ms-attention-fg" },
+};
+
+type Student = ClassroomRegister["students"][number];
+
+/** What one cell says, from the mark if there is one, else from the seat and the day. */
+export function cellOf(s: Student, date: string, held: boolean, today: string): Cell {
+  const mark = s.marks[date];
+  if (mark) return MARK[mark] ?? { icon: null, title: mark, tone: "text-ms-fg-3" };
+  if (s.left) return { icon: "minus", title: "Not in the group", tone: "text-ms-fg-disabled" };
+  if (s.joined && date < s.joined) return { icon: "minus", title: "Not in the group yet", tone: "text-ms-fg-disabled" };
+  if (s.seat_status === "frozen" && (!s.frozen_on || date >= s.frozen_on)) {
+    return { icon: "ms-freeze", title: "Frozen", tone: "bg-ms-frozen-soft text-ms-frozen-fg" };
+  }
+  if (!held || date > today) return { icon: null, title: "Not marked yet", tone: cn("text-ms-fg-3", RING) };
+  return { icon: null, title: "Not marked", tone: cn("text-ms-fg-3", RING) };
+}
+
+function monthName(month: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(month);
+  return m ? MONTH_NAME[Number(m[2]) - 1] : month;
+}
+
+export function RegisterGrid({ roomId }: { roomId: number }) {
+  const [month, setMonth] = useState<string | null>(null);
+  const query = useClassroomRegister(roomId, month);
+  const data = query.data;
+  const shown = month ?? data?.month ?? null;
+  const years = [...new Set((data?.months ?? []).map((m) => m.slice(0, 4)))];
+  const year = shown?.slice(0, 4) ?? years[years.length - 1] ?? "";
+  const months = (data?.months ?? []).filter((m) => m.startsWith(year));
+
+  return (
+    <section aria-label="Register" className="flex flex-col gap-3.5">
+      <div className="flex flex-wrap items-center gap-2.5">
+        {years.length > 1 ? (
+          <Select<string>
+            aria-label="Year"
+            className="w-[110px]"
+            value={year}
+            onChange={(y) => {
+              const last = (data?.months ?? []).filter((m) => m.startsWith(y)).pop();
+              if (last) setMonth(last);
+            }}
+            options={years.map((y) => ({ value: y, label: y }))}
+          />
+        ) : year ? (
+          <span className="text-[14px] font-semibold tabular-nums text-ms-fg-2">{year}</span>
+        ) : null}
+        {months.length > 1 && shown ? (
+          <Segmented<string> label="Month" size="sm" value={shown} onChange={setMonth} options={months.map((m) => ({ value: m, label: monthShort(m) }))} />
+        ) : null}
+        <span className="flex-1" />
+        <span className="flex flex-wrap gap-3 text-[13px] text-ms-fg-3">
+          {(["PRESENT", "LATE", "ABSENT", "EXCUSED"] as const).map((k) => (
+            <span key={k} className="inline-flex items-center gap-1.5">
+              <Icon name={MARK[k].icon as IconName} size="sm" className={MARK[k].tone.split(" ").find((c) => c.startsWith("text-"))} />
+              {MARK[k].title}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="ms-freeze" size="sm" className="text-ms-frozen-fg" />
+            Frozen
+          </span>
+        </span>
+      </div>
+
+      {query.isError && !data ? (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-ms-ctl border border-ms-critical-line bg-ms-critical-soft px-3.5 py-3 text-[14px] text-ms-critical-fg">
+          <Icon name="alert" size="sm" />
+          <span className="flex-1">
+            <b>Could not load {shown ? `${monthName(shown)}’s` : "the"} register.</b> Marks already saved are safe.
+          </span>
+          <Button size="sm" icon="refresh" onClick={() => void query.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : query.isPending ? (
+        <p aria-busy className="text-[14px] text-ms-fg-3">
+          Loading the register…
+        </p>
+      ) : data && data.dates.length === 0 ? (
+        <div className="flex flex-col items-center gap-1.5 rounded-ms-ctl bg-ms-surface px-6 py-10 text-center">
+          <Icon name="calcheck" size="xl" className="text-ms-fg-3" />
+          <h3 className="text-ms-h text-ms-fg">No lessons in {monthName(data.month)}</h3>
+          <p className="text-[14px] text-ms-fg-2">No register was held and no lesson day is left in this month.</p>
+        </div>
+      ) : data && data.students.length === 0 ? (
+        <p className="text-[14px] text-ms-fg-2">No students in this group.</p>
+      ) : data ? (
+        <div className={cn("overflow-x-auto rounded-ms-ctl border border-ms-grid", query.isPlaceholderData && "opacity-60")}>
+          <table className="w-full text-[14px]" style={{ minWidth: 200 + data.dates.length * 46 }}>
+            <thead>
+              <tr>
+                <th scope="col" className="sticky left-0 z-[1] min-w-[170px] bg-ms-head px-3 text-left">
+                  Student
+                </th>
+                {data.dates.map((d) => (
+                  <th key={d.date} scope="col" className="px-1 text-center">
+                    <span
+                      className={cn(
+                        "whitespace-nowrap text-[12.5px] tabular-nums",
+                        d.date === data.today ? "rounded-ms-badge bg-ms-info-soft px-1.5 py-0.5 font-semibold text-ms-info-fg" : "font-medium text-ms-fg-3",
+                      )}
+                    >
+                      {shortDay(d.date)}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.students.map((s) => (
+                <tr key={s.id}>
+                  <td className="sticky left-0 z-[1] whitespace-nowrap bg-ms-card px-3 font-medium">
+                    <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={cn("hover:underline", s.left && "text-ms-fg-3")}>
+                      {s.name}
+                    </Link>
+                    {s.left ? <span className="ml-1.5 text-[12px] font-normal text-ms-fg-3">left</span> : null}
+                  </td>
+                  {data.dates.map((d) => {
+                    const c = cellOf(s, d.date, d.held, data.today);
+                    return (
+                      <td key={d.date} className="px-1 py-1.5 text-center">
+                        <span title={c.title} aria-label={c.title} role="img" className={cn("inline-grid h-7 w-[34px] place-items-center rounded-[8px]", c.tone)}>
+                          {c.icon ? <Icon name={c.icon} size="sm" /> : null}
+                        </span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}

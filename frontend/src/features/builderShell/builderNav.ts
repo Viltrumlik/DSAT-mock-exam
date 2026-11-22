@@ -2,8 +2,8 @@ import { flattenCategories, visibleByRole, type ConsoleCategory, type ConsoleCon
 
 /**
  * The builder's navigation (questions.mastersat.uz), in the ops console's frame since 2026-10-15
- * (owner: "question builderni opsga styledan ko'chirib builderni ham o'zgartiring") and in the v0.4 rail + panel
- * since PR 25 (design handoff, Shell board · Full map):
+ * (owner: "question builderni opsga styledan ko'chirib builderni ham o'zgartiring") and in the one-level light sidebar since
+ * 22 Nov 2026 (the lc-up structure canvas; each section a caption over its pages):
  *   - Home: Studio home;
  *   - Learning: the pedagogical / classroom content (Questions, Sets, Words);
  *   - Simulation: SAT simulation — past papers, practice tests, full mocks;
@@ -20,7 +20,7 @@ export const BUILDER_CATEGORIES: readonly ConsoleCategory[] = [
     icon: "home",
     letter: "H",
     home: true,
-    groups: [{ id: "home", caption: null, items: [{ href: "/builder", label: "Studio home", icon: "home", exact: true }] }],
+    groups: [{ id: "home", caption: null, items: [{ href: "/builder", label: "Studio home", icon: "home", exact: true, tone: "#2a68c0" }] }],
   },
   {
     id: "learning",
@@ -28,19 +28,19 @@ export const BUILDER_CATEGORIES: readonly ConsoleCategory[] = [
     icon: "ms-question",
     letter: "L",
     groups: [
-      { id: "questions", caption: "Questions", items: [{ href: "/builder/question-bank", label: "Question bank", icon: "ms-question" }] },
+      { id: "questions", caption: "Questions", items: [{ href: "/builder/question-bank", label: "Question bank", icon: "ms-question", tone: "#6366f1" }] },
       {
         id: "sets",
         caption: "Sets",
         items: [
-          { href: "/builder/sets", label: "Assessments", icon: "layers" },
-          { href: "/builder/midterms", label: "Midterms", icon: "ms-midterm" },
+          { href: "/builder/sets", label: "Assessments", icon: "layers", tone: "#8b5cf6" },
+          { href: "/builder/midterms", label: "Midterms", icon: "ms-midterm", tone: "#6366f1" },
           // The junior / foundation math topic lists an admin manages (owner, 2026-11-17).
-          { href: "/builder/topics", label: "Midterm topics", icon: "bookmark" },
-          { href: "/builder/categories", label: "Categories", icon: "tag" },
+          { href: "/builder/topics", label: "Midterm topics", icon: "bookmark", tone: "#0ea5e9" },
+          { href: "/builder/categories", label: "Categories", icon: "tag", tone: "#0891b2" },
         ],
       },
-      { id: "words", caption: "Words", items: [{ href: "/builder/vocabulary", label: "Vocabulary", icon: "ms-vocab" }] },
+      { id: "words", caption: "Words", items: [{ href: "/builder/vocabulary", label: "Vocabulary", icon: "ms-vocab", tone: "#ec4899" }] },
     ],
   },
   {
@@ -49,9 +49,9 @@ export const BUILDER_CATEGORIES: readonly ConsoleCategory[] = [
     icon: "ms-fullmock",
     letter: "S",
     groups: [
-      { id: "real", caption: "Real papers", items: [{ href: "/builder/pastpapers", label: "Past papers", icon: "ms-pastpaper" }] },
-      { id: "practice", caption: "Practice", items: [{ href: "/builder/practice-tests", label: "Practice tests", icon: "pencil" }] },
-      { id: "timed", caption: "Timed exams", items: [{ href: "/builder/full-mocks", label: "Full mocks", icon: "ms-fullmock" }] },
+      { id: "real", caption: "Real papers", items: [{ href: "/builder/pastpapers", label: "Past papers", icon: "ms-pastpaper", tone: "#0ea5e9" }] },
+      { id: "practice", caption: "Practice", items: [{ href: "/builder/practice-tests", label: "Practice tests", icon: "pencil", tone: "#8b5cf6" }] },
+      { id: "timed", caption: "Timed exams", items: [{ href: "/builder/full-mocks", label: "Full mocks", icon: "ms-fullmock", tone: "#6366f1" }] },
     ],
   },
   {
@@ -60,8 +60,8 @@ export const BUILDER_CATEGORIES: readonly ConsoleCategory[] = [
     icon: "archive",
     letter: "A",
     groups: [
-      { id: "retired", caption: "Retired", items: [{ href: "/builder/archived", label: "Archived", icon: "archive" }] },
-      { id: "legacy", caption: "Legacy", items: [{ href: "/builder/bank", label: "Old sets bank", icon: "library" }] },
+      { id: "retired", caption: "Retired", items: [{ href: "/builder/archived", label: "Archived", icon: "archive", tone: "#64748b" }] },
+      { id: "legacy", caption: "Legacy", items: [{ href: "/builder/bank", label: "Old sets bank", icon: "library", tone: "#64748b" }] },
     ],
   },
 ];
@@ -72,7 +72,7 @@ export const BUILDER_CONSOLE: ConsoleConfig = {
   root: "/builder",
   brand: "builder",
   crumb: "Builder",
-  collapseKey: "mastersat.builder.sidebar.collapsed",
+  collapseKey: "mastersat.builder.sidebar.v2.folded",
   categories: BUILDER_CATEGORIES,
   groups: BUILDER_NAV_GROUPS,
   // The builder has no admin scoping: AuthGuard `adminOnly` decides who is here at all.

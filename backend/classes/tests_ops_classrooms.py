@@ -119,7 +119,10 @@ class ClassroomChangeListTests(ClassroomFixture):
         self.assertEqual(
             set(rows[self.paired.pk]),
             {"id", "name", "subject", "level", "teacher", "students", "lesson_days", "lesson_time", "room_number",
-             "branch", "lcup", "is_active", "created_at"},
+             "branch", "lcup", "is_active", "created_at",
+             # The Groups board's (classes/ops_groups_list.py, tested there).
+             "teacher_first_name", "teacher_last_name", "lesson_hours", "monthly_price", "start_date", "trial",
+             "lessons"},
         )
 
     def test_the_other_facets(self):

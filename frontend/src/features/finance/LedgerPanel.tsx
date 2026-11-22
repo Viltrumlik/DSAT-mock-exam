@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+import { balanceVerdict, signedAmount } from "@/features/console/ui";
 import { SCHOOL_TIME_ZONE, toSchoolDateKey } from "@/lib/schoolTime";
 import { formatUzs } from "./financeApi";
 import { ENTER_LABEL, EntryForm, SeatPriceForm, VoidForm } from "./LedgerEntryForm";
@@ -13,6 +14,7 @@ import {
   Figure,
   LoadError,
   Loading,
+  SOM,
   TABLE,
   TD,
   TD_R,
@@ -48,8 +50,9 @@ const VIEWS: { value: View; label: string }[] = [
 
 const SEAT_STATE: Record<string, string> = { active: "Active", trial: "Trial", frozen: "Frozen", left: "Left" };
 
+/** A balance or an amount as a signed number only (owner, 22 Nov 2026): "−153 846", "3 000", "0". */
 function money(amount: number) {
-  return <span className={amount < 0 ? "text-ms-critical-fg" : undefined}>{formatUzs(amount)}</span>;
+  return <span className={amount < 0 ? "text-ms-critical-fg" : undefined}>{signedAmount(amount)}</span>;
 }
 
 function moment(iso: string | null): string {
@@ -101,9 +104,9 @@ function Differences({ comparison, onOpen }: { comparison: LedgerComparison | nu
           <thead>
             <tr>
               <th scope="col" className={TH}>Student</th>
-              <th scope="col" className={TH_R}>Ledger</th>
-              <th scope="col" className={TH_R}>lc-up</th>
-              <th scope="col" className={TH_R}>Difference</th>
+              <th scope="col" className={TH_R}>Ledger, {SOM}</th>
+              <th scope="col" className={TH_R}>lc-up, {SOM}</th>
+              <th scope="col" className={TH_R}>Difference, {SOM}</th>
             </tr>
           </thead>
           <tbody>
@@ -122,7 +125,7 @@ function Differences({ comparison, onOpen }: { comparison: LedgerComparison | nu
                 </td>
                 <td className={TD_R}>{money(row.ours)}</td>
                 <td className={TD_R}>{money(row.lcup)}</td>
-                <td className={TD_R}>{formatUzs(row.diff)}</td>
+                <td className={TD_R} data-verdict="attention">{signedAmount(row.diff)}</td>
               </tr>
             ))}
           </tbody>
@@ -161,7 +164,7 @@ function Students({ scope, onOpen }: { scope: LedgerScope; onOpen: (id: number) 
               <tr>
                 <th scope="col" className={TH}>Student</th>
                 <th scope="col" className={TH}>Phone</th>
-                <th scope="col" className={TH_R}>Balance</th>
+                <th scope="col" className={TH_R}>Balance, {SOM}</th>
               </tr>
             </thead>
             <tbody>
@@ -173,7 +176,7 @@ function Students({ scope, onOpen }: { scope: LedgerScope; onOpen: (id: number) 
                     </button>
                   </td>
                   <td className={TD}>{row.phone || "—"}</td>
-                  <td className={TD_R}>{money(row.balance)}</td>
+                  <td className={TD_R} data-verdict={balanceVerdict(row.balance)}>{money(row.balance)}</td>
                 </tr>
               ))}
               {shown.length ? null : (
@@ -244,7 +247,7 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
       <header>
         <h2 className="text-[15px] font-semibold text-ms-fg">{account.name}</h2>
         <p className="text-[13px] text-ms-fg-3">
-          {account.phone || "No phone"} · Balance {money(account.balance)}
+          {account.phone || "No phone"} · Balance {money(account.balance)} {SOM}
         </p>
         {account.seats.map((seat) => (
           <div key={seat.id} className="text-[13px] text-ms-fg-3">
@@ -284,8 +287,8 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
               <tr>
                 <th scope="col" className={TH}>Date</th>
                 <th scope="col" className={TH}>What</th>
-                <th scope="col" className={TH_R}>Amount</th>
-                <th scope="col" className={TH_R}>Balance after</th>
+                <th scope="col" className={TH_R}>Amount, {SOM}</th>
+                <th scope="col" className={TH_R}>Balance after, {SOM}</th>
                 <th scope="col" className={TH}>Details</th>
               </tr>
             </thead>
@@ -297,12 +300,12 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
                     <td className={TD}>{entry.label}</td>
                     <td className={TD_R}>
                       {entry.voided_at ? (
-                        <span className="text-ms-fg-3 line-through">{formatUzs(entry.amount)}</span>
+                        <span className="text-ms-fg-3 line-through">{signedAmount(entry.amount)}</span>
                       ) : (
                         money(entry.amount)
                       )}
                     </td>
-                    <td className={TD_R}>{money(entry.running)}</td>
+                    <td className={TD_R} data-verdict={balanceVerdict(entry.running)}>{money(entry.running)}</td>
                     <td className={cn(TD, "text-ms-fg-3")}>
                       {entry.voided_at ? voidedText(entry) : entryDetails(entry) || "—"}
                       {account.payments_open && entry.can_void && can(P.voidPayment) && voiding !== entry.id ? (
@@ -353,7 +356,7 @@ export function LedgerPanel() {
       {/* Seven figures leave a hole in two or four columns, so the last one takes the rest of its row. */}
       <dl
         className={cn(
-          "grid grid-cols-2 gap-px overflow-hidden rounded-[16px] bg-ms-line sm:grid-cols-4 xl:grid-cols-7",
+          "grid grid-cols-2 gap-px overflow-hidden rounded-ms-card border border-ms-border bg-ms-grid sm:grid-cols-4 xl:grid-cols-7",
           counts && "[&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1",
         )}
       >

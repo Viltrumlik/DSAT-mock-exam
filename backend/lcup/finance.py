@@ -282,7 +282,22 @@ def _month_range(month: str) -> tuple[date, date]:
     return first, nxt - timedelta(days=1)
 
 
-def debtors() -> list[dict]:
+def _group_row(group) -> dict:
+    """A debtor's group for the Debtors table's course tag: its name, its level (the class's own, when paired) and
+    the class to open."""
+    room = group.classroom if group.classroom_id else None
+    return {"name": _group_name(group), "level": (room.level or "") if room else "", "classroom_id": group.classroom_id}
+
+
+def _section(user) -> str:
+    role = str(user.role or "").strip().lower()  # the same reading as ``users.people_detail.section_of``
+    return "students" if role == C.ROLE_STUDENT else "public" if role == C.ROLE_PUBLIC_STUDENT else "staff"
+
+
+def debtors(*, with_parents: bool = False) -> list[dict]:
+    """Every lc-up student who owes, the biggest debt first. One row per lc-up student — the debtors are counted by
+    students, never families. ``phone`` is the student's own (lc-up's, else the account's); the parent's phone is
+    ``view_people``'s, as on the person page, so it is only filled ``with_parents``."""
     links = list(
         LcupStudentLink.objects.filter(deleted_in_lcup=False, balance__lt=0).select_related("user").order_by("balance")
     )
@@ -300,8 +315,14 @@ def debtors() -> list[dict]:
             "link_id": link.pk,
             "lcup_student_id": link.lcup_student_id,
             "name": link.name,
-            "user": {"id": user.pk, "name": f"{user.first_name} {user.last_name}".strip(), "username": user.username} if user else None,
+            "user": {
+                "id": user.pk, "name": f"{user.first_name} {user.last_name}".strip(), "username": user.username,
+                "section": _section(user),
+            } if user else None,
+            "phone": link.phone or (user.phone_number if user else "") or "",
+            "parent_phone": (user.parent_phone or "") if (with_parents and user) else "",
             "groups": [_group_name(g) for g in mine],
+            "group_rows": [_group_row(g) for g in mine],
             "teachers": sorted({n for g in mine for n in _teacher_names(g)}),
             "in_group": bool(mine),
             "debt": -_money(link.balance),
