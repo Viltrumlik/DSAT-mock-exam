@@ -409,6 +409,39 @@ class AdminFinanceViewTests(FinanceFixture):
         self.assertEqual((row["groups"], row["teachers"], row["frozen"], row["exempt"]), (["Junior G21 | Math | Vali"], ["Aliyev Vali"], False, False))
         self.assertEqual(row["user"]["username"], "aziz")
 
+    def test_a_debtor_row_carries_phones_the_group_level_and_where_to_open_them(self):
+        room = Classroom.objects.create(
+            name="Junior G21 · Math", subject="MATH", level="junior", lesson_days="ODD", created_by=self.admin,
+        )
+        LcupGroupLink.objects.filter(pk=self.group.pk).update(classroom=room)
+        LcupStudentLink.objects.filter(pk=self.aziz_link.pk).update(phone="+998901112233")
+        User.objects.filter(pk=self.aziz.pk).update(parent_phone="+998907778899")
+        (row,) = self.get("/api/lcup/finance/debtors/").json()
+        self.assertEqual(row["phone"], "+998901112233")
+        self.assertEqual(row["parent_phone"], "+998907778899")
+        self.assertEqual(row["group_rows"], [{"name": "Junior G21 · Math", "level": "junior", "classroom_id": room.pk}])
+        self.assertEqual(row["user"]["section"], "students")
+
+    def test_a_parents_phone_is_view_peoples_not_the_moneys(self):
+        from access.models import Permission, UserPermission
+
+        User.objects.filter(pk=self.aziz.pk).update(parent_phone="+998907778899")
+        money_only = User.objects.create_user(None, password=None, username="counter", role="accountant")
+        permission, _ = Permission.objects.get_or_create(codename="view_people", defaults={"name": "view_people"})
+        UserPermission.objects.create(user=money_only, permission=permission, granted=False)
+        (row,) = self.get("/api/lcup/finance/debtors/", money_only).json()
+        self.assertEqual((row["name"], row["parent_phone"]), ("Testov Aziz", ""))
+
+    def test_debtors_take_a_fixed_number_of_queries(self):
+        for n in range(5):
+            self.learner(200 + n, f"owes{n}", balance=-1000 * (n + 1))
+        api = self.api()
+        api.get("/api/lcup/finance/debtors/", HTTP_HOST="admin.mastersat.uz")  # warm the permission caches
+        with self.assertNumQueries(5):
+            rows = api.get("/api/lcup/finance/debtors/", HTTP_HOST="admin.mastersat.uz").json()
+        self.assertEqual(len(rows), 6)
+        self.assertEqual(rows[0]["debt"], 150000)  # the biggest debt first
+
     def test_the_months_payments(self):
         rows = self.get("/api/lcup/finance/payments/?month=2026-09").json()
         self.assertEqual([(r["id"], r["student"], r["amount"]) for r in rows], [(4, "Testov Aziz", 500000)])

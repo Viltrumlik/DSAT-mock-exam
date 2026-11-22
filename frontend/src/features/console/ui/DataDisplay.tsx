@@ -31,6 +31,13 @@ const FG: Record<Tone, string> = {
   frozen: "text-ms-frozen-fg",
   neutral: "text-ms-fg",
 };
+/** The hue a verdict tile is tinted with. */
+const TILE_HUE: Record<Exclude<Tone, "neutral" | "info">, string> = {
+  positive: "var(--ms-positive)",
+  attention: "var(--ms-attention)",
+  critical: "var(--ms-critical)",
+  frozen: "var(--ms-frozen)",
+};
 
 // ─── Stat tile ───────────────────────────────────────────────────────────────
 
@@ -110,18 +117,25 @@ export function StatTile({
       )}
     </>
   );
+  // v0.7 "calm vivid": an outlined tile with a 1 px edge; a verdict tints the whole tile softly (6 % fill, 22 % edge).
+  const hue = tone && tone !== "neutral" && tone !== "info" ? TILE_HUE[tone] : null;
+  const style = {
+    animationDelay: `${delay}ms`,
+    ...(hue && state === "ready"
+      ? { backgroundColor: `color-mix(in srgb, ${hue} 6%, var(--ms-card))`, borderColor: `color-mix(in srgb, ${hue} 24%, var(--ms-card))` }
+      : null),
+  };
   const cls = cn(
-    "animate-ms-card-in flex min-w-0 flex-col gap-1.5 rounded-[16px] p-4",
-    frozen ? "bg-ms-frozen-soft" : "bg-ms-surface",
+    "animate-ms-card-in flex min-w-0 flex-col gap-2 rounded-ms-card border border-ms-border bg-ms-card px-5 py-[18px]",
     href && state !== "error" && "ms-hover-lift",
     className,
   );
   return href && state !== "error" ? (
-    <Link href={href} className={cls} style={{ animationDelay: `${delay}ms` }}>
+    <Link href={href} className={cls} style={style} data-tone={tone}>
       {body}
     </Link>
   ) : (
-    <div className={cls} style={{ animationDelay: `${delay}ms` }}>
+    <div className={cls} style={style} data-tone={tone}>
       {body}
     </div>
   );

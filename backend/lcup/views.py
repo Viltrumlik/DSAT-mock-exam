@@ -397,7 +397,10 @@ class FinanceDebtorsView(APIView):
     permission_classes = [Requires(acc_const.PERM_VIEW_MONEY)]
 
     def get(self, request):
-        return Response(finance.debtors())
+        from access.services import authorize
+
+        # A parent's phone is `view_people`'s, as on the person page; the money alone does not bring it.
+        return Response(finance.debtors(with_parents=authorize(request.user, acc_const.PERM_VIEW_PEOPLE)))
 
 
 class FinancePaymentsView(APIView):

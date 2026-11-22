@@ -31,7 +31,7 @@ User = get_user_model()
 
 #: Modules where every view is a CRM endpoint.
 CRM_MODULES = frozenset({
-    "billing.views", "lcup.views", "sms.views", "classes.views_seats", "classes.views_ops_classrooms",
+    "billing.views", "lcup.views", "sms.views", "classes.views_seats", "classes.views_ops_classrooms", "classes.views_ops_archive",
 })
 #: In those modules, what a learner uses on their own account.
 LEARNER_ENDPOINTS = frozenset({

@@ -108,6 +108,7 @@ from .views_ops_classrooms import (
     LessonsTodayView,
 )
 from .views_seats import SeatActionView, SeatAddView, SeatNewStudentView
+from .views_ops_archive import ArchiveGroupsView, ArchiveStudentsView
 from .views_teacher import TeacherTodayView
 from .views_media import AssignmentVideoUploadUrlView
 from .views_roadmap import RoadmapReadingView, StudentPeerProgressView, StudentProgressView, StudentRoadmapView
@@ -155,6 +156,9 @@ urlpatterns = [
     path("admin/classrooms/", ClassroomChangeListView.as_view(), name="ops-classrooms"),
     # The ops Today board's "Lessons today": every active class that meets on a day, and its register.
     path("admin/lessons/today/", LessonsTodayView.as_view(), name="ops-lessons-today"),
+    # The /ops Archive: students who left a group, and archived groups. Read-only.
+    path("admin/archive/students/", ArchiveStudentsView.as_view(), name="ops-archive-students"),
+    path("admin/archive/groups/", ArchiveGroupsView.as_view(), name="ops-archive-groups"),
     path("admin/classrooms/<int:pk>/", ClassroomDetailView.as_view(), name="ops-classroom"),
     path("admin/classrooms/<int:pk>/seats/", SeatAddView.as_view(), name="ops-classroom-seat-add"),
     path("admin/classrooms/<int:pk>/seats/new-student/", SeatNewStudentView.as_view(), name="ops-classroom-seat-new"),

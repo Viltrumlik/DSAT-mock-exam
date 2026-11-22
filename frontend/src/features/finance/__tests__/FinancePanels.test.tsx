@@ -1,7 +1,7 @@
 /**
- * /ops/finance: the overview's totals and groups, the debtor list with its filters and the
- * freeze exemption, a month's payments with refunds marked, and a failed read that must not
- * look like "nothing here".
+ * /ops/finance: the overview's totals and groups, a month's payments with refunds marked, and a failed read that
+ * must not look like "nothing here". Amounts are signed numbers only — "−150 000", "3 000" — with "so’m" in the
+ * column's head (owner, 22 Nov 2026). The Debtors tab has its own file (DebtorsPanel.test.tsx).
  */
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -26,7 +26,7 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-const { DebtorsPanel, FinanceOverviewPanel, PaymentsPanel, debtFinding, methodFinding } = await import("../FinancePanels");
+const { FinanceOverviewPanel, PaymentsPanel, debtFinding, methodFinding } = await import("../FinancePanels");
 
 let host: HTMLElement;
 let root: Root;
@@ -73,19 +73,6 @@ async function mount(ui: ReactElement, routes: Record<string, unknown>) {
   await flush();
 }
 
-function button(label: string): HTMLButtonElement {
-  const found = [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === label);
-  if (!found) throw new Error(`no button "${label}"`);
-  return found;
-}
-
-async function click(el: HTMLElement) {
-  await act(async () => {
-    el.click();
-  });
-  await flush();
-}
-
 const SUMMARY = {
   month: "2026-10",
   total_debt: 2_500_000,
@@ -110,39 +97,27 @@ const SUMMARY = {
   freeze: { enabled: true, day: 6 },
 };
 
-function debtor(overrides: object) {
-  return {
-    link_id: 1,
-    lcup_student_id: 101,
-    name: "Aziz Tursunov",
-    user: { id: 9, name: "Aziz Tursunov", username: "aziz" },
-    groups: ["Junior G21 | Math"],
-    teachers: ["Vali Karimov"],
-    in_group: true,
-    debt: 600_000,
-    last_payment_on: "2026-09-04",
-    frozen: false,
-    exempt: false,
-    ...overrides,
-  };
-}
-
 describe("finance overview", () => {
   it("shows the totals, the freeze, the methods and a group row", async () => {
     await mount(<FinanceOverviewPanel month="2026-10" />, { "/lcup/finance/summary/": SUMMARY });
     expect(get).toHaveBeenCalledWith("/lcup/finance/summary/", { params: { month: "2026-10" } });
     const text = host.textContent ?? "";
     expect(text).toContain("Debt freeze: on — from day 6 of each month");
-    expect(text).toContain("Total debt");
-    expect(text).toMatch(/2,500,000\s*UZS/); // a tile: the number, its unit beside it
-    expect(text).toMatch(/4,200,000\s*UZS/); // a tile: the number, its unit beside it
-    expect(text).toMatch(/300,000\s*UZS/); // a tile: the number, its unit beside it
+    expect(text).toContain("Owed in total");
+    expect(text).toMatch(/2 500 000\s*so’m/); // a tile: the number, its unit beside it
+    expect(text).toMatch(/4 200 000\s*so’m/);
+    expect(text).toMatch(/300 000\s*so’m/);
+    // A total is not a balance: no "Paid" word beside it.
+    expect(text).not.toContain("Paid in");
     expect(text).toContain("Cash");
     expect(text).toContain("Card");
     const row = [...host.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes("Junior G21 | Math"));
     expect(row?.textContent).toContain("Vali Karimov");
-    expect(row?.textContent).toContain("600,000 UZS");
-    expect(row?.textContent).toContain("3,900,000 UZS");
+    expect(row?.textContent).toContain("600 000");
+    expect(row?.textContent).toContain("3 900 000");
+    // What its debtors owe is their balance: below zero, tinted as a verdict.
+    const owed = [...(row?.querySelectorAll("td") ?? [])].find((td) => td.textContent === "−1 200 000");
+    expect(owed?.getAttribute("data-verdict")).toBe("critical");
   });
 
   it("says when the freeze is off", async () => {
@@ -156,125 +131,12 @@ describe("finance overview", () => {
 describe("the overview's findings", () => {
   it("names the group that owes the most, and the method most money came by", () => {
     expect(debtFinding([{ label: "G1", value: 300_000 }, { label: "G2", value: 900_000 }, { label: "G3", value: 0 }])).toBe(
-      "G2 owes the most: 900,000 UZS, 75% of the debt.",
+      "G2 is owed the most: 900 000 so’m, 75% of the whole.",
     );
-    expect(debtFinding([{ label: "G1", value: 300_000 }])).toBe("Only G1 owes: 300,000 UZS.");
-    expect(debtFinding([{ label: "G1", value: 0 }])).toBe("No group owes anything.");
+    expect(debtFinding([{ label: "G1", value: 300_000 }])).toBe("Only G1 is owed: 300 000 so’m.");
+    expect(debtFinding([{ label: "G1", value: 0 }])).toBe("No group is owed anything.");
     expect(methodFinding([{ label: "Cash", value: 600 }, { label: "Card", value: 200 }])).toBe("Cash brought 75% of the month's payments.");
     expect(methodFinding([])).toBe("");
-  });
-});
-
-describe("debtors", () => {
-  const DEBTORS = [
-    debtor({ link_id: 1, name: "Aziz Tursunov", debt: 900_000 }),
-    debtor({
-      link_id: 2,
-      lcup_student_id: 102,
-      name: "Malika Saidova",
-      user: null,
-      groups: [],
-      teachers: [],
-      in_group: false,
-      debt: 400_000,
-      last_payment_on: null,
-    }),
-  ];
-
-  it("hides a student not in a group until the filter is turned off", async () => {
-    await mount(<DebtorsPanel />, { "/lcup/finance/debtors/": DEBTORS });
-    expect(host.textContent).toContain("Aziz Tursunov");
-    expect(host.textContent).not.toContain("Malika Saidova");
-    expect(host.textContent).toContain("1 student · 900,000 UZS owed");
-
-    const only = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    expect(only?.checked).toBe(true);
-    await click(only!);
-
-    expect(host.textContent).toContain("Malika Saidova");
-    expect(host.textContent).toContain("Not in a group");
-    expect(host.textContent).toContain("No account");
-    expect(host.textContent).toContain("2 students · 1,300,000 UZS owed");
-  });
-
-  it("offers to remind every debtor by SMS, through the composer's review step", async () => {
-    await mount(<DebtorsPanel />, { "/lcup/finance/debtors/": DEBTORS });
-    // All of them, not just the filtered rows: the composer's Debtors audience is every learner who owes.
-    const remind = [...host.querySelectorAll("a")].find((a) => a.textContent === "Remind all 2");
-    expect(remind?.getAttribute("href")).toBe("/ops/sms/campaigns/new?audience=debtors");
-  });
-
-  it("asks first, then exempts the student from the freeze", async () => {
-    post.mockResolvedValue({ data: { link_id: 7, exempt: true } });
-    await mount(<DebtorsPanel />, {
-      "/lcup/finance/debtors/": [debtor({ link_id: 7, name: "Bobur Aliev", frozen: true })],
-    });
-    expect(host.textContent).toContain("Frozen");
-
-    await click(button("Exempt from freeze"));
-    expect(post).not.toHaveBeenCalled();
-    expect(host.textContent).toContain("They are frozen now and will be unfrozen right away.");
-
-    await click(button("Yes, exempt"));
-    expect(post).toHaveBeenCalledWith("/lcup/finance/exempt/7/", { exempt: true });
-  });
-
-  it("removes an exemption", async () => {
-    post.mockResolvedValue({ data: { link_id: 3, exempt: false } });
-    await mount(<DebtorsPanel />, {
-      "/lcup/finance/debtors/": [debtor({ link_id: 3, exempt: true })],
-    });
-    expect(host.textContent).toContain("Exempt");
-    await click(button("Remove exemption"));
-    expect(post).toHaveBeenCalledWith("/lcup/finance/exempt/3/", { exempt: false });
-  });
-
-  it("narrows the list from the filter panel, counting each choice against the other filters", async () => {
-    await mount(<DebtorsPanel />, {
-      "/lcup/finance/debtors/": [
-        debtor({ link_id: 1, name: "Aziz Tursunov", debt: 900_000 }),
-        debtor({
-          link_id: 2,
-          lcup_student_id: 102,
-          name: "Bobur Aliev",
-          user: { id: 10, name: "Bobur Aliev", username: "bobur" },
-          groups: ["Senior G5 | English"],
-          teachers: ["Dilnoza Rahimova"],
-          debt: 300_000,
-        }),
-      ],
-    });
-    const panel = host.querySelector('aside[aria-label="Filters"]')!;
-    const choice = (label: string) =>
-      [...panel.querySelectorAll("button")].find((b) => b.textContent?.startsWith(label)) as HTMLButtonElement;
-
-    expect(choice("Senior G5 | English").textContent).toBe("Senior G5 | English1");
-    await click(choice("Senior G5 | English"));
-
-    expect(choice("Senior G5 | English").getAttribute("aria-pressed")).toBe("true");
-    expect(host.textContent).toContain("1 student · 300,000 UZS owed");
-    const rows = [...host.querySelectorAll("tbody tr")].map((tr) => tr.textContent ?? "");
-    expect(rows.some((r) => r.includes("Bobur Aliev"))).toBe(true);
-    expect(rows.some((r) => r.includes("Aziz Tursunov"))).toBe(false);
-    // The teacher facet now counts within the chosen group.
-    expect(choice("Vali Karimov").textContent).toBe("Vali Karimov0");
-    expect(choice("Dilnoza Rahimova").textContent).toBe("Dilnoza Rahimova1");
-
-    await click(button("Clear all filters"));
-    expect(host.textContent).toContain("2 students · 1,200,000 UZS owed");
-  });
-
-  it("shows an error, not the empty state, when the list does not load", async () => {
-    await mount(<DebtorsPanel />, { "/lcup/finance/debtors/": new Error("boom") });
-    expect(host.textContent).toContain("This did not load");
-    expect(host.textContent).toContain("Retry");
-    expect(host.textContent).not.toContain("Nobody owes money right now");
-  });
-
-  it("is calm when nobody owes anything", async () => {
-    await mount(<DebtorsPanel />, { "/lcup/finance/debtors/": [] });
-    expect(host.textContent).toContain("Nobody owes money right now");
-    expect(host.textContent).not.toContain("This did not load");
   });
 });
 
@@ -291,16 +153,16 @@ describe("payments", () => {
 
     const refund = [...host.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes("Malika Saidova"));
     expect(refund?.textContent).toContain("Refund");
-    expect(refund?.textContent).toContain("-150,000 UZS");
+    expect(refund?.textContent).toContain("−150 000");
     expect(refund?.textContent).toContain("Bank transfer");
 
     const unknownMethod = [...host.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes("Bobur Aliev"));
     expect(unknownMethod?.textContent).toContain("Payme");
 
     const text = host.textContent ?? "";
-    expect(text).toContain("Payments 650,000 UZS");
-    expect(text).toContain("Refunds -150,000 UZS");
-    expect(text).toContain("Net 500,000 UZS");
+    expect(text).toContain("Payments 650 000");
+    expect(text).toContain("Refunds −150 000");
+    expect(text).toContain("Net 500 000");
   });
 
   it("shows an error, not the empty state, when the month does not load", async () => {
