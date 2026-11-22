@@ -12,10 +12,10 @@ export function openShortcuts(): void {
 }
 
 const ROWS: { keys: string[]; what: string }[] = [
-  { keys: ["⌘", "K"], what: "Search people, classes, questions and pages" },
+  { keys: ["⌘", "K"], what: "Jump to a section or a page" },
   { keys: ["/"], what: "Search this list" },
-  { keys: ["["], what: "Collapse or pin the panel" },
-  { keys: ["G", "…"], what: "Jump to a category: G, then the letter the panel shows" },
+  { keys: ["["], what: "Fold the sidebar to icons, or open it again" },
+  { keys: ["G", "…"], what: "Jump to a section: G, then T Today, D Daily work, E Teaching, C Centre, O Content, S People & system" },
   { keys: ["?"], what: "This list" },
   { keys: ["Esc"], what: "Close what is open" },
 ];

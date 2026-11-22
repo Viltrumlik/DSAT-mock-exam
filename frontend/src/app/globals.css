@@ -2134,7 +2134,8 @@ mark.ts-annot {
   --ms-row-hover: #f5f8ff;
   --ms-chip-on-bg: #2a68c0;
   --ms-chip-on-fg: #ffffff;
-  --ms-sh-1: 0 1px 2px rgba(16,24,40,.05);
+  /* A card's 1 px edge (most console cards draw it with this ring, not a border) and the faintest lift. */
+  --ms-sh-1: 0 0 0 1px var(--ms-border), 0 1px 2px rgba(16,24,40,.05);
   --ms-r-btn: 8px;
   --ms-r-ctl: 8px;
   --ms-r-chip: 7px;
@@ -2160,8 +2161,12 @@ mark.ts-annot {
   --ms-row-hover: #1c2433;
   --ms-chip-on-bg: #3170d6;
   --ms-chip-on-fg: #ffffff;
-  --ms-sh-1: none;
+  --ms-sh-1: 0 0 0 1px var(--ms-border);
 }
+/* A card that already has a border keeps one edge, not two. */
+[data-ms-temp="admin"] .border.shadow-ms-1 { box-shadow: 0 1px 2px rgba(16,24,40,.05); }
+.dark[data-ms-temp="admin"] .border.shadow-ms-1,
+.dark [data-ms-temp="admin"] .border.shadow-ms-1 { box-shadow: none; }
 
 /*
   Every data table in the admin console is ruled like Excel / lc-up (owner 22 Nov 2026: "jadvallardek ajralib
@@ -2187,7 +2192,8 @@ mark.ts-annot {
   line-height: 1.2;
   border-bottom: 2px solid var(--ms-border-strong);
 }
-[data-ms-temp="admin"] table:not([data-plain]) > tbody > tr > td {
+/* A full-width row (a day's heading, an empty state) keeps its own height. */
+[data-ms-temp="admin"] table:not([data-plain]) > tbody > tr > td:not([colspan]) {
   height: var(--ms-h-row);
   line-height: 1.45;
 }

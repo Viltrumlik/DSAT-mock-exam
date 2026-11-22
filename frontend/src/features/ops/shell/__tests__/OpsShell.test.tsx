@@ -295,7 +295,7 @@ describe("the top bar", () => {
 
   it("offers + New with what this person may create, and the timetable", () => {
     render("/ops/students", ADMIN);
-    const newButton = [...container.querySelectorAll("header button")].find((b) => b.textContent?.trim() === "New")!;
+    const newButton = [...container.querySelectorAll<HTMLButtonElement>("header button")].find((b) => b.textContent?.trim() === "New")!;
     act(() => newButton.click());
     const links = [...document.body.querySelectorAll('[role="menu"] a')].map((a) => [a.textContent, a.getAttribute("href")]);
     expect(links).toEqual([
