@@ -41,10 +41,13 @@ export function freezeTile(
   today: number,
 ): { value: string; tone: Tone; sub: string } {
   const day = lcup.freeze_day;
-  if (lcup.frozen_for_debt) return { value: "Frozen", tone: "warning", sub: `unpaid after day ${day}` };
+  const perLesson = lcup.rule === "lesson";
+  if (lcup.frozen_for_debt)
+    return { value: "Frozen", tone: "warning", sub: perLesson ? "balance below zero" : `unpaid after day ${day}` };
   if (lcup.exempt) return { value: "Exempt", tone: "info", sub: "never frozen for debt" };
   if (!lcup.freeze_on) return { value: "Switched off", tone: "neutral", sub: "no one is frozen for debt" };
   if (!owes) return { value: "Not frozen", tone: "success", sub: "nothing owed" };
+  if (perLesson) return { value: "Freezes next check", tone: "danger", sub: "balance below zero" };
   if (today >= day) return { value: "Freezes next sync", tone: "danger", sub: `still owing after day ${day}` };
   return { value: `Freezes on day ${day}`, tone: "warning", sub: "if still unpaid by then" };
 }

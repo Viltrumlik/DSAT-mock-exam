@@ -42,7 +42,8 @@ export type PersonPayment = FinancePayment;
 export type PersonLcup = MyFinance & {
   /** `LcupStudentLink.status`: "confirmed" | "auto" | "created" | "needs_review" | … */
   status: string;
-  lcup_student_id: number;
+  /** Null once the ledger is the master, for a student lc-up never knew. */
+  lcup_student_id: number | null;
   /** Never frozen for debt (`debt_freeze_exempt_at` is set). */
   exempt: boolean;
   /** `LCUP_DEBT_FREEZE_ENABLED`: whether the debt freeze runs at all. */

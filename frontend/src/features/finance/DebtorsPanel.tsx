@@ -163,13 +163,18 @@ function Groups({ d }: { d: Debtor }) {
   );
 }
 
+/** A row's key: lc-up's link, else (someone lc-up never knew) their account. */
+function debtorKey(d: Debtor): string {
+  return d.link_id != null ? `l${d.link_id}` : `u${d.user?.id ?? d.name}`;
+}
+
 /** What a row's ⋮ offers: the student's page, an SMS to them, the freeze exemption — each only to who may. */
 function rowMenu(d: Debtor, can: (...codes: string[]) => boolean, onExempt: () => void, onUnexempt: () => void): MenuItem[] {
   const items: MenuItem[] = [];
   const href = personHref(d);
   if (href) items.push({ label: "Open student page", icon: "users", href });
   if (d.user && can(P.sendSms)) items.push({ label: "SMS…", icon: "msg", href: `${NEW_CAMPAIGN_PATH}?student=${d.user.id}` });
-  if (can(P.debtFreeze)) {
+  if (can(P.debtFreeze) && d.link_id != null) {
     if (items.length) items.push("separator");
     items.push(
       d.exempt
@@ -235,7 +240,9 @@ export function DebtorsPanel() {
   const shown = rows.slice((at - 1) * pageSize, at * pageSize);
   const anyFilter = Object.values(filters).some(Boolean);
 
-  const unexempt = (d: Debtor) => setExempt.mutate({ linkId: d.link_id, exempt: false });
+  const unexempt = (d: Debtor) => {
+    if (d.link_id != null) setExempt.mutate({ linkId: d.link_id, exempt: false });
+  };
 
   return (
     <div className="flex flex-col gap-7">
@@ -360,7 +367,7 @@ export function DebtorsPanel() {
           {/* Phone (PhoneDebtors board): a card per student; the table needs the width. */}
           <ul aria-label="Students who owe" className="flex flex-col gap-2 md:hidden">
             {shown.map((d) => (
-              <DebtorCard key={d.link_id} d={d} menu={rowMenu(d, can, () => setExempting(d), () => unexempt(d))} busy={setExempt.isPending} />
+              <DebtorCard key={debtorKey(d)} d={d} menu={rowMenu(d, can, () => setExempting(d), () => unexempt(d))} busy={setExempt.isPending} />
             ))}
           </ul>
 
@@ -388,7 +395,7 @@ export function DebtorsPanel() {
                     const href = personHref(d);
                     const menu = rowMenu(d, can, () => setExempting(d), () => unexempt(d));
                     return (
-                      <tr key={d.link_id} className={TR}>
+                      <tr key={debtorKey(d)} className={TR}>
                         <td className={cn(TD_R, "text-ms-fg-3")}>{(at - 1) * pageSize + i + 1}</td>
                         <td className={TD}>
                           {href ? (
@@ -490,7 +497,7 @@ export function DebtorsPanel() {
         tone="frozen"
         confirmLabel="Yes, exempt"
         onConfirm={async () => {
-          if (!exempting) return;
+          if (!exempting || exempting.link_id == null) return;
           try {
             await setExempt.mutateAsync({ linkId: exempting.link_id, exempt: true });
           } catch (e) {

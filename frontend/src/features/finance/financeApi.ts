@@ -25,8 +25,14 @@ export interface MyFinance {
   debt_notice: boolean;
   /** From this day of each month an unpaid balance freezes the account. */
   freeze_day: number;
+  /** Once the ledger is the master: "lesson" = paid per lesson, frozen the moment the balance drops below zero. */
+  rule?: "month" | "lesson";
+  /** Per lesson: what one lesson of their (first) group costs. */
+  lesson_price?: number | null;
+  /** Per lesson: the least one top-up may be. */
+  min_topup?: number;
   monthly_cost: number;
-  groups: { name: string; monthly_cost: number }[];
+  groups: { name: string; monthly_cost: number; lesson_price?: number }[];
   payments: FinancePayment[];
 }
 
@@ -53,7 +59,7 @@ export interface FinanceSummary {
   other: number;
   by_method: Record<string, number>;
   by_group: FinanceGroupRow[];
-  freeze: { enabled: boolean; day: number };
+  freeze: { enabled: boolean; day: number; rule?: "month" | "lesson" };
 }
 
 /** A debtor's group, for its course tag: the class's own level when it is paired, and the class to open. */
@@ -65,7 +71,8 @@ export interface DebtorGroup {
 
 /** One lc-up student who owes — one row per student, never per family. */
 export interface Debtor {
-  link_id: number;
+  /** Null for someone lc-up never knew (after the cutover): no freeze exemption can be set for them here. */
+  link_id: number | null;
   lcup_student_id: number;
   name: string;
   /** `section` is where their page lives (`/ops/<section>/<id>`). */
