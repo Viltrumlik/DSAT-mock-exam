@@ -9,6 +9,8 @@ It knows seats, spans and rows, and nothing about where a change came from: duri
 * Every row has a key and a key has one live row, so running any of this twice writes nothing twice.
 * A person enters payments, refunds and adjustments with ``enter_money`` and takes them back with
   ``void_entered``. What the ledger wrote itself is never voided by hand.
+* A span billed per lesson (``SpanRule.LESSON``, owner 2026-11-22) writes a new student's first month in full,
+  then one row per lesson day; below zero the student is frozen (``apply_debt_freeze``). See ``_bill_lessons``.
 """
 
 import logging
@@ -16,11 +18,24 @@ from collections.abc import Iterator
 from datetime import date
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q, Sum
+from django.db.models import F as models_F, Q, Sum
 from django.utils import timezone
 
-from .lessons import month_amount
-from .models import BillingState, Entry, EntryKind, PaymentMethod, Seat, SeatPriceChange, SeatState, Span
+from . import conf
+from .lessons import add_one_month, lesson_days, month_amount, seat_lesson_price
+from .models import (
+    Account,
+    BillingRun,
+    BillingState,
+    Entry,
+    EntryKind,
+    PaymentMethod,
+    Seat,
+    SeatPriceChange,
+    SeatState,
+    Span,
+    SpanRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +43,15 @@ logger = logging.getLogger(__name__)
 MANUAL_KEY = "manual:"
 #: Stops a slip of the hand; a year of two groups is far below it.
 MAX_AMOUNT = 50_000_000
+#: A new student's first month (one per student) and each lesson of a span billed per lesson.
+FIRST_KEY = "first:"
+LESSON_KEY = "lesson:"
+#: The freeze's own words in the people's history (``users.RoleChange``).
+REASON_DEBT = "billing_debt"
+SOURCE_BILLING = "billing"
+#: More freezes than this in one tick wait for a person (``own_tick(allow_mass=True)``): a wrong rule or price
+#: must not lock out the whole centre at once.
+MAX_FREEZES_PER_TICK = 40
 
 
 class EntryRefused(ValueError):
@@ -131,6 +155,8 @@ def enter_money(account, kind, amount, day, *, request_id, today, method="", not
         _check_amount(amount)
         if method not in PaymentMethod.values:
             raise EntryRefused("Choose a payment method.")
+        if kind == EntryKind.PAYMENT and conf.lesson_billing():
+            _check_least_payment(account, amount)
         signed = amount if kind == EntryKind.PAYMENT else -amount
         seat = payment_seat(account, seat)
     else:
@@ -139,6 +165,48 @@ def enter_money(account, kind, amount, day, *, request_id, today, method="", not
         raise EntryRefused("That group is not this student's.")
     row = post(account, kind, signed, day, key, seat=seat, method=method, note=note, by=by)
     return row or Entry.objects.get(key=key, voided_at__isnull=True)
+
+
+def is_new_student(account) -> bool:
+    """Someone who first came once students pay per lesson: no opening balance carried from lc-up and no seat ever
+    billed by the month. Only they pay a first month in full (owner, 2026-11-22: "birinchi kelgan o'quvchi")."""
+    if account.pk is None:
+        return True
+    if account.entries.filter(voided_at__isnull=True, kind=EntryKind.OPENING).exists():
+        return False
+    return not Span.objects.filter(seat__account=account, rule=SpanRule.MONTH).exists()
+
+
+def first_month_fee(account) -> int | None:
+    """What a new student's first month costs: the row once written, else the group price of their seat; None for
+    someone who is not new."""
+    if not is_new_student(account):
+        return None
+    row = Entry.objects.filter(key=f"{FIRST_KEY}{account.pk}", voided_at__isnull=True).first()
+    if row is not None:
+        return -row.amount
+    prices = [seat.charge_price for seat in account.seats.all() if seat.state != SeatState.LEFT]
+    return max(prices) if prices else None
+
+
+def least_payment(account) -> int:
+    """The least one payment may be while students pay per lesson: a new student's first payment is the first month
+    in full ("birinchi to'lovda to'liq 500 ming"); every other top-up at least ``conf.min_topup()``."""
+    least = conf.min_topup()
+    if account.pk is None or not account.entries.filter(voided_at__isnull=True, kind=EntryKind.PAYMENT).exists():
+        fee = first_month_fee(account)
+        if fee:
+            least = max(least, fee)
+    return least
+
+
+def _check_least_payment(account, amount: int) -> None:
+    least = least_payment(account)
+    if amount >= least:
+        return
+    if least > conf.min_topup():
+        raise EntryRefused(f"A new student's first payment is the whole first month: at least {least:,} so'm.")
+    raise EntryRefused(f"A top-up is at least {least:,} so'm.")
 
 
 @transaction.atomic
@@ -166,7 +234,10 @@ def _give_back(span, month: str, charged: int, whole: int) -> None:
 
 
 def bill_span(span, today: date) -> None:
-    """Write whatever of this span's rows is missing, up to today's month."""
+    """Write whatever of this span's rows is missing, up to today's month (a lesson span: up to today)."""
+    if span.rule == SpanRule.LESSON:
+        _bill_lessons(span, today)
+        return
     seat = span.seat
     first = month_of(span.start)
     end_month = max(first, month_of(span.end)) if span.end else None
@@ -184,6 +255,62 @@ def bill_span(span, today: date) -> None:
             charged = -row.amount if row else 0
         if month == end_month:
             _give_back(span, month, charged, whole)
+
+
+def _first_paid_span(account):
+    """A new student's first paid span, the one whose first month is paid in full; None for anyone else."""
+    if not is_new_student(account):
+        return None
+    spans = Span.objects.filter(seat__account=account, rule=SpanRule.LESSON).exclude(end__lt=models_F("start"))
+    return spans.order_by("start", "id").first()
+
+
+def _first_month(span, today: date) -> tuple[date, date] | None:
+    """The days the new student's first month covers on this span's seat, [from, until); the row is written by the
+    student's first paid span. None when the seat has no first month."""
+    seat, account = span.seat, span.seat.account
+    key = f"{FIRST_KEY}{account.pk}"
+    row = Entry.objects.filter(key=key, voided_at__isnull=True).first()
+    if row is None:
+        first = _first_paid_span(account)
+        if first is None or first.pk != span.pk or span.start > today:
+            return None
+        post(
+            account, EntryKind.CHARGE, -seat.charge_price, span.start, key, span=span, seat=seat,
+            month=month_of(span.start), note=f"First month, until {add_one_month(span.start).isoformat()}",
+        )
+        row = Entry.objects.filter(key=key, voided_at__isnull=True).first()
+        if row is None:
+            return None
+    if row.seat_id != seat.pk:
+        return None
+    return row.day, add_one_month(row.day)
+
+
+def _bill_lessons(span, today: date) -> None:
+    """A span paid per lesson (owner, 2026-11-22): a new student's first month in full on its first day, then one
+    lesson's price on each lesson day of the group, written on that day. Lessons after the span's end, or not yet
+    come, are not written; an absence changes nothing, as with the monthly rule."""
+    seat = span.seat
+    if span.start > today or (span.end is not None and span.end < span.start):
+        return  # not begun yet, or called off before it began
+    covered = _first_month(span, today)
+    price = seat_lesson_price(conf.lesson_price(), seat.price, seat.personal_price)
+    if not price:
+        return  # a grant
+    last = min(span.end, today) if span.end else today
+    have = set(
+        span.entries.filter(voided_at__isnull=True, key__startswith=LESSON_KEY).values_list("key", flat=True)
+    )
+    for day in lesson_days(seat.days, span.start, last):
+        if covered and covered[0] <= day < covered[1]:
+            continue
+        key = f"{LESSON_KEY}{span.pk}:{day.isoformat()}"
+        if key not in have:
+            post(
+                seat.account, EntryKind.CHARGE, -price, day, key, span=span, seat=seat, month=month_of(day),
+                note=f"Lesson {day.isoformat()}",
+            )
 
 
 def bill_open_spans(today: date) -> list[str]:
@@ -216,15 +343,17 @@ def set_personal_price(seat, price: int | None, *, reason: str, by, today: date)
     seat.personal_price = price
     seat.save(update_fields=["personal_price"])
     month = month_of(today)
-    for span in seat.spans.filter(end__isnull=True):
+    # A lesson already written keeps its price; the next one is at the new price. A month is written again.
+    for span in seat.spans.filter(end__isnull=True, rule=SpanRule.MONTH):
         for entry in span.entries.filter(voided_at__isnull=True, kind=EntryKind.CHARGE, month=month):
             void(entry, f"New personal price: {reason}", by=by)
         bill_span(span, today)
 
 
 @transaction.atomic
-def start_span(seat, day: date, *, today: date, opening_month: str = "") -> Span:
-    span = Span.objects.create(seat=seat, start=day, opening_month=opening_month)
+def start_span(seat, day: date, *, today: date, opening_month: str = "", rule: str | None = None) -> Span:
+    """``rule`` is the span's for good: ``conf.default_rule()`` unless told."""
+    span = Span.objects.create(seat=seat, start=day, opening_month=opening_month, rule=rule or conf.default_rule())
     bill_span(span, today)
     return span
 
@@ -233,7 +362,15 @@ def start_span(seat, day: date, *, today: date, opening_month: str = "") -> Span
 def end_span(span, day: date, why: str, *, today: date) -> None:
     span.end, span.ended_by = day, why
     span.save(update_fields=["end", "ended_by"])
-    later = span.entries.filter(voided_at__isnull=True, kind=EntryKind.CHARGE, month__gt=month_of(day))
+    if span.rule == SpanRule.LESSON:
+        if day < span.start:  # called off before it began: nothing of it stands, the first month neither
+            later = span.entries.filter(voided_at__isnull=True)
+        else:  # the first month is paid in full and stays (owner: "to'liq 500 ming")
+            later = span.entries.filter(voided_at__isnull=True, kind=EntryKind.CHARGE, day__gt=day).exclude(
+                key__startswith=FIRST_KEY
+            )
+    else:
+        later = span.entries.filter(voided_at__isnull=True, kind=EntryKind.CHARGE, month__gt=month_of(day))
     for entry in later:
         void(entry, f"{why}: the seat ended on {day.isoformat()}")
     bill_span(span, today)
@@ -250,3 +387,77 @@ def move_span(span, *, today: date, reason: str, start: date | None = None, end:
     span.start, span.end = start, end
     span.save(update_fields=["start", "end"])
     bill_span(span, today)
+
+
+# ── The debt freeze and the tick, once the ledger is ours ────────────────────────────────────────────────
+
+
+def _debt_exempt(user) -> bool:
+    """An admin said never to freeze this student for debt (kept on lc-up's link until there is a place of ours)."""
+    from lcup.models import LcupStudentLink
+
+    return LcupStudentLink.objects.filter(user=user, debt_freeze_exempt_at__isnull=False).exists()
+
+
+def apply_debt_freeze(account, *, freeze: bool = True) -> str | None:
+    """Owner, 2026-11-22: "hisob minus bo'lganda muzlatiladi". Below zero, the student's account is frozen for debt;
+    at zero or above, a debt freeze is lifted. An admin's own freeze is never touched. Returns "frozen",
+    "unfrozen" or None. ``freeze=False`` only lifts."""
+    from access import constants as C
+    from users import audience as A
+
+    user = account.user
+    if user is None or str(user.role or "").strip().lower() not in C.LEARNER_ROLES:
+        return None
+    owes = balance(account) < 0
+    debt_frozen = user.is_frozen and user.frozen_reason == A.FROZEN_LCUP_DEBT
+    if owes and not user.is_frozen and freeze and not _debt_exempt(user):
+        return "frozen" if A.freeze_for_debt(user, reason=REASON_DEBT, source=SOURCE_BILLING) else None
+    if debt_frozen and (not owes or _debt_exempt(user)):
+        return "unfrozen" if A.clear_debt_freeze(user, source=SOURCE_BILLING) else None
+    return None
+
+
+def own_tick(today: date, *, allow_mass: bool = False) -> dict:
+    """Every 15 minutes once the ledger is ours: each running span's missing rows, then, while students pay per
+    lesson, the debt freeze for everyone with an account. A tick that would freeze more than
+    ``MAX_FREEZES_PER_TICK`` at once only lifts, and says so."""
+    from collections import Counter
+
+    counts, alerts = Counter(), []
+    errors = bill_open_spans(today)
+    if conf.lesson_billing():
+        accounts = list(Account.objects.filter(user__isnull=False).select_related("user"))
+        owing = {row["account_id"] for row in _owing_accounts()}
+        to_freeze = [a for a in accounts if a.pk in owing and not a.user.is_frozen]
+        freeze = allow_mass or len(to_freeze) <= MAX_FREEZES_PER_TICK
+        if not freeze:
+            alerts.append(f"debt freezes held: {len(to_freeze)} > {MAX_FREEZES_PER_TICK} in one tick")
+            counts["debt_freezes_held"] = len(to_freeze)
+        for account in accounts:
+            try:
+                done = apply_debt_freeze(account, freeze=freeze)
+            except Exception as exc:  # noqa: BLE001 - one person failing must not stop the others
+                logger.exception("billing: freeze of account %s failed", account.pk)
+                errors.append(f"freeze {account.pk}: {type(exc).__name__}: {exc}"[:300])
+                continue
+            if done:
+                counts[f"debt_{done}"] += 1
+    state = BillingState.get()
+    state.last_tick_at = timezone.now()
+    state.save(update_fields=["last_tick_at"])
+    if counts or errors or alerts:
+        BillingRun.objects.create(
+            kind=BillingRun.Kind.TICK, day=today, finished_at=timezone.now(), ok=not errors, counts=dict(counts),
+            errors=errors[:50], alerts=alerts,
+        )
+    return {"counts": dict(counts), "errors": errors, "alerts": alerts}
+
+
+def _owing_accounts():
+    return (
+        Entry.objects.filter(voided_at__isnull=True, account__user__isnull=False)
+        .values("account_id")
+        .annotate(total=Sum("amount"))
+        .filter(total__lt=0)
+    )

@@ -26,6 +26,29 @@ def _iso(value):
     return value.isoformat() if value else None
 
 
+def _rules() -> dict:
+    """How the ledger charges, for the console's words (owner, 2026-11-22: pay per lesson)."""
+    return {
+        "mode": conf.default_rule(),
+        "lesson_price": conf.lesson_price(),
+        "min_topup": conf.min_topup(),
+    }
+
+
+def _row_label(entry) -> str:
+    if entry.key.startswith(ledger.LESSON_KEY):
+        return "Lesson"
+    if entry.key.startswith(ledger.FIRST_KEY):
+        return "First month"
+    return entry.get_kind_display()
+
+
+def _after_money(account) -> None:
+    """Paying per lesson, a payment lifts a debt freeze at once, and a payment taken back can bring it back."""
+    if conf.lesson_billing() and conf.ledger_is_ours():
+        ledger.apply_debt_freeze(account)
+
+
 def _current_account_ids() -> set[int]:
     return set(Account.objects.filter(seats__isnull=False).exclude(seats__state=SeatState.LEFT).values_list("pk", flat=True))
 
@@ -39,6 +62,7 @@ class SummaryView(APIView):
         latest = BillingRun.objects.filter(kind=BillingRun.Kind.COMPARE).first()
         problems = BillingRun.objects.exclude(errors=[], alerts=[])[:PROBLEMS_SHOWN]
         return Response({
+            "rules": _rules(),
             "enabled": conf.shadow_enabled(),
             "opened_at": _iso(state.opened_at),
             "last_tick_at": _iso(state.last_tick_at),
@@ -88,7 +112,7 @@ class AccountDetailView(APIView):
             if entry.voided_at is None:
                 running += entry.amount
             rows.append({
-                "id": entry.pk, "day": _iso(entry.day), "kind": entry.kind, "label": entry.get_kind_display(),
+                "id": entry.pk, "day": _iso(entry.day), "kind": entry.kind, "label": _row_label(entry),
                 "amount": entry.amount, "running": running, "month": entry.month, "method": entry.method,
                 "note": entry.note, "by": entry.created_by.username if entry.created_by else "",
                 # The group the money is for; "" for a row written before payments carried one.
@@ -101,6 +125,8 @@ class AccountDetailView(APIView):
             {
                 "id": seat.pk, "group_name": seat.group_name, "state": seat.state, "price": seat.price,
                 "personal_price": seat.personal_price,
+                # How its latest stretch is billed: "month" or "lesson".
+                "rule": next((span.rule for span in sorted(seat.spans.all(), key=lambda s: s.pk, reverse=True)), None),
                 "price_changes": [
                     {
                         "at": _iso(change.changed_at), "old_price": change.old_price, "new_price": change.new_price,
@@ -109,11 +135,15 @@ class AccountDetailView(APIView):
                     for change in seat.price_changes.all()
                 ],
             }
-            for seat in account.seats.order_by("id").prefetch_related("price_changes__changed_by")
+            for seat in account.seats.order_by("id").prefetch_related("price_changes__changed_by", "spans")
         ]
+        rules = _rules()
+        if conf.lesson_billing():
+            rules["least_payment"] = ledger.least_payment(account)
+            rules["first_month_fee"] = ledger.first_month_fee(account)
         return Response({
             "id": account.pk, "name": account.name, "phone": account.phone, "balance": running,
-            "seats": seats, "rows": rows, "payments_open": conf.payments_open(),
+            "seats": seats, "rows": rows, "payments_open": conf.payments_open(), "rules": rules,
         })
 
 
@@ -164,6 +194,7 @@ class EntryCreateView(APIView):
             )
         except ledger.EntryRefused as exc:
             return _bad(str(exc))
+        _after_money(account)
         return Response({"balance": ledger.balance(account)}, status=status.HTTP_201_CREATED)
 
 
@@ -201,4 +232,5 @@ class EntryVoidView(APIView):
             ledger.void_entered(entry, str(request.data.get("reason") or ""), by=request.user)
         except ledger.EntryRefused as exc:
             return _bad(str(exc))
+        _after_money(entry.account)
         return Response({"balance": ledger.balance(entry.account)})
