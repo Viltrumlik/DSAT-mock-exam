@@ -182,12 +182,15 @@ function Brand({
 
   return (
     <div ref={box} className={cn("relative flex shrink-0 items-center gap-2.5 px-[18px] pb-3.5 pt-4", folded && "justify-center px-0")}>
+      {/* The centre's own shield, as the student app shows it (owner, 22 Nov 2026: "bu yerda logo tursin M o'rnida"). */}
       <Link
         href={config.root}
         aria-label={`MasterSAT ${config.crumb} — home`}
-        className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-ms-primary font-ms-display text-[17px] font-extrabold leading-none text-white"
+        data-brand-logo
+        className="grid h-9 shrink-0 place-items-center rounded-[8px] outline-none focus-visible:shadow-[0_0_0_2px_var(--ms-ring)]"
       >
-        M
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/images/logo.png" alt="" width={434} height={500} className="h-9 w-auto object-contain" />
       </Link>
       {folded ? null : otherConsole ? (
         <button
