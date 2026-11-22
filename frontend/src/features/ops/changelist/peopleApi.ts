@@ -61,6 +61,9 @@ export interface StudentRow extends PeopleRowBase {
   groups: StudentGroupCell[];
   /** `balance` is lc-up's, in whole UZS; negative is a debt. */
   lcup: { linked: boolean; balance: number | null };
+  /** The parent's phone for the row's second line ("" when none is kept); null or absent for a viewer without
+   *  `view_people`, or an older server. */
+  parent_phone?: string | null;
 }
 
 export interface PublicRow extends PeopleRowBase {

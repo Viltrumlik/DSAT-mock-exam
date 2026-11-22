@@ -165,6 +165,18 @@ describe("the sidebar", () => {
     expect(item("/ops/finance")).toBeNull();
   });
 
+  it("shows the centre's shield logo, not a letter tile, open and folded", () => {
+    render("/ops/students", ADMIN);
+    const home = () => sidebar().querySelector<HTMLAnchorElement>('a[aria-label="MasterSAT Admin — home"]')!;
+    expect(home().getAttribute("href")).toBe("/ops");
+    expect(home().querySelector("img")?.getAttribute("src")).toBe("/images/logo.png");
+    // The link carries the name; the picture is decoration.
+    expect(home().querySelector("img")?.getAttribute("alt")).toBe("");
+    expect(home().textContent).toBe("");
+    act(() => button("Collapse the sidebar")!.click());
+    expect(home().querySelector("img")?.getAttribute("src")).toBe("/images/logo.png");
+  });
+
   it("switches console from the name under the logo — never for a test admin, whom AuthGuard keeps to the Builder", () => {
     render("/ops/students", SUPER_ADMIN);
     act(() => button("Admin console — switch", sidebar())!.click());
