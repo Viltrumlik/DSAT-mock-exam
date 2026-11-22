@@ -66,6 +66,7 @@ export function EntryForm({
   balance,
   kind,
   seats = [],
+  leastPayment,
   onClose,
 }: {
   accountId: number;
@@ -73,6 +74,8 @@ export function EntryForm({
   kind: EnterableKind;
   /** The account's seats: a payment or a refund is for one group (owner, 22 Nov 2026: "Ha, bog'lansin"). */
   seats?: readonly LedgerSeat[];
+  /** Paying per lesson: the least one payment may be (owner, 22 Nov 2026: 160,000; a new student's first, 500,000). */
+  leastPayment?: number;
   onClose: () => void;
 }) {
   const enter = useEnterMoney(accountId);
@@ -93,8 +96,14 @@ export function EntryForm({
   const seat = adjusting ? undefined : asksGroup ? live.find((s) => String(s.id) === seatId) : live[0];
   const change =
     amount === null ? null : kind === "payment" ? amount : kind === "refund" ? -amount : amount * Number(direction);
+  const belowLeast = kind === "payment" && leastPayment !== undefined && amount !== null && amount < leastPayment;
   const canSave =
-    change !== null && Boolean(day) && !(adjusting && !note.trim()) && !(asksGroup && !seat) && !enter.isPending;
+    change !== null &&
+    Boolean(day) &&
+    !(adjusting && !note.trim()) &&
+    !(asksGroup && !seat) &&
+    !belowLeast &&
+    !enter.isPending;
 
   function save(event: FormEvent) {
     event.preventDefault();
@@ -174,6 +183,11 @@ export function EntryForm({
       {change === null ? null : (
         <p className="text-[13px] text-ms-fg">Balance after: {formatUzs(balance + change)}</p>
       )}
+      {kind === "payment" && leastPayment !== undefined ? (
+        <p className={cn("text-[12px]", belowLeast ? "text-ms-critical-fg" : "text-ms-fg-3")}>
+          At least {formatUzs(leastPayment)} per payment.
+        </p>
+      ) : null}
       <Refusal error={enter.error} />
       <div className="flex flex-wrap gap-1">
         <Btn primary type="submit" disabled={!canSave}>

@@ -28,7 +28,19 @@ export interface LedgerProblem {
   alerts: string[];
 }
 
+/** How the ledger charges (owner, 22 Nov 2026): by the month, or per lesson from a balance topped up in advance. */
+export interface LedgerRules {
+  mode: "month" | "lesson";
+  lesson_price: number;
+  min_topup: number;
+  /** Per lesson only: the least this student's next payment may be (a new student's first: the whole first month). */
+  least_payment?: number;
+  /** Per lesson only: a new student's first month, or null for someone who is not new. */
+  first_month_fee?: number | null;
+}
+
 export interface LedgerSummary {
+  rules?: LedgerRules;
   enabled: boolean;
   opened_at: string | null;
   last_tick_at: string | null;
@@ -77,6 +89,8 @@ export interface LedgerSeat {
   price: number;
   /** This student's own price, replacing the group's; 0 is a grant, null is the group's price. */
   personal_price: number | null;
+  /** How its latest stretch is billed; null before it ever paid. */
+  rule?: "month" | "lesson" | null;
   price_changes: { at: string; old_price: number | null; new_price: number | null; reason: string; by: string }[];
 }
 
@@ -89,6 +103,7 @@ export interface LedgerAccount {
   rows: LedgerEntry[];
   /** Money is entered here only after the cutover; until then the server refuses it too. */
   payments_open: boolean;
+  rules?: LedgerRules;
 }
 
 export type EnterableKind = "payment" | "refund" | "adjust";

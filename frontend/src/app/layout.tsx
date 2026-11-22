@@ -108,6 +108,9 @@ const geistMono = localFont({
   ],
 });
 
+/** Set only when building the test copy beside prod (shared/frontend.env.production there); empty on prod. */
+const STAGING_LABEL = (process.env.NEXT_PUBLIC_STAGING_LABEL || "").trim();
+
 export const metadata: Metadata = {
   title: "MasterSAT",
   description: "MasterSAT - Advanced SAT Preparation Platform",
@@ -152,6 +155,19 @@ export default function RootLayout({
           </QueryProvider>
         </ThemeProvider>
         <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
+        {STAGING_LABEL ? (
+          // The test copy beside prod says so on every page, so nobody takes it for the real site.
+          <div
+            role="note"
+            style={{
+              position: "fixed", left: 8, bottom: 8, zIndex: 2147483647, pointerEvents: "none",
+              background: "#facc15", color: "#111827", font: "600 12px/1.4 system-ui, sans-serif",
+              padding: "4px 10px", borderRadius: 4, border: "1px solid #a16207",
+            }}
+          >
+            {STAGING_LABEL}
+          </div>
+        ) : null}
       </body>
     </html>
   );
