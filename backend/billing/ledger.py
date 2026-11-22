@@ -20,7 +20,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .lessons import month_amount
-from .models import BillingState, Entry, EntryKind, PaymentMethod, Seat, SeatPriceChange, Span
+from .models import BillingState, Entry, EntryKind, PaymentMethod, Seat, SeatPriceChange, SeatState, Span
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +54,14 @@ def balance(account) -> int:
     return account.entries.filter(voided_at__isnull=True).aggregate(total=Sum("amount"))["total"] or 0
 
 
-def post(account, kind, amount, day, key, *, span=None, month="", method="", note="", by=None) -> Entry | None:
+def post(account, kind, amount, day, key, *, span=None, seat=None, month="", method="", note="", by=None) -> Entry | None:
     """Write one row; ``None`` when the key already has a live one."""
     if Entry.objects.filter(key=key, voided_at__isnull=True).exists():
         return None
     try:
         with transaction.atomic():
             return Entry.objects.create(
-                account=account, span=span, kind=kind, amount=amount, day=day, month=month, key=key,
+                account=account, span=span, seat=seat, kind=kind, amount=amount, day=day, month=month, key=key,
                 method=method, note=note, created_by=by,
             )
     except IntegrityError:  # another writer got there first
@@ -88,9 +88,26 @@ def _check_amount(amount) -> None:
         raise EntryRefused(f"That amount is too large: the most is {MAX_AMOUNT:,} so'm at a time.")
 
 
-def enter_money(account, kind, amount, day, *, request_id, today, method="", note="", by=None) -> Entry:
+def payment_seat(account, seat=None):
+    """The group a payment or a refund is for: the one given (it must be this student's), else the student's only
+    group. A student in two or more groups must be asked — lc-up asks too. ``None`` for a student in no group."""
+    live = [s for s in account.seats.all() if s.state != SeatState.LEFT]
+    if seat is not None:
+        if seat.account_id != account.pk:
+            raise EntryRefused("That group is not this student's.")
+        return seat
+    if len(live) == 1:
+        return live[0]
+    if len(live) > 1:
+        raise EntryRefused("Choose the group this payment is for.")
+    return None
+
+
+def enter_money(account, kind, amount, day, *, request_id, today, method="", note="", by=None, seat=None) -> Entry:
     """A payment, a refund or an adjustment a person enters. ``request_id`` comes from the form, so a double
-    click, or a retry after a lost answer, is the same row. An adjustment's amount carries its sign."""
+    click, or a retry after a lost answer, is the same row. An adjustment's amount carries its sign.
+
+    A payment or a refund is for one group (``seat``): given, or the student's only one. An adjustment may name one."""
     key = f"{MANUAL_KEY}{request_id}"
     existing = Entry.objects.filter(key=key).order_by("id").first()
     if existing:
@@ -115,9 +132,12 @@ def enter_money(account, kind, amount, day, *, request_id, today, method="", not
         if method not in PaymentMethod.values:
             raise EntryRefused("Choose a payment method.")
         signed = amount if kind == EntryKind.PAYMENT else -amount
+        seat = payment_seat(account, seat)
     else:
         raise EntryRefused("Only a payment, a refund or an adjustment can be entered.")
-    row = post(account, kind, signed, day, key, method=method, note=note, by=by)
+    if seat is not None and seat.account_id != account.pk:
+        raise EntryRefused("That group is not this student's.")
+    row = post(account, kind, signed, day, key, seat=seat, method=method, note=note, by=by)
     return row or Entry.objects.get(key=key, voided_at__isnull=True)
 
 

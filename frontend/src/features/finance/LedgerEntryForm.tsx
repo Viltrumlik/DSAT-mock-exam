@@ -65,11 +65,14 @@ export function EntryForm({
   accountId,
   balance,
   kind,
+  seats = [],
   onClose,
 }: {
   accountId: number;
   balance: number;
   kind: EnterableKind;
+  /** The account's seats: a payment or a refund is for one group (owner, 22 Nov 2026: "Ha, bog'lansin"). */
+  seats?: readonly LedgerSeat[];
   onClose: () => void;
 }) {
   const enter = useEnterMoney(accountId);
@@ -80,12 +83,18 @@ export function EntryForm({
   const [direction, setDirection] = useState("1");
   const [day, setDay] = useState(today);
   const [note, setNote] = useState("");
+  const [seatId, setSeatId] = useState("");
 
   const amount = parseAmount(raw);
   const adjusting = kind === "adjust";
+  // One group: that one. Two or more: the person chooses (the server refuses a payment without one).
+  const live = seats.filter((s) => s.state !== "left");
+  const asksGroup = !adjusting && live.length > 1;
+  const seat = adjusting ? undefined : asksGroup ? live.find((s) => String(s.id) === seatId) : live[0];
   const change =
     amount === null ? null : kind === "payment" ? amount : kind === "refund" ? -amount : amount * Number(direction);
-  const canSave = change !== null && Boolean(day) && !(adjusting && !note.trim()) && !enter.isPending;
+  const canSave =
+    change !== null && Boolean(day) && !(adjusting && !note.trim()) && !(asksGroup && !seat) && !enter.isPending;
 
   function save(event: FormEvent) {
     event.preventDefault();
@@ -98,6 +107,7 @@ export function EntryForm({
         method: adjusting ? "" : method,
         note: note.trim(),
         request_id: requestId,
+        ...(seat ? { seat: seat.id } : {}),
       },
       { onSuccess: onClose },
     );
@@ -135,6 +145,17 @@ export function EntryForm({
             </select>
           </label>
         )}
+        {asksGroup ? (
+          <label className={LABEL}>
+            Group
+            <select aria-label="Group" className={CONTROL} value={seatId} onChange={(event) => setSeatId(event.target.value)}>
+              <option value="">Choose a group</option>
+              {live.map((item) => (
+                <option key={item.id} value={String(item.id)}>{item.group_name}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className={LABEL}>
           Date
           <input aria-label="Date" type="date" max={today} className={CONTROL} value={day} onChange={(event) => setDay(event.target.value)} />

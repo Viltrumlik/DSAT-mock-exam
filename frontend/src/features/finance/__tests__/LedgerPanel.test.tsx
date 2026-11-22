@@ -90,7 +90,7 @@ const ACCOUNT = {
   rows: [
     { id: 1, day: "2026-11-20", kind: "opening", label: "Opening balance", amount: -500000, running: -500000, month: "", method: "", note: "", by: "", voided_at: null, void_reason: "" },
     { id: 2, day: "2026-11-21", kind: "payment", label: "Payment", amount: 900000, running: -500000, month: "", method: "Naqd pul", note: "", by: "", voided_at: "2026-11-21T12:00:00+05:00", void_reason: "lc-up changed this payment" },
-    { id: 3, day: "2026-11-21", kind: "payment", label: "Payment", amount: 200000, running: -300000, month: "", method: "Naqd pul", note: "", by: "", voided_at: null, void_reason: "" },
+    { id: 3, day: "2026-11-21", kind: "payment", label: "Payment", amount: 200000, running: -300000, month: "", method: "Naqd pul", note: "", by: "", voided_at: null, void_reason: "", seat_id: 1, group: "Junior G1" },
   ],
 };
 
@@ -185,6 +185,14 @@ describe("LedgerPanel", () => {
     expect(rows[0]).toContain("Opening balance");
     expect(rows[2]).toContain("200 000");
     expect(rows[2]).toContain("−300 000");
+  });
+
+  it("says the group each payment is for, and — for a row from before payments carried one", async () => {
+    await mount(<LedgerPanel />, { "/billing/summary/": SUMMARY, "/billing/accounts/3/": ACCOUNT });
+    await click("Big Difference");
+    const cells = [...document.querySelectorAll("tbody td[data-entry-group]")];
+    expect(cells.map((c) => c.textContent)).toEqual(["—", "—", "Junior G1"]);
+    expect(cells[2].querySelector("[data-course]")?.getAttribute("data-course")).toBe("junior");
   });
 
   it("keeps a voided row visible with its reason", async () => {

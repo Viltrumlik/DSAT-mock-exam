@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
-import { balanceVerdict, signedAmount } from "@/features/console/ui";
+import { CourseTag, balanceVerdict, courseLevelOf, signedAmount } from "@/features/console/ui";
 import { SCHOOL_TIME_ZONE, toSchoolDateKey } from "@/lib/schoolTime";
 import { formatUzs } from "./financeApi";
 import { ENTER_LABEL, EntryForm, SeatPriceForm, VoidForm } from "./LedgerEntryForm";
@@ -270,7 +270,7 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
       </header>
       {account.payments_open && enterable.length > 0 ? (
         entering ? (
-          <EntryForm accountId={account.id} balance={account.balance} kind={entering} onClose={() => setEntering(null)} />
+          <EntryForm accountId={account.id} balance={account.balance} kind={entering} seats={account.seats} onClose={() => setEntering(null)} />
         ) : (
           <div role="group" aria-label="Enter money" className="flex flex-wrap gap-1">
             {enterable.map((kind) => (
@@ -289,6 +289,7 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
                 <th scope="col" className={TH}>What</th>
                 <th scope="col" className={TH_R}>Amount, {SOM}</th>
                 <th scope="col" className={TH_R}>Balance after, {SOM}</th>
+                <th scope="col" className={TH}>Group</th>
                 <th scope="col" className={TH}>Details</th>
               </tr>
             </thead>
@@ -306,6 +307,16 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
                       )}
                     </td>
                     <td className={TD_R} data-verdict={balanceVerdict(entry.running)}>{money(entry.running)}</td>
+                    {/* The group the money is for; a row written before payments carried one says "—". */}
+                    <td className={TD} data-entry-group>
+                      {entry.group ? (
+                        <CourseTag level={courseLevelOf(null, entry.group)} size="sm">
+                          {entry.group}
+                        </CourseTag>
+                      ) : (
+                        <span className="text-ms-fg-3">—</span>
+                      )}
+                    </td>
                     <td className={cn(TD, "text-ms-fg-3")}>
                       {entry.voided_at ? voidedText(entry) : entryDetails(entry) || "—"}
                       {account.payments_open && entry.can_void && can(P.voidPayment) && voiding !== entry.id ? (
@@ -320,7 +331,7 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
                   </tr>
                   {voiding === entry.id ? (
                     <tr>
-                      <td colSpan={5} className={TD}>
+                      <td colSpan={6} className={TD}>
                         <VoidForm entryId={entry.id} onClose={() => setVoiding(null)} />
                       </td>
                     </tr>

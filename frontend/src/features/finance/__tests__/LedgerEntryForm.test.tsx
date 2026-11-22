@@ -166,6 +166,41 @@ describe("entering money", () => {
     expect(body.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  it("puts the student's only group on the payment without asking", async () => {
+    post.mockResolvedValue({ data: { balance: 200000 } });
+    await open(account({ seats: [{ id: 7, group_name: "Junior G1", state: "active", price: 500000, personal_price: null, price_changes: [] }] }));
+    await click("Enter a payment");
+    expect(document.querySelector('[aria-label="Group"]')).toBeNull();
+    await type("Amount", "500000");
+    await click("Save payment");
+    expect(post.mock.calls[0][1]).toMatchObject({ kind: "payment", seat: 7 });
+  });
+
+  it("asks for the group when the student has two, and sends it — a refund too", async () => {
+    post.mockResolvedValue({ data: { balance: 0 } });
+    const seat = (id: number, name: string, state = "active") => ({ id, group_name: name, state, price: 500000, personal_price: null, price_changes: [] });
+    await open(account({ seats: [seat(7, "Junior G1"), seat(8, "Middle G2"), seat(9, "Old G0", "left")] }));
+    await click("Enter a refund");
+    const options = [...field("Group").querySelectorAll("option")].map((o) => o.textContent);
+    // A group the student left is not offered.
+    expect(options).toEqual(["Choose a group", "Junior G1", "Middle G2"]);
+    await type("Amount", "100000");
+    expect(button("Save refund")?.disabled).toBe(true);
+    await type("Group", "8");
+    await click("Save refund");
+    expect(post.mock.calls[0][1]).toMatchObject({ kind: "refund", amount: 100000, seat: 8 });
+  });
+
+  it("never sends a group with an adjustment", async () => {
+    post.mockResolvedValue({ data: { balance: 0 } });
+    await open(account({ seats: [{ id: 7, group_name: "Junior G1", state: "active", price: 500000, personal_price: null, price_changes: [] }] }));
+    await click("Enter an adjustment");
+    await type("Amount", "5000");
+    await type("Reason", "Rounding");
+    await click("Save adjustment");
+    expect(post.mock.calls[0][1]).not.toHaveProperty("seat");
+  });
+
   it("shows the balance it will leave before anything is saved", async () => {
     await open();
     await click("Enter a payment");

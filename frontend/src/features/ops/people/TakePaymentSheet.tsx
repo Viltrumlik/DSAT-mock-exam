@@ -14,8 +14,8 @@ import { todayIso } from "@/features/ops/classrooms/seatsApi";
  * own entry form (`POST /billing/accounts/<id>/entries/`, the Ledger tab's `EntryForm`) as a side sheet. The same
  * sheet takes a refund or an adjustment from the profile's ⋮, each behind the permission the server asks for.
  *
- * A student in two groups is asked which one (lc-up asks too). The ledger keeps no group on a payment, so the
- * chosen group is written at the start of the payment's note, where the ledger's rows show it. The amount chips
+ * A student in two groups is asked which one (lc-up asks too); with one group it is that one. The group is saved on
+ * the payment itself (its seat, owner 22 Nov 2026: "Ha, bog'lansin"), so the note stays the person's own. The amount chips
  * are the account's own numbers — its debt, the chosen group's month — and the balance it will leave is said before
  * saving. One request id per open sheet: a double click or a retry is one row.
  */
@@ -122,9 +122,18 @@ function PaymentForm({
   const save = (event: FormEvent) => {
     event.preventDefault();
     if (!canSave || amount === null || change === null) return;
-    const written = [asks && group ? group : "", note.trim()].filter(Boolean).join(" · ").slice(0, 300);
+    const written = note.trim().slice(0, 300);
     enter.mutate(
-      { kind, amount: adjusting ? change : amount, day, method: adjusting ? "" : method, note: written, request_id: requestId },
+      {
+        kind,
+        amount: adjusting ? change : amount,
+        day,
+        method: adjusting ? "" : method,
+        note: written,
+        request_id: requestId,
+        // A payment or a refund is for one group; the server asks for it when there are two or more.
+        ...(!adjusting && seat ? { seat: seat.id } : {}),
+      },
       {
         onSuccess: () => {
           push({ tone: "success", message: kind === "payment" ? `Payment saved for ${name}.` : kind === "refund" ? "Refund saved." : "Balance changed." });

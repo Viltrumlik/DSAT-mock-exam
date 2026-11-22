@@ -244,6 +244,9 @@ def mirror_payments(result: Result) -> None:
     deleted is voided. ``LcupPayment`` is complete for what the sync re-reads, so missing means deleted."""
     state = BillingState.get()
     live = {e.key: e for e in Entry.objects.filter(key__startswith=_PAYMENT_KEY, voided_at__isnull=True)}
+    # lc-up names the group a payment is for: the student's seat in it, when we hold one. A row already copied keeps
+    # what it had — a group is never written onto an old row.
+    seats = {(s.account_id, s.lcup_group_id): s for s in Seat.objects.filter(lcup_group_id__isnull=False)}
     seen = set()
     for payment in LcupPayment.objects.filter(lcup_payment_id__gt=state.opening_max_payment_id).iterator():
         key = f"{_PAYMENT_KEY}{payment.lcup_payment_id}"
@@ -256,8 +259,10 @@ def mirror_payments(result: Result) -> None:
             with transaction.atomic():
                 if entry:
                     ledger.void(entry, "lc-up changed this payment")
+                account = _account_of(payment.lcup_student_id)
                 ledger.post(
-                    _account_of(payment.lcup_student_id), kind, payment.amount, payment.paid_on, key,
+                    account, kind, payment.amount, payment.paid_on, key,
+                    seat=seats.get((account.pk, payment.lcup_group_id)) if payment.lcup_group_id else None,
                     method=method, note=payment.note[:300],
                 )
             result.counts["payments"] += 1

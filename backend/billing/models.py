@@ -125,6 +125,9 @@ class Entry(models.Model):
 
     account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name="entries")
     span = models.ForeignKey(Span, null=True, blank=True, on_delete=models.PROTECT, related_name="entries")
+    #: The group a payment or a refund is for (owner, 22 Nov 2026: "Ha, bog'lansin"): the student's seat in it.
+    #: Rows written before it existed stay empty; nothing back-fills them.
+    seat = models.ForeignKey(Seat, null=True, blank=True, on_delete=models.PROTECT, related_name="entries")
     kind = models.CharField(max_length=10, choices=EntryKind.choices)
     amount = models.BigIntegerField()
     day = models.DateField()

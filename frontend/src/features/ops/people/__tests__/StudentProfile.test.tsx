@@ -616,7 +616,7 @@ describe("Take payment", () => {
     expect(card().textContent).toContain("Payments are entered in lc-up until the cutover.");
   });
 
-  it("asks for the group when the student has two, and writes it on the payment", async () => {
+  it("asks for the group when the student has two, and saves it on the payment, not in the note", async () => {
     route(core({ ledger: { account_id: 5, payments_open: true } }));
     post.mockResolvedValue({ data: { balance: 0 } });
     await renderPage();
@@ -635,7 +635,8 @@ describe("Take payment", () => {
     expect(post).toHaveBeenCalledTimes(1);
     const [url, body] = post.mock.calls[0];
     expect(url).toBe("/billing/accounts/5/entries/");
-    expect(body).toMatchObject({ kind: "payment", amount: 250000, method: "Naqd pul", note: "English G4" });
+    // The group is the payment's own field (its seat); the note stays the person's words.
+    expect(body).toMatchObject({ kind: "payment", amount: 250000, method: "Naqd pul", note: "", seat: 12 });
   });
 
   it("is a group card's first ⋮ item, with that group chosen", async () => {
