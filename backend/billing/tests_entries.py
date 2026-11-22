@@ -346,3 +346,86 @@ class AdjustCommandTests(Opened, TestCase):
         with self.assertRaisesMessage(CommandError, "reason"):
             self.run_command("--account", pk, "--amount", "100", "--reason", "  ", "--by", "boss")
         self.assertFalse(Entry.objects.filter(kind=EntryKind.ADJUST).exists())
+
+
+class PaymentGroupTests(EntryCase):
+    """A payment is for one group (owner, 22 Nov 2026: "Ha, bog'lansin"): the student's seat in it."""
+
+    def enter_for(self, seat=None, kind=EntryKind.PAYMENT, **kw):
+        return ledger.enter_money(
+            self.account, kind, kw.pop("amount", 500_000), TODAY, request_id=rid(), today=TODAY,
+            method=kw.pop("method", "Naqd pul"), note=kw.pop("note", ""), by=self.boss, seat=seat,
+        )
+
+    def test_a_student_in_one_group_pays_for_it_without_being_asked(self):
+        seat = make_seat(self.account)
+        self.assertEqual(self.enter_for().seat, seat)
+
+    def test_a_student_in_two_groups_must_be_asked(self):
+        make_seat(self.account, name="Junior G1", group=1)
+        second = make_seat(self.account, name="Middle G2", group=2)
+        with self.assertRaisesMessage(EntryRefused, "Choose the group"):
+            self.enter_for()
+        self.assertFalse(self.account.entries.exists())
+        self.assertEqual(self.enter_for(second).seat, second)
+
+    def test_a_group_left_is_not_counted_but_may_be_chosen(self):
+        from billing.models import SeatState
+
+        kept = make_seat(self.account, name="Junior G1", group=1)
+        gone = make_seat(self.account, name="Middle G2", group=2)
+        gone.state = SeatState.LEFT
+        gone.save()
+        self.assertEqual(self.enter_for().seat, kept)
+        # An old debt in a group they left can still be paid, by naming it.
+        self.assertEqual(self.enter_for(gone).seat, gone)
+
+    def test_a_refund_carries_its_group_too(self):
+        seat = make_seat(self.account)
+        row = self.enter_for(kind=EntryKind.REFUND, amount=100_000, method="Plastik karta")
+        self.assertEqual((row.amount, row.seat), (-100_000, seat))
+
+    def test_another_students_group_is_refused(self):
+        make_seat(self.account)
+        theirs = make_seat(Account.objects.create(name="Someone else"), name="Junior G9", group=9)
+        with self.assertRaisesMessage(EntryRefused, "not this student's"):
+            self.enter_for(theirs)
+        with self.assertRaisesMessage(EntryRefused, "not this student's"):
+            self.enter_for(theirs, kind=EntryKind.ADJUST, amount=-5_000, method="", note="x")
+
+    def test_a_student_in_no_group_still_pays(self):
+        self.assertIsNone(self.enter_for().seat)
+
+    def test_an_adjustment_names_a_group_only_when_told(self):
+        seat = make_seat(self.account)
+        self.assertIsNone(self.enter_for(kind=EntryKind.ADJUST, amount=-5_000, method="", note="Rounding").seat)
+        self.assertEqual(self.enter_for(seat, kind=EntryKind.ADJUST, amount=5_000, method="", note="Back").seat, seat)
+
+
+@override_settings(BILLING_PAYMENTS_OPEN=True)
+class PaymentGroupApiTests(EntryApiCase, TestCase):
+    def test_the_form_names_the_group_and_the_account_shows_it(self):
+        seat = self.seat()
+        response = self.post(self.url(), self.body(seat=seat.pk))
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(self.account().entries.get(kind=EntryKind.PAYMENT).seat, seat)
+        rows = self.get(f"/api/billing/accounts/{self.account().pk}/").json()["rows"]
+        payment = next(r for r in rows if r["kind"] == "payment")
+        self.assertEqual((payment["seat_id"], payment["group"]), (seat.pk, seat.group_name))
+        # A row with no group (the opening balance) says so with an empty name.
+        opening = next(r for r in rows if r["kind"] == "opening")
+        self.assertEqual((opening["seat_id"], opening["group"]), (None, ""))
+
+    def test_another_students_group_is_refused(self):
+        theirs = make_seat(Account.objects.create(name="Someone else"), name="Junior G9", group=99)
+        for value in (theirs.pk, "x"):
+            response = self.post(self.url(), self.body(seat=value))
+            self.assertEqual(response.status_code, 400, value)
+            self.assertIn("not this student's", response.json()["detail"])
+        self.assertFalse(self.account().entries.filter(kind=EntryKind.PAYMENT).exists())
+
+    def test_two_groups_and_none_named_is_refused(self):
+        make_seat(self.account(), name="Middle G2", group=77)
+        response = self.post(self.url(), self.body())
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Choose the group", response.json()["detail"])

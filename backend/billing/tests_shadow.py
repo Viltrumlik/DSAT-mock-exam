@@ -425,3 +425,37 @@ class CompareTests(Opened, TestCase):
         self.assertFalse(run.ok)
         self.assertEqual(run.counts, {})
         self.assertIn("sync", run.alerts[0])
+
+
+class MirrorPaymentGroupTests(Opened, TestCase):
+    """lc-up names the group a payment is for; a copied payment keeps it (owner, 22 Nov 2026: "Ha, bog'lansin")."""
+
+    def test_a_new_payment_carries_lc_ups_group(self):
+        payment = self.payment(5, 1, 500_000)
+        payment.lcup_group_id = 10
+        payment.save()
+        shadow.mirror_payments(shadow.Result())
+        self.assertEqual(self.account().entries.get(kind=EntryKind.PAYMENT).seat, self.seat())
+
+    def test_a_payment_lc_up_gives_no_group_has_none(self):
+        self.payment(5, 1, 500_000)
+        shadow.mirror_payments(shadow.Result())
+        self.assertIsNone(self.account().entries.get(kind=EntryKind.PAYMENT).seat)
+
+    def test_a_group_we_hold_no_seat_in_is_left_empty(self):
+        payment = self.payment(5, 1, 500_000)
+        payment.lcup_group_id = 4242
+        payment.save()
+        shadow.mirror_payments(shadow.Result())
+        self.assertIsNone(self.account().entries.get(kind=EntryKind.PAYMENT).seat)
+
+    def test_a_row_already_copied_is_not_rewritten_for_its_group(self):
+        payment = self.payment(5, 1, 500_000)
+        shadow.mirror_payments(shadow.Result())
+        first = self.account().entries.get(kind=EntryKind.PAYMENT)
+        payment.lcup_group_id = 10
+        payment.save()
+        shadow.mirror_payments(shadow.Result())
+        # History stays as written: same row, still live, still without a group.
+        live = self.account().entries.get(kind=EntryKind.PAYMENT, voided_at__isnull=True)
+        self.assertEqual((live.pk, live.seat), (first.pk, None))

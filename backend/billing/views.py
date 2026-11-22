@@ -84,13 +84,15 @@ class AccountDetailView(APIView):
     def get(self, request, pk):
         account = get_object_or_404(Account, pk=pk)
         running, rows = 0, []
-        for entry in account.entries.select_related("created_by", "voided_by"):
+        for entry in account.entries.select_related("created_by", "voided_by", "seat"):
             if entry.voided_at is None:
                 running += entry.amount
             rows.append({
                 "id": entry.pk, "day": _iso(entry.day), "kind": entry.kind, "label": entry.get_kind_display(),
                 "amount": entry.amount, "running": running, "month": entry.month, "method": entry.method,
                 "note": entry.note, "by": entry.created_by.username if entry.created_by else "",
+                # The group the money is for; "" for a row written before payments carried one.
+                "seat_id": entry.seat_id, "group": entry.seat.group_name if entry.seat else "",
                 "voided_at": _iso(entry.voided_at), "void_reason": entry.void_reason,
                 "voided_by": entry.voided_by.username if entry.voided_by else "",
                 "can_void": ledger.was_entered_by_hand(entry) and entry.voided_at is None,
@@ -149,10 +151,16 @@ class EntryCreateView(APIView):
             day = None
         if day is None:
             return _bad("That is not a date.")
+        seat = None
+        if data.get("seat") not in (None, ""):
+            try:
+                seat = account.seats.get(pk=int(data.get("seat")))
+            except (TypeError, ValueError, Seat.DoesNotExist):
+                return _bad("That group is not this student's.")
         try:
             ledger.enter_money(
                 account, kind, data.get("amount"), day, request_id=request_id, today=today,
-                method=str(data.get("method") or ""), note=str(data.get("note") or ""), by=request.user,
+                method=str(data.get("method") or ""), note=str(data.get("note") or ""), by=request.user, seat=seat,
             )
         except ledger.EntryRefused as exc:
             return _bad(str(exc))
