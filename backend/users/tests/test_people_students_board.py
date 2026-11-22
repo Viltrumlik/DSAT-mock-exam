@@ -83,8 +83,9 @@ class StudentsBoardTests(TestCase):
         # No start stated: the day the seat was made.
         self.assertIsNotNone(laylo["joined"])
         self.assertIsNone(rows[self.olim.pk]["groups"][0]["teacher"])
-        # Searched by, never given out (users/tests/test_person_parent.py).
-        self.assertNotIn("parent_phone", rows[self.aziz.pk])
+        # The parent's phone on the row's second line, for the desk (users/tests/test_person_parent.py).
+        self.assertEqual(rows[self.aziz.pk]["parent_phone"], "998903001172")
+        self.assertEqual(rows[self.laylo.pk]["parent_phone"], "")
 
     def test_the_chips_count_and_filter(self):
         body = self.get()

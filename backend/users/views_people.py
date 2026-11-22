@@ -357,6 +357,12 @@ def _row(u, section, request=None):
             {"linked": True, "balance": None if link.balance is None or not money else int(link.balance)}
             if link else {"linked": False, "balance": None}
         )
+        # Whom to call, on the row's second line as in lc-up (owner, 22 Nov 2026: "Ha, chiqsin"). The same rule as the
+        # person page's parent (``people_detail._parent``): ``view_people``'s alone. The phone only — the name stays
+        # on the person page.
+        row["parent_phone"] = (
+            (u.parent_phone or "") if request is not None and authorize(request.user, C.PERM_VIEW_PEOPLE) else None
+        )
     elif section == "public":
         row["email_verified"] = bool(u.email_verified)
     else:

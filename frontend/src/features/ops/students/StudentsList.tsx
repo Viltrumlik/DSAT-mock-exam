@@ -148,6 +148,12 @@ function StudentsListInner() {
       renderLinked: (r, link) => (
         <span className="flex min-w-0 flex-col leading-tight">
           <span className="truncate">{link(r.name || r.username || `User ${r.id}`)}</span>
+          {/* lc-up's second line: whom to call (owner, 22 Nov 2026: "Ha, chiqsin"). */}
+          {r.parent_phone ? (
+            <span data-parent-phone className="mt-[3px] truncate text-[13px] text-ms-fg-3 tabular-nums">
+              Parent {formatPhone(r.parent_phone)}
+            </span>
+          ) : null}
           {r.is_frozen ? <span className="truncate text-[13px] text-ms-frozen-fg">{statusLabel(r.status, true)}</span> : null}
         </span>
       ),

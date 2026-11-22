@@ -108,6 +108,25 @@ class ParentDetailsTests(TestCase):
         self.kid.refresh_from_db()
         self.assertEqual(self.kid.parent_name, "Karim")
 
-    def test_the_people_list_does_not_give_them_out(self):
+    def test_the_people_list_gives_the_desk_the_phone_alone(self):
+        # lc-up's Students board puts the parent's phone under each name (owner, 22 Nov 2026: "Ha, chiqsin"):
+        # the phone, for whoever holds view_people — the list's own permission, and the person page's rule.
         response = self.client_for(self.admin).get("/api/users/admin/people/", {"section": "students"}, HTTP_HOST=HOST)
-        self.assert_silent(response)
+        self.assertEqual(response.status_code, 200, response.content)
+        row = next(r for r in response.json()["results"] if r["id"] == self.kid.pk)
+        self.assertEqual(row["parent_phone"], "998907777777")
+        # The name stays on the person page.
+        self.assertNotIn("parent_name", str(response.content))
+        self.assertNotIn("Karim", str(response.content))
+
+    def test_the_list_row_gives_the_phone_to_no_one_without_view_people(self):
+        from users.views_people import _row
+
+        self.assertIsNone(_row(self.kid, "students", SimpleNamespace(user=self.teacher))["parent_phone"])
+        self.assertIsNone(_row(self.kid, "students")["parent_phone"])
+        self.assertEqual(_row(self.kid, "students", SimpleNamespace(user=self.admin))["parent_phone"], "998907777777")
+
+    def test_a_teacher_is_not_let_onto_the_list(self):
+        response = self.client_for(self.teacher).get("/api/users/admin/people/", {"section": "students"}, HTTP_HOST=HOST)
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn("998907777777", str(response.content))

@@ -43,10 +43,11 @@ const AZIZ: StudentRow = {
     },
   ],
   lcup: { linked: true, balance: -153846 },
+  parent_phone: "998903001172",
 };
 const LAYLO: StudentRow = {
   ...AZIZ, id: 8, username: "laylo", name: "Laylo Saidova", phone: "", is_frozen: true, status: "frozen_debt",
-  groups: [], lcup: { linked: true, balance: 3000 },
+  groups: [], lcup: { linked: true, balance: 3000 }, parent_phone: "",
 };
 
 const PAGE: PeoplePage<StudentRow> = {
@@ -162,6 +163,25 @@ describe("the Students list", () => {
     expect(laylo.textContent).toContain("No group");
     expect(laylo.textContent).toContain("Frozen — unpaid");
     expect(host.querySelector("[data-list-count]")?.textContent).toBe("2");
+  });
+
+  it("puts the parent's phone on the student's second line, as lc-up does", async () => {
+    await renderList();
+    const [aziz, laylo] = rows();
+    const student = (row: Element) => row.querySelectorAll("td")[2];
+    expect(student(aziz).querySelector("[data-parent-phone]")?.textContent).toBe("Parent +998 90 300 11 72");
+    // No phone kept: no empty "Parent" line.
+    expect(student(laylo).querySelector("[data-parent-phone]")).toBeNull();
+    expect(student(laylo).textContent).toContain("Frozen — unpaid");
+  });
+
+  it("draws no parent line when the server sends none (a viewer without view_people, an older server)", async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === "/users/admin/people/") return { data: { ...PAGE, results: [{ ...AZIZ, parent_phone: null }, { ...LAYLO, parent_phone: undefined }] } };
+      throw new Error(`unexpected ${url}`);
+    });
+    await renderList();
+    expect(host.querySelector("[data-parent-phone]")).toBeNull();
   });
 
   it("keeps money from anyone without view_money: no balance column, no Owe money chip", async () => {
