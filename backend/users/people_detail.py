@@ -117,17 +117,25 @@ def _lcup(user):
     from lcup.finance import student_finance
     from lcup.models import LcupPhonePrompt, LcupStudentLink
 
+    from billing.conf import ledger_is_ours, lesson_billing
+
     link = LcupStudentLink.objects.filter(user=user).first()
-    if link is None:
+    ours = ledger_is_ours()
+    if link is None and not ours:
         return None
+    finance = student_finance(user)
+    if ours and not finance.get("linked"):
+        return None  # no ledger account: nothing to show
     prompt = LcupPhonePrompt.objects.filter(user=user).values_list("state", flat=True).first()
     return {
-        **student_finance(user),
-        "status": link.status,
-        "lcup_student_id": link.lcup_student_id,
-        "exempt": link.debt_freeze_exempt_at is not None,
-        # Whether the debt freeze runs at all: switched off, "freezes after day 6" would be untrue.
-        "freeze_on": debt_freeze_enabled(),
+        **finance,
+        # Once the ledger is the master a student lc-up never knew has no link: "" and null.
+        "status": link.status if link else "",
+        "lcup_student_id": link.lcup_student_id if link else None,
+        "exempt": bool(link and link.debt_freeze_exempt_at),
+        # Whether the debt freeze runs at all: switched off, "freezes after day 6" would be untrue. Paying per lesson,
+        # the ledger freezes the moment the balance drops below zero.
+        "freeze_on": lesson_billing() if ours else debt_freeze_enabled(),
         "phone_prompt": prompt,
     }
 

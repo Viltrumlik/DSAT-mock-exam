@@ -263,7 +263,17 @@ def history_part(user) -> dict:
         admin = ev.event_type in ADMIN_EVENT_TYPES
         by = (ev.detail or {}).get("actor", "") if admin else ("lc-up sync" if ev.event_type == "lcup_profile_sync" else "")
         rows.append((ev.created_at, {"kind": "admin" if admin else "security", "title": _event_title(ev), "by": by}))
-    link = LcupStudentLink.objects.filter(user=user).first()
+    from billing.conf import ledger_is_ours
+
+    link = None if ledger_is_ours() else LcupStudentLink.objects.filter(user=user).first()
+    if ledger_is_ours():
+        from billing.reads import person_payments
+
+        for e in person_payments(user, HISTORY_LIMIT):
+            rows.append((_day(e.day), {"kind": "payment",
+                                       "title": f"{e.get_kind_display()} {abs(int(e.amount)):,} UZS"
+                                       + (f" ({e.method})" if e.method else ""),
+                                       "by": e.created_by.username if e.created_by else "", "all_day": True}))
     if link:
         for p in LcupPayment.objects.filter(lcup_student_id=link.lcup_student_id).order_by("-paid_on")[:HISTORY_LIMIT]:
             # "650,000 UZS", as the lc-up box writes it; a payment has a day, not a time.

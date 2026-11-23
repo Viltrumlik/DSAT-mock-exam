@@ -127,11 +127,22 @@ def _seated_with(**seat):
     return Q(pk__in=ClassroomMembership.objects.filter(_seat_q(), **seat).values("user_id"))
 
 
+def _owes_q():
+    """Who owes: by the ledger once it is the master (leaving lc-up, 1 Dec 2026), else by lc-up's balance."""
+    from billing.conf import ledger_is_ours
+
+    if ledger_is_ours():
+        from billing.reads import owing_user_ids
+
+        return Q(pk__in=owing_user_ids())
+    return Q(lcup_student_link__balance__lt=0)
+
+
 def _show_q(value):
     """The Students list's chips (lc-up's statuses): who owes, who is on a trial or frozen seat, who sits nowhere."""
     seat = ClassroomMembership
     if value == "owes":
-        return Q(lcup_student_link__balance__lt=0)
+        return _owes_q()
     if value == "trial":
         return _seated_with(seat_status=seat.SEAT_TRIAL)
     if value == "frozen":
@@ -245,10 +256,10 @@ FILTERS = {
         "debt": (
             "Debt",
             lambda qs: [
-                ("owes", "Owes", qs.filter(lcup_student_link__balance__lt=0).count()),
-                ("clear", "Paid up", qs.exclude(lcup_student_link__balance__lt=0).count()),
+                ("owes", "Owes", qs.filter(_owes_q()).count()),
+                ("clear", "Paid up", qs.exclude(_owes_q()).count()),
             ],
-            lambda v: {"owes": Q(lcup_student_link__balance__lt=0), "clear": ~Q(lcup_student_link__balance__lt=0)}.get(v),
+            lambda v: {"owes": _owes_q(), "clear": ~_owes_q()}.get(v),
         ),
         "dupes": _SAME_NAME,
         "signin": _SIGNED_IN,
@@ -297,6 +308,17 @@ _ORDERING = {
 }
 
 
+def _ordering(key):
+    """``_ORDERING[key]``; who owes most first comes from the ledger once it is the master."""
+    from billing.conf import ledger_is_ours
+
+    if key == "debt" and ledger_is_ours():
+        from billing.reads import user_balance
+
+        return (user_balance().asc(nulls_last=True),)
+    return _ORDERING[key]
+
+
 # ── rows ──────────────────────────────────────────────────────────────────
 
 
@@ -327,6 +349,20 @@ def _group_cell(seat) -> dict:
     }
 
 
+def _balance_cell(u, link, money: bool) -> dict:
+    """The Owes cell: the ledger's balance once it is the master (leaving lc-up, 1 Dec 2026), else lc-up's."""
+    from billing.conf import ledger_is_ours
+
+    if ledger_is_ours():
+        from billing.reads import balances_by_user
+
+        balance = balances_by_user([u.pk]).get(u.pk)
+        return {"linked": balance is not None, "balance": balance if money else None}
+    if link is None:
+        return {"linked": False, "balance": None}
+    return {"linked": True, "balance": None if link.balance is None or not money else int(link.balance)}
+
+
 def _row(u, section, request=None):
     from .photos import profile_image_url
 
@@ -353,10 +389,7 @@ def _row(u, section, request=None):
         row["groups"] = [_group_cell(s) for s in getattr(u, "active_seats", [])]
         # The balance is money: ``view_money``'s alone (teachers saw it here once; the badge, never the amount).
         money = request is not None and authorize(request.user, C.PERM_VIEW_MONEY)
-        row["lcup"] = (
-            {"linked": True, "balance": None if link.balance is None or not money else int(link.balance)}
-            if link else {"linked": False, "balance": None}
-        )
+        row["lcup"] = _balance_cell(u, link, money)
         # Whom to call, on the row's second line as in lc-up (owner, 22 Nov 2026: "Ha, chiqsin"). The same rule as the
         # person page's parent (``people_detail._parent``): ``view_people``'s alone. The phone only — the name stays
         # on the person page.
@@ -391,7 +424,7 @@ class PeopleListView(APIView):
         ordering = params.get("o") or "-joined"
         if ordering not in _ORDERING or (ordering == "debt" and section != "students"):
             ordering = "-joined"
-        qs = qs.order_by(*_ORDERING[ordering], "-pk")
+        qs = qs.order_by(*_ordering(ordering), "-pk")
 
         _, meta = paginate(qs, params)
         if section == "students":

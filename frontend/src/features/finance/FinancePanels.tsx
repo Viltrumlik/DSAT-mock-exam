@@ -214,7 +214,11 @@ export function FinanceOverviewPanel({ month, debtorsHref }: { month: string; de
     <div className="flex flex-col gap-7">
       <p className="flex flex-wrap items-center gap-2 text-[13px] text-ms-fg-3">
         {s.freeze.enabled ? (
-          <Badge tone="frozen" icon="snow">{`Debt freeze: on — from day ${s.freeze.day} of each month`}</Badge>
+          <Badge tone="frozen" icon="snow">
+            {s.freeze.rule === "lesson"
+              ? "Debt freeze: on — the moment a balance drops below zero"
+              : `Debt freeze: on — from day ${s.freeze.day} of each month`}
+          </Badge>
         ) : (
           <Badge tone="neutral">Debt freeze: off</Badge>
         )}

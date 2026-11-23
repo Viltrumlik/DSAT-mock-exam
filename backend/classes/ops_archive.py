@@ -78,6 +78,17 @@ def _teacher_choices(qs):
 OWES_NOW = Q(user__lcup_student_link__balance__lt=0)
 
 
+def _owes_now():
+    """``OWES_NOW``, by the ledger once it is the master (leaving lc-up, 1 Dec 2026)."""
+    from billing.conf import ledger_is_ours
+
+    if ledger_is_ours():
+        from billing.reads import owing_user_ids
+
+        return Q(user__pk__in=owing_user_ids())
+    return OWES_NOW
+
+
 def student_filters(*, money: bool) -> dict:
     defs = {
         "classroom": ("Group", _group_choices, lambda v: Q(classroom_id=to_int(v)) if to_int(v) else None),
@@ -87,8 +98,8 @@ def student_filters(*, money: bool) -> dict:
         # Only with the money: a filter on a balance says the balance, even with the column hidden.
         defs["owing"] = (
             "Owes money now",
-            lambda qs: [("1", "Owes money now", qs.filter(OWES_NOW).count())],
-            lambda v: OWES_NOW if v == "1" else None,
+            lambda qs: [("1", "Owes money now", qs.filter(_owes_now()).count())],
+            lambda v: _owes_now() if v == "1" else None,
         )
     return defs
 
@@ -120,7 +131,14 @@ def student_row(seat, *, money: bool) -> dict:
         "removed_by": seat.removed_by or "",
     }
     if money:
-        row["balance"] = int(link.balance) if link is not None and link.balance is not None else None
+        from billing.conf import ledger_is_ours
+
+        if ledger_is_ours():
+            from billing.reads import balances_by_user
+
+            row["balance"] = balances_by_user([user.pk]).get(user.pk)
+        else:
+            row["balance"] = int(link.balance) if link is not None and link.balance is not None else None
     return row
 
 

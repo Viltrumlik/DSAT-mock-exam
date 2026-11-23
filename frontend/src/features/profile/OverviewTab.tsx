@@ -592,7 +592,13 @@ function PaymentsBody({ finance }: { finance: MyFinance }) {
           </>
         ) : null}
       </dl>
-      {owes && finance.balance != null ? (
+      {finance.rule === "lesson" ? (
+        <p className="mt-2 text-[12.5px] text-muted-foreground">
+          {finance.lesson_price ? `Each lesson is ${formatUzs(finance.lesson_price)}, taken from your balance. ` : ""}
+          Top up at your learning center{finance.min_topup ? ` (at least ${formatUzs(finance.min_topup)})` : ""}; below zero
+          your account is paused until you pay.
+        </p>
+      ) : owes && finance.balance != null ? (
         <p className="mt-2 text-[12.5px] text-muted-foreground">
           Payments are due by the {ordinal(finance.freeze_day)} of each month. Pay at your learning center.
         </p>

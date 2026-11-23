@@ -247,8 +247,21 @@ def _payment_row(p) -> dict:
     }
 
 
+def _ledger_reads():
+    """``billing.reads`` once the ledger is the master (owner, 2026-11-22: leaving lc-up on 1 Dec), else None."""
+    from billing import conf as billing_conf
+
+    if not billing_conf.ledger_is_ours():
+        return None
+    from billing import reads
+
+    return reads
+
+
 def student_finance(user) -> dict:
     """A student's own money, for their Payments panel, the frozen screen and the ticker under the header."""
+    if (reads := _ledger_reads()) is not None:
+        return reads.student_finance(user)
     link = LcupStudentLink.objects.select_related("user").filter(user=user).first()
     if link is None:
         return {"linked": False}
@@ -298,6 +311,8 @@ def debtors(*, with_parents: bool = False) -> list[dict]:
     """Every lc-up student who owes, the biggest debt first. One row per lc-up student — the debtors are counted by
     students, never families. ``phone`` is the student's own (lc-up's, else the account's); the parent's phone is
     ``view_people``'s, as on the person page, so it is only filled ``with_parents``."""
+    if (reads := _ledger_reads()) is not None:
+        return reads.debtors(with_parents=with_parents)
     links = list(
         LcupStudentLink.objects.filter(deleted_in_lcup=False, balance__lt=0).select_related("user").order_by("balance")
     )
@@ -334,6 +349,8 @@ def debtors(*, with_parents: bool = False) -> list[dict]:
 
 
 def payments_in(month: str) -> list[dict]:
+    if (reads := _ledger_reads()) is not None:
+        return reads.payments_in(month)
     first, last = _month_range(month)
     rows = []
     qs = LcupPayment.objects.filter(paid_on__range=(first, last)).select_related("student", "group__classroom")
@@ -346,6 +363,8 @@ def payments_in(month: str) -> list[dict]:
 
 
 def summary(month: str) -> dict:
+    if (reads := _ledger_reads()) is not None:
+        return reads.summary(month)
     first, last = _month_range(month)
     in_month = LcupPayment.objects.filter(paid_on__range=(first, last))
     by_kind = dict(in_month.values_list("kind").annotate(t=Sum("amount")))
