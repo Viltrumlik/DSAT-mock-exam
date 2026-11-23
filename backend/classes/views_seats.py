@@ -23,6 +23,17 @@ from .models import Classroom
 User = get_user_model()
 
 LOCKED = "Seats are managed in lc-up until the centre leaves it."
+#: Once the ledger is the master (``seat_actions.desk_only``): the ways in and out that write no money.
+DESK_ROSTER = (
+    "A student joins or leaves a group with the seat tools now (the class's Students, or the student's Groups tab): "
+    "they start or stop the money on the right day."
+)
+DESK_JOIN = "This group's places are given by the centre's desk. Ask them to add you."
+
+
+def desk_only_response(detail: str) -> Response:
+    """409 ``desk_only``: this move would put a student in or out of a group with no money written."""
+    return Response({"detail": detail, "code": "desk_only"}, status=http.HTTP_409_CONFLICT)
 
 
 def _today():

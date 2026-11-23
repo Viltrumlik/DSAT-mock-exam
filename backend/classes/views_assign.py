@@ -286,6 +286,11 @@ class ClassroomGovernanceDeleteView(_AdminClassroomGovernanceView):
             return lcup_managed_response(
                 ["class"], detail="This class follows an lc-up group. Archive or delete the group in lc-up."
             )
+        from .seat_actions import closing_refusal
+
+        refusal = closing_refusal(classroom)
+        if refusal:
+            return Response({"detail": refusal, "code": "students_in_class"}, status=http.HTTP_409_CONFLICT)
         classroom.delete()
         return Response(status=http.HTTP_204_NO_CONTENT)
 
@@ -502,6 +507,12 @@ class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
         new_price = serializer.validated_data.get("monthly_price", classroom.monthly_price)
         if new_price != classroom.monthly_price:
             require(request.user, acc_const.PERM_SET_PRICES)
+        if classroom.is_active and serializer.validated_data.get("is_active", True) is False:
+            from .seat_actions import closing_refusal
+
+            refusal = closing_refusal(classroom)
+            if refusal:  # archived with students in it, their seats would go on paying for a group that is gone
+                return Response({"detail": refusal, "code": "students_in_class"}, status=http.HTTP_409_CONFLICT)
         serializer.save()
         classroom.refresh_from_db()
         if terms != (classroom.monthly_price, classroom.lesson_days):
