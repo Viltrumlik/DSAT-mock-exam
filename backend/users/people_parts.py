@@ -270,10 +270,13 @@ def history_part(user) -> dict:
         from billing.reads import person_payments
 
         for e in person_payments(user, HISTORY_LIMIT):
+            # A payment from before the ledger opened is lc-up's (``billing.PastPayment``: no ``created_by``).
+            by = getattr(e, "created_by", None)
             rows.append((_day(e.day), {"kind": "payment",
                                        "title": f"{e.get_kind_display()} {abs(int(e.amount)):,} UZS"
                                        + (f" ({e.method})" if e.method else ""),
-                                       "by": e.created_by.username if e.created_by else "", "all_day": True}))
+                                       "by": by.username if by else ("lc-up" if hasattr(e, "lcup_payment_id") else ""),
+                                       "all_day": True}))
     if link:
         for p in LcupPayment.objects.filter(lcup_student_id=link.lcup_student_id).order_by("-paid_on")[:HISTORY_LIMIT]:
             # "650,000 UZS", as the lc-up box writes it; a payment has a day, not a time.

@@ -19,7 +19,7 @@ from access import constants as C
 from users import audience as A
 
 from . import conf, ledger
-from .models import Account, Entry, EntryKind, SeatState
+from .models import Account, Entry, EntryKind, PastPayment, SeatState
 
 MONEY_KINDS = (EntryKind.PAYMENT, EntryKind.REFUND)
 
@@ -77,6 +77,32 @@ def payment_row(entry) -> dict:
     }
 
 
+def past_row(past) -> dict:
+    """A payment lc-up took before the ledger opened (``billing.history``), in ``payment_row``'s shape. Its id is
+    lc-up's, as the page had it before the cutover."""
+    return {
+        "id": past.lcup_payment_id,
+        "date": past.day.isoformat(),
+        "amount": past.amount,
+        "kind": past.kind,
+        "method": past.method,
+        "month": past.month or ledger.month_of(past.day),
+        "group": past.group_name,
+    }
+
+
+def _past_of(user, account=None):
+    """The person's payments from before the ledger opened: by their account, or by their user for a payer lc-up
+    linked whose account came later."""
+    match = Q(user=user) | Q(account__user=user)
+    return PastPayment.objects.filter(match | Q(account=account) if account else match)
+
+
+def _newest_first(rows: list[dict], limit: int) -> list[dict]:
+    # Stable: on the opening day the ledger's own rows (listed first) stay above lc-up's.
+    return sorted(rows, key=lambda row: row["date"], reverse=True)[:limit]
+
+
 def student_finance(user) -> dict:
     """``lcup.finance.student_finance`` from the ledger. A seat paying per lesson says so (``rule``) and what one lesson
     costs, so the page says "each lesson" and not "by the 6th of each month"."""
@@ -109,7 +135,9 @@ def student_finance(user) -> dict:
             {"name": _seat_name(seat), "monthly_cost": seat.charge_price, "lesson_price": ledger.lesson_price(seat)}
             for seat in seats
         ],
-        "payments": [payment_row(entry) for entry in payments],
+        "payments": _newest_first(
+            [payment_row(entry) for entry in payments] + [past_row(past) for past in _past_of(user, account)[:100]], 100
+        ),
     }
 
 
@@ -129,6 +157,10 @@ def debtors(*, with_parents: bool = False) -> list[dict]:
     for account in owing:
         seats[account.pk] = _live_seats(account)
     last_paid = dict(
+        PastPayment.objects.filter(kind=EntryKind.PAYMENT, account__in=owing)
+        .values_list("account_id").annotate(last=Max("day"))
+    )
+    last_paid.update(
         _live().filter(kind=EntryKind.PAYMENT, account__in=owing).values_list("account_id").annotate(last=Max("day"))
     )
     rows = []
@@ -182,6 +214,13 @@ def payments_in(month: str) -> list[dict]:
         row["student"] = entry.account.name
         row["user_id"] = entry.account.user_id
         rows.append(row)
+    past = PastPayment.objects.filter(day__range=(first, last)).select_related("account").order_by("day", "lcup_payment_id")
+    for payment in past:
+        row = past_row(payment)
+        row["student"] = payment.name or (payment.account.name if payment.account_id else "")
+        row["user_id"] = payment.user_id or (payment.account.user_id if payment.account_id else None)
+        rows.append(row)
+    rows.sort(key=lambda row: row["date"])  # stable: within a day lc-up's past ones follow the ledger's
     return rows
 
 
@@ -200,14 +239,25 @@ def summary(month: str) -> dict:
     }
     totals = balances()
     owing = {pk: total for pk, total in totals.items() if total < 0}
+    # lc-up's payments from before the ledger opened belong to their month as much as the ledger's own.
+    past = PastPayment.objects.filter(day__range=(first, last))
+    for kind, total in past.values_list("kind").annotate(t=Sum("amount")):
+        by_kind[kind] = by_kind.get(kind, 0) + total
+    for method, total in past.filter(kind=EntryKind.PAYMENT).values_list("method").annotate(t=Sum("amount")):
+        by_method[method or "—"] = by_method.get(method or "—", 0) + total
     income: dict[int, int] = defaultdict(int)
     for classroom_id, total in (
         in_month.filter(kind__in=MONEY_KINDS, seat__classroom__isnull=False)
         .values_list("seat__classroom_id").annotate(t=Sum("amount"))
     ):
         income[classroom_id] += total
+    for classroom_id, total in past.filter(classroom__isnull=False).values_list("classroom_id").annotate(t=Sum("amount")):
+        income[classroom_id] += total
     by_group = []
-    rooms = Classroom.objects.filter(is_active=True, billing_seats__isnull=False).distinct().select_related("teacher")
+    # Each live class, and any class money came in for that month — one since closed still shows a past month's income.
+    rooms = Classroom.objects.filter(
+        Q(is_active=True, billing_seats__isnull=False) | Q(pk__in=[pk for pk, total in income.items() if total])
+    ).distinct().select_related("teacher")
     for room in rooms.order_by("name"):
         seats = [seat for seat in room.billing_seats.all() if seat.state != SeatState.LEFT]
         in_debt = [seat for seat in seats if owing.get(seat.account_id, 0) < 0]
@@ -242,10 +292,12 @@ def summary(month: str) -> dict:
 
 
 def person_payments(user, limit: int) -> list:
-    """The person's payments and refunds, newest first, for their History (``users.people_parts.history_part``)."""
-    return list(
+    """The person's payments and refunds, newest first, for their History (``users.people_parts.history_part``): the
+    ledger's ``Entry`` rows and lc-up's from before it opened (``PastPayment``, which has no ``created_by``)."""
+    ours = list(
         _live().filter(account__user=user, kind__in=MONEY_KINDS).select_related("created_by").order_by("-day", "-id")[:limit]
     )
+    return sorted(ours + list(_past_of(user)[:limit]), key=lambda row: row.day, reverse=True)[:limit]
 
 
 def owing_user_ids():

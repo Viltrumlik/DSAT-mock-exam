@@ -189,6 +189,7 @@ class BillingRun(models.Model):
         OPEN = "open", "Opening"
         TICK = "tick", "Tick"
         COMPARE = "compare", "Comparison"
+        HISTORY = "history", "Past payments copied"
 
     kind = models.CharField(max_length=10, choices=Kind.choices)
     #: The day a comparison speaks for.
@@ -204,3 +205,36 @@ class BillingRun(models.Model):
 
     class Meta:
         ordering = ["-started_at"]
+
+
+class PastPayment(models.Model):
+    """A payment or refund lc-up took before the ledger opened (owner, 2026-11-23: "1-dekabrdan o'zimizni sistemada
+    ishlaymiz, api orqali barcha ma'lumotlarni ovolishingiz kerak"). History only: the opening balance already holds
+    it, so it never counts toward a balance. Copied from the archive by ``billing.history``, so the student's page,
+    their history and the money pages still show it once lc-up is gone."""
+
+    lcup_payment_id = models.PositiveBigIntegerField(unique=True)
+    lcup_student_id = models.PositiveIntegerField(db_index=True)
+    account = models.ForeignKey(
+        Account, null=True, blank=True, on_delete=models.SET_NULL, related_name="past_payments"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    #: The student's name as lc-up had it, for someone who never had an account here.
+    name = models.CharField(max_length=200, blank=True, default="")
+    kind = models.CharField(max_length=10, choices=EntryKind.choices)
+    #: A refund is below zero, as in the ledger.
+    amount = models.BigIntegerField()
+    day = models.DateField(db_index=True)
+    month = models.CharField(max_length=7, blank=True, default="")
+    method = models.CharField(max_length=60, blank=True, default="")
+    group_name = models.CharField(max_length=200, blank=True, default="")
+    classroom = models.ForeignKey(
+        "classes.Classroom", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    note = models.CharField(max_length=300, blank=True, default="")
+    copied_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-day", "-lcup_payment_id"]

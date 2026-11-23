@@ -166,6 +166,16 @@ class ArchiveTests(TestCase):
         self.assertIsNotNone(rec(E.ATTENDANCE, 100).gone_at)
         self.assertIsNone(rec(E.ATTENDANCE, 101).gone_at)
 
+    def test_the_last_full_pull_reads_the_done_windows_again(self):
+        run(lc_up())
+        rows = [{"id": 103, "date": "2026-02-03", "group_id": 10, "student_id": 1, "present": True}]
+        client = lc_up(**{f"{API}/attendance": windowed(rows)})
+        A.Archiver(client, today=TODAY, full=True).run()
+        # 101's window was done, but lc-up has since deleted it: only a full pull sees that.
+        self.assertIn(SINCE.isoformat(), [p["from"] for path, p in client.calls if path == f"{API}/attendance"])
+        self.assertIsNotNone(rec(E.ATTENDANCE, 101).gone_at)
+        self.assertIsNone(rec(E.ATTENDANCE, 103).gone_at)
+
     def test_an_old_window_answered_empty_over_held_records_stays_due(self):
         start = SINCE
         archiver = A.Archiver(lc_up(), today=TODAY)

@@ -17,6 +17,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true", help="Pull everything, write nothing but the run's report.")
         parser.add_argument("--report", action="store_true", help="What the archive holds; lc-up is not called.")
+        parser.add_argument(
+            "--full", action="store_true",
+            help="Read every attendance and payment window again, those done once too (the last pull before lc-up goes off).",
+        )
 
     def handle(self, *args, **options):
         if options["report"]:
@@ -24,7 +28,7 @@ class Command(BaseCommand):
             return
         if not lcup_enabled():
             raise CommandError("LCUP_ENABLED is off: there are no lc-up credentials to read with.")
-        run = archive_exclusive(dry_run=options["dry_run"])
+        run = archive_exclusive(dry_run=options["dry_run"], full=options["full"])
         if run is None:
             raise CommandError("Another archive pass is running.")
         self.stdout.write(json.dumps(run_row(run), ensure_ascii=False, indent=2, default=str))

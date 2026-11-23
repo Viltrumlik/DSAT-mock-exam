@@ -95,14 +95,14 @@ def attendance_checks() -> dict:
 ARCHIVE_RUNNING_KEY = "lcup:archive-running"
 
 
-def archive_exclusive(dry_run: bool):
+def archive_exclusive(dry_run: bool, full: bool = False):
     """One archive pass at a time (beat, the command): ``None`` while another is still going."""
     from .archive import run_archive
 
     if not cache.add(ARCHIVE_RUNNING_KEY, "1", timeout=3 * 60 * 60):
         return None
     try:
-        return run_archive(default_client(), dry_run=dry_run)
+        return run_archive(default_client(), dry_run=dry_run, full=full)
     finally:
         cache.delete(ARCHIVE_RUNNING_KEY)
 
