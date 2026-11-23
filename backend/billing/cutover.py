@@ -9,7 +9,9 @@ The steps, on the evening before the first day (30 Nov for 1 Dec), each its own 
    and lists the differences only.
 2. The environment is switched (``deploy/cutover-env.sh on``): lc-up off, the ledger the master, per lesson.
 3. ``finish``: every running monthly seat moves to per lesson from the first day, then the first tick, which freezes
-   whoever owes — held for a person when that is more than ``ledger.MAX_FREEZES_PER_TICK`` (``--allow-mass``).
+   whoever owes. Owner, 2026-11-23: frozen "from the first lesson" — on the first days nearly everyone holds 0 and drops
+   below zero at their first lesson, so until ``mass_until`` (a week by default) the tick freezes however many at once;
+   after it the usual cap (``ledger.MAX_FREEZES_PER_TICK``) holds a mass freeze for a person again.
 
 It runs before midnight on purpose: lc-up may charge the new month at midnight, and a balance read after that would
 charge December twice (lc-up's month and our lessons).
@@ -182,19 +184,26 @@ def would_freeze() -> list[dict]:
     return sorted(out, key=lambda row: row["balance"])
 
 
-def finish(day: date, *, today: date, apply: bool, allow_mass: bool = False) -> dict:
+#: The first week: each group has had two lessons, so whoever has not topped up has been frozen at their first.
+MASS_FREEZE_DAYS = 6
+
+
+def finish(day: date, *, today: date, apply: bool, allow_mass: bool = False, mass_until: date | None = None) -> dict:
     problems = mismatches(LEFT_LCUP)
     if problems:
         raise CutoverRefused("The environment is not switched yet (deploy/cutover-env.sh on): " + "; ".join(problems))
     _check_day(day, today)
     from .management.commands.billing_lessons_switch import switch
 
-    report = {"day": day.isoformat(), "applied": apply, "allow_mass": allow_mass, "alerts": []}
+    mass_until = mass_until or day + timedelta(days=MASS_FREEZE_DAYS)
+    if mass_until < day:
+        raise CutoverRefused("--mass-until cannot be before the first day.")
+    report = {"day": day.isoformat(), "applied": apply, "allow_mass": allow_mass, "mass_until": mass_until.isoformat(), "alerts": []}
     freezes = would_freeze()
     report["owing_unfrozen"] = len(freezes)
     with transaction.atomic():
         report["switch"] = switch(day, today)
-        tick = ledger.own_tick(today, allow_mass=allow_mass)
+        tick = ledger.own_tick(today, allow_mass=allow_mass or today <= mass_until)
         report["tick"], report["alerts"] = tick["counts"], tick["alerts"] + tick["errors"]
         if not apply:
             transaction.set_rollback(True)
@@ -251,6 +260,18 @@ def finished() -> bool:
     return bool(last and last.counts.get("step") == "finish")
 
 
+def mass_freeze_until() -> date | None:
+    """The last day the tick freezes however many owe at once (``finish``'s ``mass_until``), while the cutover stands."""
+    if not finished():
+        return None
+    last = (
+        BillingRun.objects.filter(kind=BillingRun.Kind.CUTOVER, counts__applied=True, counts__step="finish")
+        .order_by("-started_at", "-id").first()
+    )
+    raw = (last.counts or {}).get("mass_until") if last else None
+    return date.fromisoformat(raw) if raw else None
+
+
 def status() -> dict:
     state = BillingState.get()
     runs = BillingRun.objects.filter(kind=BillingRun.Kind.CUTOVER).order_by("-started_at")[:10]
@@ -258,6 +279,7 @@ def status() -> dict:
         "flags": flags(),
         "left_lcup": not mismatches(LEFT_LCUP),
         "finished": finished(),
+        "mass_freeze_until": mass_freeze_until(),
         "missing_to_leave": mismatches(LEFT_LCUP),
         "ledger_opened": state.opened_at.isoformat() if state.opened_at else None,
         "last_tick": state.last_tick_at.isoformat() if state.last_tick_at else None,

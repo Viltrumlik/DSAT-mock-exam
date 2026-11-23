@@ -22,7 +22,9 @@ M="sudo -u satapp env DJANGO_SETTINGS_MODULE=config.settings venv/bin/python man
 - The admins have entered personal prices (discounts, free places) in the Ledger tab; lc-up's API never gave them.
 - `$M billing_copy_history` (dry run), then `--apply`: lc-up's payments from before the ledger opened. `prepare`
   copies them again at the end, so this is only to see the numbers early.
-- The owner has seen the dry runs of `prepare` and `finish` (below) on a fresh copy and decided on the mass freeze.
+- The owner decided (23 Nov): a balance below zero is frozen **from the first lesson**. On a copy of prod, 197 of the
+  221 students paying per lesson held 0 (they paid November), so each is frozen at their first December lesson unless
+  they top up (at least 160,000) before it. Tell them before the evening.
 
 ## The evening
 
@@ -33,13 +35,16 @@ M="sudo -u satapp env DJANGO_SETTINGS_MODULE=config.settings venv/bin/python man
 | 3 | `$M billing_cutover prepare --day 2026-12-01 --apply --no-pull` | `adjustments` = `differences`; every account now holds lc-up's balance (rows dated the day before, "Cutover: lc-up's balance …"). Leave out `--no-pull` if step 2 was more than ~15 min ago. |
 | 4 | `bash deploy/cutover-env.sh on` (as root) | `CUTOVER_ENV_OK on`, every probe 200 |
 | 5 | `$M billing_cutover check` | `left_lcup: true` |
-| 6 | `$M billing_cutover finish --day 2026-12-01` | Seats `switched` to per lesson; `owing_unfrozen` and `freeze_list`: who the first tick freezes. Nothing is kept. |
-| 7 | `$M billing_cutover finish --day 2026-12-01 --apply` (add `--allow-mass` if the owner said so) | More than 40 freezes without `--allow-mass` are held (`alerts`) and wait for `$M billing_own_tick --allow-mass`. |
+| 6 | `$M billing_cutover finish --day 2026-12-01` | Seats `switched` to per lesson; `owing_unfrozen` and `freeze_list`: who the first tick freezes now (those already below zero). `mass_until: 2026-12-07`. Nothing is kept. |
+| 7 | `$M billing_cutover finish --day 2026-12-01 --apply` | `check` says `finished: true` and `mass_freeze_until: 2026-12-07`. |
 | 8 | Smoke | /ops/finance (Debtors, Payments, Expenses, Reports), a student's page says "each lesson", the payment form is open, a join code is refused (`desk_only`) |
 
 The beat's `billing.tasks.own_tick` (:07, :22, :37, :52) waits until step 7 is applied (`check` says
 `finished: true`), so nobody is frozen between steps 4 and 7 before the list was seen. From midnight it writes each
-lesson on its day and freezes whoever drops below zero; lc-up's sync, archive, attendance push and debt SMS have stopped.
+lesson on its day and freezes whoever drops below zero. Until `mass_until` (the first week; `--mass-until` changes it)
+it freezes however many at once, since nearly everyone starts at 0; after it, more than 40 freezes in one tick are held
+again (`alerts`) and wait for `$M billing_own_tick --allow-mass`, as a guard against a wrong charge. lc-up's sync,
+archive, attendance push and debt SMS have stopped.
 
 Every step records a `BillingRun` of kind `cutover` with its counts and rows; `check` lists the last ten.
 

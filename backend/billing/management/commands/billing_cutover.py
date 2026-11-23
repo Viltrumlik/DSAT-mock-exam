@@ -3,7 +3,7 @@
     manage.py billing_cutover check
     manage.py billing_cutover prepare --day 2026-12-01 [--apply] [--no-pull]
     (deploy/cutover-env.sh on)
-    manage.py billing_cutover finish  --day 2026-12-01 [--apply] [--allow-mass]
+    manage.py billing_cutover finish  --day 2026-12-01 [--apply] [--mass-until 2026-12-07]
     manage.py billing_cutover reverse --day <first day by the month again> --since 2026-12-01 [--apply]
 
 Every step without ``--apply`` does all of its work inside a transaction that is rolled back, and prints what it would
@@ -29,6 +29,10 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true", help="Keep what the step writes.")
         parser.add_argument("--no-pull", action="store_true", help="prepare: skip the last pull (it was just done).")
         parser.add_argument("--allow-mass", action="store_true", help="finish: freeze everyone who owes, however many.")
+        parser.add_argument(
+            "--mass-until",
+            help="finish: the last day the tick freezes however many owe at once (default: the first day + 6).",
+        )
 
     def _day(self, raw, name):
         day = parse_date(raw or "")
@@ -47,7 +51,8 @@ class Command(BaseCommand):
                 )
             elif step == "finish":
                 report = cutover.finish(
-                    self._day(options["day"], "--day"), today=today, apply=options["apply"], allow_mass=options["allow_mass"]
+                    self._day(options["day"], "--day"), today=today, apply=options["apply"], allow_mass=options["allow_mass"],
+                    mass_until=self._day(options["mass_until"], "--mass-until") if options["mass_until"] else None,
                 )
             else:
                 report = cutover.reverse(

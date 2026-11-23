@@ -91,14 +91,12 @@ class FinishTests(Base):
         self.assertEqual(self.balance(), -538_500)
 
     @LEFT
-    def test_too_many_freezes_wait_for_a_person(self):
+    def test_the_eves_tick_freezes_whoever_already_owes_however_many(self):
+        # Owner, 2026-11-23: "From the first lesson" — no cap in the cutover's first week, the eve included.
         with mock.patch.object(ledger, "MAX_FREEZES_PER_TICK", 0):
             report = cutover.finish(FIRST, today=EVE, apply=True)
-            self.assertTrue(any("held" in alert for alert in report["alerts"]))
-            self.user.refresh_from_db()
-            self.assertFalse(self.user.is_frozen)
-            self.assertEqual(report["freeze_list"][0]["balance"], -500_000)
-            ledger.own_tick(EVE, allow_mass=True)
+        self.assertEqual(report["alerts"], [])
+        self.assertEqual(report["freeze_list"][0]["balance"], -500_000)
         self.user.refresh_from_db()
         self.assertTrue(self.user.is_frozen)
 
@@ -141,6 +139,50 @@ class OwnTickWaitsTests(Base):
         self.assertTrue(cutover.finished())
         BillingRun.objects.create(kind=BillingRun.Kind.CUTOVER, counts={"step": "reverse", "applied": True})
         self.assertFalse(cutover.finished())
+
+
+class FromTheFirstLessonTests(Base):
+    """Owner, 2026-11-23: "From the first lesson" — in the first week everyone who drops below zero is frozen, however
+    many at once; after it the cap holds a mass freeze for a person again."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = User.objects.create_user(None, password=None, username="ali", role="student")
+        Account.objects.filter(pk=self.account().pk).update(user=self.user)
+        LcupStudentLink.objects.filter(lcup_student_id=1).update(balance=0)
+        cutover.prepare(FIRST, today=EVE, apply=True, pull=False)  # paid November: 0 on the eve
+
+    def tick_on(self, day):
+        from billing.tasks import own_tick
+
+        with mock.patch("django.utils.timezone.localdate", return_value=day), mock.patch.object(ledger, "MAX_FREEZES_PER_TICK", 0):
+            return own_tick()
+
+    @LEFT
+    def test_the_first_week_freezes_at_the_first_lesson_however_many(self):
+        report = cutover.finish(FIRST, today=EVE, apply=True)
+        self.assertEqual(report["mass_until"], "2026-12-07")
+        self.assertEqual(cutover.mass_freeze_until(), date(2026, 12, 7))
+        self.assertEqual(self.balance(), 0)
+        self.tick_on(date(2026, 12, 2))  # Wednesday: their first lesson
+        self.assertEqual(self.balance(), -38_500)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_frozen)
+
+    @LEFT
+    def test_after_the_week_the_cap_holds_again(self):
+        cutover.finish(FIRST, today=EVE, apply=True, mass_until=FIRST)
+        result = self.tick_on(date(2026, 12, 2))
+        self.assertTrue(any("held" in alert for alert in result["alerts"]))
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_frozen)
+
+    @LEFT
+    def test_no_window_before_finish_or_after_a_reverse(self):
+        self.assertIsNone(cutover.mass_freeze_until())
+        cutover.finish(FIRST, today=EVE, apply=True)
+        BillingRun.objects.create(kind=BillingRun.Kind.CUTOVER, counts={"step": "reverse", "applied": True})
+        self.assertIsNone(cutover.mass_freeze_until())
 
 
 class CommandTests(Base):

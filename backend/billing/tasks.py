@@ -31,14 +31,17 @@ def own_tick(*, allow_mass: bool = False) -> dict:
         return {"skipped": "the ledger still follows lc-up"}
     if BillingState.get().opened_at is None:
         return {"skipped": "not opened"}
-    from .cutover import finished
+    from .cutover import finished, mass_freeze_until
 
     if not finished():
         return {"skipped": "the cutover has not finished (billing_cutover finish --apply)"}
     if not cache.add(RUNNING_KEY, "1", timeout=14 * 60):
         return {"skipped": "already running"}
     try:
-        return ledger.own_tick(timezone.localdate(), allow_mass=allow_mass)
+        today = timezone.localdate()
+        # Owner, 2026-11-23: frozen "from the first lesson" — in the cutover's first week, however many at once.
+        until = mass_freeze_until()
+        return ledger.own_tick(today, allow_mass=allow_mass or bool(until and today <= until))
     finally:
         cache.delete(RUNNING_KEY)
 
