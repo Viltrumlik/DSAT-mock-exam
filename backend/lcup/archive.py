@@ -128,6 +128,9 @@ class Archiver:
     alerts: list = field(default_factory=list)
     #: The student ids on tonight's lc-up list; None until (or unless) that pull succeeds.
     listed_students: set | None = None
+    #: Read every window again, even those done once: the last pull before lc-up goes off catches a mark or payment
+    #: lc-up changed or deleted after its window was done (owner, 2026-11-23: "api orqali barcha ma'lumotlarni").
+    full: bool = False
 
     # ── bookkeeping ───────────────────────────────────────────────────────
 
@@ -266,7 +269,9 @@ class Archiver:
     def pull_windows(self) -> None:
         since = conf.archive_since()
         for entity, path, params in WINDOWED:
-            done = set(LcupArchiveMark.objects.filter(key__startswith=f"window:{entity}:").values_list("key", flat=True))
+            done = set() if self.full else set(
+                LcupArchiveMark.objects.filter(key__startswith=f"window:{entity}:").values_list("key", flat=True)
+            )
             for start, end in backfill_windows(since, self.today):
                 key = _window_key(entity, start)
                 if key in done:
@@ -320,10 +325,10 @@ class Archiver:
             stage()
 
 
-def run_archive(client, *, dry_run: bool = False) -> LcupArchiveRun:
+def run_archive(client, *, dry_run: bool = False, full: bool = False) -> LcupArchiveRun:
     """One full pass. A dry run does all of it inside a transaction that is rolled back, so its counts
-    are exactly what a real run would write."""
-    archiver = Archiver(client)
+    are exactly what a real run would write. ``full`` reads the windows already done as well."""
+    archiver = Archiver(client, full=full)
     run = LcupArchiveRun(dry_run=dry_run, started_at=archiver.now)
     try:
         with transaction.atomic():
