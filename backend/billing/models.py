@@ -85,6 +85,15 @@ class SeatPriceChange(models.Model):
 class EndReason(models.TextChoices):
     LEAVE = "leave", "Left the group"
     FREEZE = "freeze", "Frozen"
+    #: Ended the day before the seat began to pay per lesson (``billing_lessons_switch``); it goes on as a new span.
+    SWITCH = "switch", "Moved to pay per lesson"
+
+
+class SpanRule(models.TextChoices):
+    """How a span is billed (owner, 2026-11-22): the month's price on each 1st, or each lesson from a balance."""
+
+    MONTH = "month", "Monthly"
+    LESSON = "lesson", "Per lesson"
 
 
 class Span(models.Model):
@@ -97,6 +106,8 @@ class Span(models.Model):
     #: "YYYY-MM": the charge of this month and earlier is already inside the opening balance. Empty for a
     #: span that began after the ledger opened.
     opening_month = models.CharField(max_length=7, blank=True, default="")
+    #: Fixed when the span starts: a span never changes rule, it ends and a new one starts (``EndReason.SWITCH``).
+    rule = models.CharField(max_length=10, choices=SpanRule.choices, default=SpanRule.MONTH, db_default=SpanRule.MONTH)
 
     def __str__(self) -> str:
         return f"{self.seat} from {self.start}"

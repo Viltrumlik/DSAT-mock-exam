@@ -19,6 +19,26 @@ def shadow_tick(*, allow_mass: bool = False) -> dict:
         cache.delete(RUNNING_KEY)
 
 
+@shared_task(name="billing.tasks.own_tick")
+def own_tick(*, allow_mass: bool = False) -> dict:
+    """The ledger's own charges and debt freeze once lc-up no longer writes it (``ledger.own_tick``). Returns at
+    once while it still follows lc-up."""
+    from django.utils import timezone
+
+    from . import ledger
+
+    if not conf.ledger_is_ours():
+        return {"skipped": "the ledger still follows lc-up"}
+    if BillingState.get().opened_at is None:
+        return {"skipped": "not opened"}
+    if not cache.add(RUNNING_KEY, "1", timeout=14 * 60):
+        return {"skipped": "already running"}
+    try:
+        return ledger.own_tick(timezone.localdate(), allow_mass=allow_mass)
+    finally:
+        cache.delete(RUNNING_KEY)
+
+
 @shared_task(name="billing.tasks.compare")
 def compare() -> dict:
     """The day's comparison with lc-up's balances."""

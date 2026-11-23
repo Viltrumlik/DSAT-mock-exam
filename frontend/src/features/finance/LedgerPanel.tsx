@@ -249,6 +249,19 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
         <p className="text-[13px] text-ms-fg-3">
           {account.phone || "No phone"} · Balance {money(account.balance)} {SOM}
         </p>
+        {account.rules?.mode === "lesson" ? (
+          <p className="text-[13px] text-ms-fg-3">
+            Pays per lesson
+            {account.rules.lesson_price ? `: ${money(account.rules.lesson_price)} ${SOM} a lesson` : ""} (monthly price ÷{" "}
+            {account.rules.lessons_per_month}) · top-up at least {money(account.rules.least_payment ?? account.rules.min_topup)}{" "}
+            {SOM}
+            {account.rules.first_month_fee
+              ? ` · first month ${money(account.rules.first_month_fee)} ${SOM}` +
+                (account.rules.first_month_until ? `, covers lessons to ${account.rules.first_month_until}` : "")
+              : ""}
+            {" · frozen below zero"}
+          </p>
+        ) : null}
         {account.seats.map((seat) => (
           <div key={seat.id} className="text-[13px] text-ms-fg-3">
             <p>
@@ -270,7 +283,14 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
       </header>
       {account.payments_open && enterable.length > 0 ? (
         entering ? (
-          <EntryForm accountId={account.id} balance={account.balance} kind={entering} seats={account.seats} onClose={() => setEntering(null)} />
+          <EntryForm
+            accountId={account.id}
+            balance={account.balance}
+            kind={entering}
+            seats={account.seats}
+            leastPayment={account.rules?.mode === "lesson" ? account.rules.least_payment : undefined}
+            onClose={() => setEntering(null)}
+          />
         ) : (
           <div role="group" aria-label="Enter money" className="flex flex-wrap gap-1">
             {enterable.map((kind) => (

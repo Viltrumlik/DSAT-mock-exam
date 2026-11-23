@@ -351,6 +351,13 @@ BILLING_SHADOW_ENABLED = os.getenv("BILLING_SHADOW_ENABLED", "False").lower() ==
 # Admins enter payments in the Ledger tab: for the cutover, and never while BILLING_SHADOW_ENABLED is on (a payment
 # entered here and in lc-up would count twice). Off by default; literal "true" only.
 BILLING_PAYMENTS_OPEN = os.getenv("BILLING_PAYMENTS_OPEN", "False").lower() == "true"
+# How the ledger charges (owner, 2026-11-22): "month" = the group price on each 1st (lc-up's rule); "lesson" = a
+# new student's first month in full, then each lesson from a balance topped up in advance, frozen below zero
+# (billing.lessons). Anything but the literal "lesson" is "month".
+BILLING_MODE = os.getenv("BILLING_MODE", "month").strip().lower()
+# One lesson = the seat's monthly price ÷ this, to the nearest 500 so'm (owner, 2026-11-22: 500,000 → 38,500).
+BILLING_LESSONS_PER_MONTH = int(os.getenv("BILLING_LESSONS_PER_MONTH", "13"))
+BILLING_MIN_TOPUP = int(os.getenv("BILLING_MIN_TOPUP", "160000"))
 
 # SMS through eskiz.uz (backend/sms, docs/superpowers/plans/2026-10-18-eskiz-sms-debt-warnings.md): days
 # 1..LCUP_DEBT_FREEZE_DAY-1 at 10:00, everyone the freeze would take gets one SMS on their lc-up phone.
@@ -732,6 +739,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "billing.tasks.compare",
         "schedule": crontab(hour=23, minute=40),
     },
+    # The ledger once it is ours (shadow off, payments open): each lesson's and each month's charge, then the debt
+    # freeze. Returns at once while BILLING_SHADOW_ENABLED is on or BILLING_PAYMENTS_OPEN is off.
+    "billing-own-tick": {
+        "task": "billing.tasks.own_tick",
+        "schedule": crontab(minute="7,22,37,52"),
+    },
     # SMS before the debt freeze (backend/sms): every hour at :00 (CELERY_TIMEZONE is Tashkent), and the
     # code decides — at the hour set in /ops/sms (10:00 by default) it warns on days 1..LCUP_DEBT_FREEZE_DAY-1,
     # the next two hours it sends again only what could not get out, every other hour nothing. Returns at
@@ -999,8 +1012,11 @@ CSRF_COOKIE_HTTPONLY = False
 # Share CSRF + session cookies across subdomains in production so the admin/questions/teacher
 # consoles can complete login/refresh flows after navigating from the apex domain.
 if not DEBUG:
-    SESSION_COOKIE_DOMAIN = ".mastersat.uz"
-    CSRF_COOKIE_DOMAIN = ".mastersat.uz"
+    # A copy of the site on another host (the test copy) sets COOKIE_DOMAIN to its own, or to "" for host-only:
+    # a browser drops a cookie whose Domain is not the host's.
+    _COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN", ".mastersat.uz").strip() or None
+    SESSION_COOKIE_DOMAIN = _COOKIE_DOMAIN
+    CSRF_COOKIE_DOMAIN = _COOKIE_DOMAIN
 
 
 # ─── Classroom homework (submissions) ─────────────────────────────────────────
