@@ -241,12 +241,23 @@ def reverse(day: date, *, since: date, today: date, apply: bool, by=None) -> dic
     return report
 
 
+def finished() -> bool:
+    """Whether ``finish --apply`` ran and no ``reverse --apply`` came after it. Until then the beat's own tick waits:
+    between ``cutover-env.sh on`` and ``finish`` it would otherwise freeze debtors nobody has looked at yet."""
+    last = (
+        BillingRun.objects.filter(kind=BillingRun.Kind.CUTOVER, counts__applied=True, counts__step__in=["finish", "reverse"])
+        .order_by("-started_at", "-id").first()
+    )
+    return bool(last and last.counts.get("step") == "finish")
+
+
 def status() -> dict:
     state = BillingState.get()
     runs = BillingRun.objects.filter(kind=BillingRun.Kind.CUTOVER).order_by("-started_at")[:10]
     return {
         "flags": flags(),
         "left_lcup": not mismatches(LEFT_LCUP),
+        "finished": finished(),
         "missing_to_leave": mismatches(LEFT_LCUP),
         "ledger_opened": state.opened_at.isoformat() if state.opened_at else None,
         "last_tick": state.last_tick_at.isoformat() if state.last_tick_at else None,

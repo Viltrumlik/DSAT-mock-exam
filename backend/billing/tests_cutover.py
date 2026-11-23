@@ -127,6 +127,22 @@ class ReverseTests(Base):
         self.assertFalse(back.entries.exists())  # December is lc-up's: no month charged here
 
 
+class OwnTickWaitsTests(Base):
+    @LEFT
+    def test_the_beat_tick_waits_for_finish_and_stops_again_after_a_reverse(self):
+        from billing.tasks import own_tick
+
+        self.assertIn("has not finished", own_tick()["skipped"])
+        with mock.patch("billing.cutover.timezone.localdate", return_value=EVE):
+            cutover.finish(FIRST, today=EVE, apply=True)
+        self.assertTrue(cutover.finished())
+        self.assertNotIn("skipped", own_tick())
+        cutover.finish(FIRST, today=EVE, apply=False)  # a dry run changes nothing
+        self.assertTrue(cutover.finished())
+        BillingRun.objects.create(kind=BillingRun.Kind.CUTOVER, counts={"step": "reverse", "applied": True})
+        self.assertFalse(cutover.finished())
+
+
 class CommandTests(Base):
     def test_check_says_what_is_left_to_switch(self):
         report = cutover.status()

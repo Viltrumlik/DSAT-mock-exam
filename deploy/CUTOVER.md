@@ -37,8 +37,9 @@ M="sudo -u satapp env DJANGO_SETTINGS_MODULE=config.settings venv/bin/python man
 | 7 | `$M billing_cutover finish --day 2026-12-01 --apply` (add `--allow-mass` if the owner said so) | More than 40 freezes without `--allow-mass` are held (`alerts`) and wait for `$M billing_own_tick --allow-mass`. |
 | 8 | Smoke | /ops/finance (Debtors, Payments, Expenses, Reports), a student's page says "each lesson", the payment form is open, a join code is refused (`desk_only`) |
 
-From midnight the beat's `billing.tasks.own_tick` (:07, :22, :37, :52) writes each lesson on its day and freezes
-whoever drops below zero; lc-up's sync, archive, attendance push and debt SMS have stopped.
+The beat's `billing.tasks.own_tick` (:07, :22, :37, :52) waits until step 7 is applied (`check` says
+`finished: true`), so nobody is frozen between steps 4 and 7 before the list was seen. From midnight it writes each
+lesson on its day and freezes whoever drops below zero; lc-up's sync, archive, attendance push and debt SMS have stopped.
 
 Every step records a `BillingRun` of kind `cutover` with its counts and rows; `check` lists the last ten.
 

@@ -31,6 +31,10 @@ def own_tick(*, allow_mass: bool = False) -> dict:
         return {"skipped": "the ledger still follows lc-up"}
     if BillingState.get().opened_at is None:
         return {"skipped": "not opened"}
+    from .cutover import finished
+
+    if not finished():
+        return {"skipped": "the cutover has not finished (billing_cutover finish --apply)"}
     if not cache.add(RUNNING_KEY, "1", timeout=14 * 60):
         return {"skipped": "already running"}
     try:
