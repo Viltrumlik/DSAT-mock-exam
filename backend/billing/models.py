@@ -190,6 +190,8 @@ class BillingRun(models.Model):
         TICK = "tick", "Tick"
         COMPARE = "compare", "Comparison"
         HISTORY = "history", "Past payments copied"
+        #: A step of leaving lc-up (``billing.cutover``): prepare, finish or reverse.
+        CUTOVER = "cutover", "Leaving lc-up"
 
     kind = models.CharField(max_length=10, choices=Kind.choices)
     #: The day a comparison speaks for.
