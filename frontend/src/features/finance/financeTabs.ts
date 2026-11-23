@@ -8,15 +8,16 @@ import { P } from "@/features/ops/permissions";
  * then the payments, the centre's expenses (they leave lc-up too, owner 22 Nov 2026), the centre's own ledger, and the
  * month's totals. lc-up's "Extra income" is not kept here, so it is not a tab.
  */
-export type FinanceTab = "overview" | "debtors" | "payments" | "expenses" | "ledger";
+export type FinanceTab = "overview" | "debtors" | "payments" | "expenses" | "reports" | "ledger";
 
-export const FINANCE_TAB_IDS: readonly FinanceTab[] = ["debtors", "payments", "expenses", "ledger", "overview"];
+export const FINANCE_TAB_IDS: readonly FinanceTab[] = ["debtors", "payments", "expenses", "reports", "ledger", "overview"];
 
 export const FINANCE_TAB_LABEL: Record<FinanceTab, string> = {
   overview: "Overview",
   debtors: "Debtors",
   payments: "Payments",
   expenses: "Expenses",
+  reports: "Reports",
   ledger: "Ledger",
 };
 
@@ -29,5 +30,7 @@ export const FINANCE_TAB_NEEDS: Record<FinanceTab, readonly string[]> = {
   debtors: [P.viewMoney],
   payments: [P.viewMoney],
   expenses: [P.viewMoney],
+  // A period's money totals (lc-up's "Hisobotlar", owner 22 Nov 2026).
+  reports: [P.viewReports],
   ledger: [P.viewMoney],
 };

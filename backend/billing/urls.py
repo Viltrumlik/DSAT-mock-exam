@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, views_expenses
+from . import views, views_expenses, views_report
 
 urlpatterns = [
     path("summary/", views.SummaryView.as_view(), name="billing-summary"),
@@ -9,6 +9,7 @@ urlpatterns = [
     path("accounts/<int:pk>/entries/", views.EntryCreateView.as_view(), name="billing-entry-create"),
     path("entries/<int:pk>/void/", views.EntryVoidView.as_view(), name="billing-entry-void"),
     path("seats/<int:pk>/price/", views.SeatPriceView.as_view(), name="billing-seat-price"),
+    path("report/", views_report.ReportView.as_view(), name="billing-report"),
     path("expenses/", views_expenses.ExpenseListView.as_view(), name="billing-expenses"),
     path("expenses/meta/", views_expenses.ExpenseMetaView.as_view(), name="billing-expenses-meta"),
     path("expenses/<int:pk>/void/", views_expenses.ExpenseVoidView.as_view(), name="billing-expense-void"),
