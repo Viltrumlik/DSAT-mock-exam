@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { Tabs, useTabParam } from "@/features/console/ui";
 import { DebtorsPanel, SmsDebtorsLink } from "@/features/finance/DebtorsPanel";
+import { ExpensesPanel } from "@/features/finance/ExpensesPanel";
 import { FinanceOverviewPanel, MonthPicker, PaymentsPanel, currentMonth } from "@/features/finance/FinancePanels";
 import { useDebtors } from "@/features/finance/financeHooks";
 import { FINANCE_TAB_IDS, FINANCE_TAB_LABEL, FINANCE_TAB_NEEDS, type FinanceTab } from "@/features/finance/financeTabs";
@@ -64,6 +65,7 @@ function FinancePage() {
       <div role="tabpanel" id={`finance-${tab}-panel`} aria-labelledby={`finance-${tab}`} className="min-w-0 pt-2">
         {tab === "debtors" ? <DebtorsPanel /> : null}
         {tab === "payments" ? <PaymentsPanel month={month} /> : null}
+        {tab === "expenses" ? <ExpensesPanel /> : null}
         {tab === "ledger" ? <LedgerPanel /> : null}
         {tab === "overview" ? <FinanceOverviewPanel month={month} debtorsHref="/ops/finance?tab=debtors" /> : null}
       </div>

@@ -110,11 +110,12 @@ class RolePresetTests(TestCase):
     #: The CRM permissions each role holds. ``*`` is everything.
     TABLE = {
         C.ROLE_SUPER_ADMIN: {C.WILDCARD},
-        # Every CRM permission but managing staff (PR 4: staff are the owner's).
-        C.ROLE_ADMIN: set(C.CRM_PERMISSION_CODENAMES) - {C.PERM_MANAGE_STAFF},
+        # Every CRM permission but managing staff (PR 4: staff are the owner's) and the centre's expenses (owner,
+        # 2026-11-22: the owner's and the accountant's; one tick on the Staff page gives them to an admin).
+        C.ROLE_ADMIN: set(C.CRM_PERMISSION_CODENAMES) - {C.PERM_MANAGE_STAFF, C.PERM_MANAGE_EXPENSES},
         C.ROLE_ACCOUNTANT: {
             C.PERM_VIEW_PEOPLE, C.PERM_VIEW_MONEY, C.PERM_TAKE_PAYMENT, C.PERM_VOID_PAYMENT, C.PERM_ADJUST_BALANCE,
-            C.PERM_SET_PRICES, C.PERM_DEBT_FREEZE, C.PERM_VIEW_REPORTS, C.PERM_SEND_DEBT_SMS,
+            C.PERM_SET_PRICES, C.PERM_DEBT_FREEZE, C.PERM_VIEW_REPORTS, C.PERM_SEND_DEBT_SMS, C.PERM_MANAGE_EXPENSES,
         },
         C.ROLE_TEACHER: set(),
         C.ROLE_SUPPORT_TEACHER: set(),
@@ -141,8 +142,10 @@ class RolePresetTests(TestCase):
         self.assertFalse(set(C.CRM_PERMISSION_CODENAMES) & C.PERMISSIONS_REQUIRING_PLATFORM_SUBJECT)
 
     def test_the_migration_adds_a_row_for_each(self):
-        migration = importlib.import_module("access.migrations.0012_crm_permissions")
-        self.assertEqual([row[0] for row in migration.CRM_PERMISSIONS], list(C.CRM_PERMISSION_CODENAMES))
+        first = importlib.import_module("access.migrations.0012_crm_permissions")
+        expenses = importlib.import_module("access.migrations.0013_expense_permission")
+        rows = [row[0] for row in first.CRM_PERMISSIONS] + [expenses.ROW[0]]
+        self.assertEqual(rows, list(C.CRM_PERMISSION_CODENAMES))
 
     def test_requires_refuses_a_subject_scoped_codename(self):
         with self.assertRaises(ValueError):

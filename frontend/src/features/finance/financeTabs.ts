@@ -5,17 +5,18 @@ import { P } from "@/features/ops/permissions";
  * console's sidebar and ⌘K list the same tabs, in the same words.
  *
  * In lc-up's order (Debtors board, owner 22 Nov 2026: lc-up's Moliya opens straight on Qarzdorlar): Debtors first,
- * then the payments, the centre's own ledger, and the month's totals. lc-up's "Extra income" and "Expenses" are not
- * kept here, so they are not tabs.
+ * then the payments, the centre's expenses (they leave lc-up too, owner 22 Nov 2026), the centre's own ledger, and the
+ * month's totals. lc-up's "Extra income" is not kept here, so it is not a tab.
  */
-export type FinanceTab = "overview" | "debtors" | "payments" | "ledger";
+export type FinanceTab = "overview" | "debtors" | "payments" | "expenses" | "ledger";
 
-export const FINANCE_TAB_IDS: readonly FinanceTab[] = ["debtors", "payments", "ledger", "overview"];
+export const FINANCE_TAB_IDS: readonly FinanceTab[] = ["debtors", "payments", "expenses", "ledger", "overview"];
 
 export const FINANCE_TAB_LABEL: Record<FinanceTab, string> = {
   overview: "Overview",
   debtors: "Debtors",
   payments: "Payments",
+  expenses: "Expenses",
   ledger: "Ledger",
 };
 
@@ -27,5 +28,6 @@ export const FINANCE_TAB_NEEDS: Record<FinanceTab, readonly string[]> = {
   overview: [P.viewReports],
   debtors: [P.viewMoney],
   payments: [P.viewMoney],
+  expenses: [P.viewMoney],
   ledger: [P.viewMoney],
 };

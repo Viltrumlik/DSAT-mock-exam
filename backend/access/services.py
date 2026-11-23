@@ -94,8 +94,9 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
                 constants.PERM_MANAGE_TESTS,
                 constants.PERM_SUBMIT_TEST,
                 # Every CRM permission but managing staff, which is the owner's alone
-                # (plan 2026-11-12-crm-roles: PR 2 gave the set, PR 4 took manage_staff away).
-                *constants.TICKABLE_PERMISSION_CODENAMES,
+                # (plan 2026-11-12-crm-roles: PR 2 gave the set, PR 4 took manage_staff away), and the
+                # centre's expenses, the owner's and the accountant's (owner, 2026-11-22); one tick gives them.
+                *(code for code in constants.TICKABLE_PERMISSION_CODENAMES if code != constants.PERM_MANAGE_EXPENSES),
             }
         ),
         constants.ROLE_ACCOUNTANT: frozenset(
@@ -111,6 +112,7 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
                 constants.PERM_DEBT_FREEZE,
                 constants.PERM_VIEW_REPORTS,
                 constants.PERM_SEND_DEBT_SMS,
+                constants.PERM_MANAGE_EXPENSES,
             }
         ),
         constants.ROLE_TEACHER: frozenset(
