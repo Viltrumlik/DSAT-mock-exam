@@ -29,6 +29,7 @@ const REPORT = {
   },
   money_out: { total: 4000000, count: 1, by_category: [{ name: "Rent", total: 4000000, count: 1 }] },
   net: -3390000,
+  ledger_opened: "2026-11-04",
   earned: { lessons: 38500, first_months: 500000, monthly: 500000, other: 0, given_back: 115500, total: 923000, adjustments: 10000 },
   students: {
     active_per_day: [
@@ -118,6 +119,13 @@ describe("ReportsPanel", () => {
     await flush();
     const last = get.mock.calls.at(-1)![1].params;
     expect(last.from).toBe(last.to);
+  });
+
+  it("before the ledger opened there is no debt figure, and it says why", async () => {
+    get.mockResolvedValue({ data: { ...REPORT, from: "2026-10-01", to: "2026-10-31", debt: { as_of: "2026-10-31", debtors: null, total: null } } });
+    await mount();
+    expect(host.textContent).toContain("before the ledger opened");
+    expect(host.textContent).toContain("This period starts before the ledger opened on");
   });
 
   it("a failed report says so", async () => {

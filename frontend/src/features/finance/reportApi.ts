@@ -11,6 +11,8 @@ export interface PeriodReport {
   money_out: { total: number; count: number; by_category: { name: string; total: number; count: number }[] };
   /** Payments, less refunds, less expenses. */
   net: number;
+  /** The day the ledger opened from lc-up's balances: before it, earned, students and debt are not whole. */
+  ledger_opened: string | null;
   earned: {
     lessons: number;
     first_months: number;
@@ -29,7 +31,8 @@ export interface PeriodReport {
     froze: number;
     frozen_for_debt_now: number;
   };
-  debt: { as_of: string; debtors: number; total: number };
+  /** Null before the ledger opened: the balances were lc-up's then. */
+  debt: { as_of: string; debtors: number | null; total: number | null };
 }
 
 export function usePeriodReport(from: string, to: string) {

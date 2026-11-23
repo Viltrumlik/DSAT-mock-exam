@@ -56,14 +56,18 @@ function MoneyTiles({ r }: { r: PeriodReport }) {
         delay={90}
       />
       <StatTile label="Earned by lessons" value={amount(r.earned.total)} unit={SOM} sub="charged to students, less lessons given back" delay={120} />
-      <StatTile
-        label={`Owed on ${day(r.debt.as_of)}`}
-        value={amount(r.debt.total)}
-        unit={SOM}
-        tone={r.debt.total > 0 ? "critical" : "positive"}
-        sub={r.debt.debtors === 1 ? "1 student owes" : `${r.debt.debtors} students owe`}
-        delay={150}
-      />
+      {r.debt.total === null ? (
+        <StatTile label={`Owed on ${day(r.debt.as_of)}`} value="—" sub="before the ledger opened" delay={150} />
+      ) : (
+        <StatTile
+          label={`Owed on ${day(r.debt.as_of)}`}
+          value={amount(r.debt.total)}
+          unit={SOM}
+          tone={r.debt.total > 0 ? "critical" : "positive"}
+          sub={r.debt.debtors === 1 ? "1 student owes" : `${r.debt.debtors} students owe`}
+          delay={150}
+        />
+      )}
     </div>
   );
 }
@@ -221,6 +225,13 @@ export function ReportsPanel() {
       {q.error ? <LoadError error={q.error} onRetry={() => void q.refetch()} what="The report did not load." /> : null}
       {q.data ? (
         <>
+          {q.data.ledger_opened && q.data.from < q.data.ledger_opened ? (
+            <p className="text-[13px] text-ms-fg-3">
+              This period starts before the ledger opened on {day(q.data.ledger_opened)}. Payments are all here; what
+              lc-up charged before that day sits inside the opening balances, so earned, the students and the debt count
+              only from then on.
+            </p>
+          ) : null}
           <MoneyTiles r={q.data} />
           <Shares r={q.data} />
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">

@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from billing import ledger
-from billing.models import Account, EndReason, EntryKind, Expense, ExpenseCategory, PastPayment, Seat, SeatState, Span
+from billing.models import Account, BillingState, EndReason, EntryKind, Expense, ExpenseCategory, PastPayment, Seat, SeatState, Span
 from billing.report import period_report
 
 User = get_user_model()
@@ -29,6 +29,7 @@ def account(name, *, spans=()):
 
 class Fixture(TestCase):
     def setUp(self):
+        BillingState.objects.update_or_create(pk=1, defaults={"opened_at": timezone.make_aware(timezone.datetime(2026, 11, 4, 12))})
         self.ali = account("Ali", spans=[(date(2026, 12, 2), None, "")])  # new in December
         self.vali = account("Vali", spans=[(date(2026, 11, 2), date(2026, 12, 4), EndReason.LEAVE)])  # left
         self.sami = account("Sami", spans=[(date(2026, 11, 2), date(2026, 12, 3), EndReason.FREEZE)])  # froze
@@ -92,6 +93,10 @@ class ReportTests(Fixture):
         debt = period_report(date(2026, 11, 1), date(2026, 11, 30), today=TODAY)["debt"]
         self.assertEqual(debt, {"as_of": "2026-11-30", "debtors": 1, "total": 200_000})
         self.assertEqual(period_report(*DEC, today=TODAY)["debt"]["as_of"], "2026-12-10")
+
+    def test_before_the_ledger_opened_there_is_no_debt_figure(self):
+        r = period_report(date(2026, 10, 1), date(2026, 10, 31), today=TODAY)
+        self.assertEqual((r["ledger_opened"], r["debt"]["total"], r["debt"]["debtors"]), ("2026-11-04", None, None))
 
 
 @override_settings(ALLOWED_HOSTS=[HOST, "testserver"])

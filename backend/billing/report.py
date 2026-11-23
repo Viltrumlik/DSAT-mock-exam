@@ -16,10 +16,11 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Min, Q, Sum
+from django.utils import timezone
 
 from users import audience as A
 
-from .models import EndReason, Entry, EntryKind, Expense, PastPayment, Span
+from .models import BillingState, EndReason, Entry, EntryKind, Expense, PastPayment, Span
 
 #: The longest stretch one report covers.
 MAX_DAYS = 366
@@ -108,8 +109,11 @@ def _students(start: date, end: date, today: date) -> dict:
     }
 
 
-def _debt(as_of: date) -> dict:
-    """Everyone's balance as the period ended: the rows dated on or before that day."""
+def _debt(as_of: date, opened: date | None) -> dict:
+    """Everyone's balance as the period ended: the rows dated on or before that day. Before the ledger opened it held
+    no balances (they were lc-up's), so there is no figure then rather than a wrong zero."""
+    if opened is None or as_of < opened:
+        return {"as_of": as_of.isoformat(), "debtors": None, "total": None}
     totals = Entry.objects.filter(voided_at__isnull=True, day__lte=as_of).values("account_id").annotate(t=Sum("amount"))
     owing = [row["t"] for row in totals if row["t"] < 0]
     return {"as_of": as_of.isoformat(), "debtors": len(owing), "total": -sum(owing)}
@@ -117,14 +121,19 @@ def _debt(as_of: date) -> dict:
 
 def period_report(start: date, end: date, *, today: date) -> dict:
     money_in, money_out = _money_in(start, end), _money_out(start, end)
+    opened_at = BillingState.get().opened_at
+    opened = timezone.localdate(opened_at) if opened_at else None
     return {
         "from": start.isoformat(),
         "to": end.isoformat(),
+        # The day the ledger opened from lc-up's balances: what lc-up charged before it sits inside those balances, so
+        # "earned", the students and the debt are whole only from then on. Payments are whole either way.
+        "ledger_opened": opened.isoformat() if opened else None,
         "money_in": money_in,
         "money_out": money_out,
         # What stayed with the centre: payments, less refunds (already below zero), less expenses.
         "net": money_in["paid"] + money_in["refunded"] - money_out["total"],
         "earned": _earned(start, end),
         "students": _students(start, end, today),
-        "debt": _debt(min(end, today)),
+        "debt": _debt(min(end, today), opened),
     }
