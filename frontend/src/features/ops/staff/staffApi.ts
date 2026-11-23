@@ -67,4 +67,5 @@ export const PERMISSION_LABELS: Record<string, string> = {
   view_reports: "View money totals",
   events_shop: "Events, shop and posts",
   lcup_tools: "lc-up tools",
+  manage_expenses: "Enter expenses",
 };

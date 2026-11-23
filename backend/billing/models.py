@@ -238,3 +238,59 @@ class PastPayment(models.Model):
 
     class Meta:
         ordering = ["-day", "-lcup_payment_id"]
+
+
+# ── Expenses (leaving lc-up, owner 2026-11-22: "No, move them too") ─────────────────────────────────────────────
+# The centre's money out: rent, salaries, supplies. Nothing to do with a student's balance. lc-up's API never served
+# its expenses, so the list starts on the day of the cutover.
+
+
+class ExpenseCategory(models.Model):
+    """A kind of expense (lc-up's "Xarajat turi"): a list whoever keeps the expenses edits. Retired, never deleted, so
+    an old row keeps the category it was entered under."""
+
+    name = models.CharField(max_length=80, unique=True)
+    retired_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Expense(models.Model):
+    """Money the centre paid out. Never edited and never deleted: a wrong row is voided with a reason and stays in
+    the archive, like a payment."""
+
+    day = models.DateField(db_index=True)
+    #: Whole so'm, above zero.
+    amount = models.PositiveBigIntegerField()
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.PROTECT, related_name="expenses")
+    method = models.CharField(max_length=60, choices=PaymentMethod.choices)
+    #: Who spent it (lc-up's "Hodim"); their name as it was then, for when the account is gone.
+    spent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    spent_by_name = models.CharField(max_length=200, blank=True, default="")
+    #: What it was for (lc-up's "Sabab").
+    reason = models.CharField(max_length=300)
+    #: The form's own id: a double click, or a retry after a lost answer, is one row.
+    request_id = models.UUIDField(unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    void_reason = models.CharField(max_length=300, blank=True, default="")
+
+    class Meta:
+        ordering = ["-day", "-id"]
+        constraints = [models.CheckConstraint(condition=Q(amount__gt=0), name="billing_expense_amount_positive")]
