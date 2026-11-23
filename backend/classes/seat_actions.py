@@ -45,6 +45,40 @@ class SeatsLocked(Exception):
     """lc-up still runs, so seats are moved there."""
 
 
+def desk_only() -> bool:
+    """Once the ledger is the master (owner, 2026-11-22: "Leave lc-up" on 1 Dec), a student joins or leaves a group
+    only through these actions. The other ways in and out — the teacher's roster, the code-less add, a join code —
+    would move them with no money written, so they are refused then. Until then they stay as they were."""
+    from billing.conf import ledger_is_ours
+
+    return ledger_is_ours()
+
+
+def students_in(room) -> int:
+    """Everyone who still sits in ``room``: an active student membership, or a ledger seat that has not left (a seat
+    whose student has no account here counts too — its money is still running)."""
+    people = {("user", user_id) for user_id in M.objects.filter(classroom=room, role=_STUDENT, status=_ACTIVE)
+              .values_list("user_id", flat=True)}
+    for seat_id, user_id in Seat.objects.filter(classroom=room).exclude(state=SeatState.LEFT).values_list("pk", "account__user_id"):
+        people.add(("user", user_id) if user_id else ("seat", seat_id))
+    return len(people)
+
+
+def closing_refusal(room) -> str | None:
+    """Why ``room`` cannot be archived or deleted yet, or None. A class that closes with students in it would leave
+    their seats paying for a group that no longer meets — so they leave or move first, each on their own day."""
+    if not desk_only():
+        return None
+    count = students_in(room)
+    if not count:
+        return None
+    who = "1 student is" if count == 1 else f"{count} students are"
+    return (
+        f"{who} still in {room.name}. Move or remove them first (the class's Students), so each one's money stops "
+        "on the right day."
+    )
+
+
 def weekdays_of(room) -> list[int]:
     """The ledger's ISO weekdays for the class's ODD or EVEN (``classes.lesson_schedule``); [] for neither."""
     return list(_WEEKDAYS.get(room.lesson_days, []))

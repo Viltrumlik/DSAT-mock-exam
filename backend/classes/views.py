@@ -1111,16 +1111,22 @@ class ClassroomViewSet(ModelViewSet):
         denied = self._ensure_class_admin(classroom)
         if denied is not None:
             return denied
+        # A form may post these whole: only a value that would change counts.
+        probe = self.get_serializer(classroom, data=request.data, partial=kwargs.get("partial", False))
+        probe.is_valid(raise_exception=True)
         if not authorize(request.user, acc_const.PERM_MANAGE_GROUPS):
-            # A form may post these whole: only a value that would change is refused.
-            probe = self.get_serializer(classroom, data=request.data, partial=kwargs.get("partial", False))
-            probe.is_valid(raise_exception=True)
             changed = [f for f in self.DESK_FIELDS if f in probe.validated_data and probe.validated_data[f] != getattr(classroom, f)]
             if changed:
                 return Response(
                     {"detail": "Archiving a class, its branch and its teacher are changed from the admin panel.", "fields": changed},
                     status=status.HTTP_403_FORBIDDEN,
                 )
+        if classroom.is_active and probe.validated_data.get("is_active", True) is False:
+            from .seat_actions import closing_refusal
+
+            refusal = closing_refusal(classroom)
+            if refusal:
+                return Response({"detail": refusal, "code": "students_in_class"}, status=status.HTTP_409_CONFLICT)
         response = super().update(request, *args, **kwargs)
         self._sync_teacher_membership(self.get_object())
         return response
@@ -1129,6 +1135,11 @@ class ClassroomViewSet(ModelViewSet):
         classroom = self.get_object()
         if not has_cap(request.user, classroom, "can_delete_class"):
             return Response({"detail": "Only the class owner can delete this class."}, status=status.HTTP_403_FORBIDDEN)
+        from .seat_actions import closing_refusal
+
+        refusal = closing_refusal(classroom)
+        if refusal:
+            return Response({"detail": refusal, "code": "students_in_class"}, status=status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
@@ -1987,6 +1998,12 @@ class JoinClassView(APIView):
         # A class paired with lc-up takes its students from lc-up; a code join would be undone.
         if is_lcup_managed(classroom):
             return lcup_managed_response()
+        from .seat_actions import desk_only
+        from .views_seats import DESK_JOIN, desk_only_response
+
+        # After lc-up the desk gives each place, with its money; a code would seat them for free.
+        if desk_only():
+            return desk_only_response(DESK_JOIN)
 
         if classroom.max_students is not None:
             current_students = (

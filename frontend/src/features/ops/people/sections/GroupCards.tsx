@@ -5,7 +5,7 @@ import Link from "next/link";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { Badge, Button, CourseTag, Menu, Select, courseLevelOf, courseName, signedAmount, type MenuItem } from "@/features/console/ui";
-import { SeatActionDialog } from "@/features/ops/classrooms/sections/SeatDialogs";
+import { AddSeatDialog, SeatActionDialog } from "@/features/ops/classrooms/sections/SeatDialogs";
 import type { SeatAction } from "@/features/ops/classrooms/seatsApi";
 import { dayText, daysText, groupTitle } from "@/features/ops/detail/groupFacts";
 import { LINK_CLASS } from "../Fieldset";
@@ -65,6 +65,8 @@ export function GroupCards({
   const [busy, setBusy] = useState(false);
   const [pick, setPick] = useState<string | null>(null);
   const [step, setStep] = useState<SeatStep | null>(null);
+  /** Once lc-up is off: the class whose seat is being given, with its status and start date (AddSeatDialog). */
+  const [seatIn, setSeatIn] = useState<{ id: number; name: string } | null>(null);
   const seatsOpen = person.seats_open ?? false;
   const student = { id: person.id, name: person.name || person.username };
 
@@ -89,6 +91,11 @@ export function GroupCards({
   const add = () => {
     const room = person.open_classes.find((c) => String(c.id) === pick);
     if (!room) return;
+    // After lc-up a seat starts its money on a date, trial or paid: the seat tools, never the bare roster add.
+    if (seatsOpen) {
+      setSeatIn({ id: room.id, name: room.name });
+      return;
+    }
     void run(() => api.post(`/classes/${room.id}/members/`, { user_id: person.id }), `Added to ${room.name}.`);
   };
 
@@ -184,7 +191,7 @@ export function GroupCards({
                 aria-label="Add to another group"
                 value={pick}
                 onChange={setPick}
-                placeholder="Choose a class not run by lc-up"
+                placeholder={seatsOpen ? "Choose a class" : "Choose a class not run by lc-up"}
                 options={person.open_classes.map((c) => ({ value: String(c.id), label: c.name }))}
               />
             </div>
@@ -231,6 +238,20 @@ export function GroupCards({
           onClose={() => setStep(null)}
           onDone={() => {
             setStep(null);
+            onChanged();
+          }}
+        />
+      ) : null}
+      {seatIn ? (
+        <AddSeatDialog
+          roomId={seatIn.id}
+          student={student}
+          onClose={() => setSeatIn(null)}
+          onDone={() => {
+            push({ tone: "success", message: `Added to ${seatIn.name}.` });
+            setSeatIn(null);
+            setPick(null);
+            onAdding(false);
             onChanged();
           }}
         />

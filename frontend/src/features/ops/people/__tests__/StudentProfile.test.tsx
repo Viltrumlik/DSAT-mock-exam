@@ -716,6 +716,22 @@ describe("Groups", () => {
     dialog = document.body.querySelector('[role="dialog"]') as HTMLElement;
     expect((dialog.querySelector('input[type="date"]') as HTMLInputElement).value).toBe("2026-09-03");
   });
+
+  it("once lc-up is off, adds them to another group with the seat tools: trial or paid, from a date", async () => {
+    route(core({ seats_open: true, open_classes: [{ id: 4, name: "Other class" }] }));
+    post.mockResolvedValue({ data: {} });
+    await renderPage();
+    await click(button(host, "Add to another group"));
+    await click(host.querySelector('button[aria-label="Add to another group"]'));
+    await click([...document.body.querySelectorAll('[role="option"]')].find((o) => o.textContent?.includes("Other class")));
+    await click(button(host, "Add"));
+    expect(post).not.toHaveBeenCalled(); // never the bare roster add, which writes no money
+    const dialog = document.body.querySelector('[role="dialog"]') as HTMLElement;
+    expect(dialog.textContent).toContain("Add Aziz Tursunov to this group?");
+    await click(button(dialog, "Add to group"));
+    expect(post.mock.calls[0][0]).toBe("/classes/admin/classrooms/4/seats/");
+    expect(post.mock.calls[0][1]).toMatchObject({ user_id: 7, status: "trial" });
+  });
 });
 
 describe("Payments", () => {

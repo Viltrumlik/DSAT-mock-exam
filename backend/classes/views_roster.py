@@ -67,6 +67,12 @@ class MemberManageView(_ClassroomScopedView):
                 # Students of a class paired with lc-up come and go there; the sync would undo this.
                 if is_lcup_managed(classroom):
                     return lcup_managed_response()
+                from .seat_actions import desk_only
+                from .views_seats import DESK_ROSTER, desk_only_response
+
+                # After lc-up, the seat tools move a student, with their money; this would move them without it.
+                if desk_only():
+                    return desk_only_response(DESK_ROSTER)
             target_is_staff = membership.role in ClassroomMembership.STAFF_ROLES
             allowed = caps.can_assign_ta if target_is_staff else caps.can_manage_roster
             if not allowed:
@@ -126,6 +132,11 @@ class ClassroomRosterView(_ClassroomScopedView):
 
         if is_lcup_managed(classroom):
             return lcup_managed_response()
+        from .seat_actions import desk_only
+        from .views_seats import DESK_ROSTER, desk_only_response
+
+        if desk_only():  # the seat tools add a student with a status and a date, and start the money
+            return desk_only_response(DESK_ROSTER)
 
         user_id = request.data.get("user_id")
         if not user_id:
