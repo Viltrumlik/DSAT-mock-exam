@@ -17,10 +17,23 @@ def _norm_text(x: object) -> str:
     return " ".join(s.strip().lower().split())
 
 
+def _number_as_written_here(s: str) -> str:
+    """Read a number the way students here write it.
+
+    Uzbek schools write a decimal with a comma ("2,5"), and phones and pasted worksheets
+    give the typographic minus sign ("−3"). Both are read as the plain ASCII number.
+    Only a single comma with no point is a decimal comma; "2,5,0" stays unreadable.
+    """
+    s = s.replace("\u2212", "-")
+    if s.count(",") == 1 and "." not in s:
+        s = s.replace(",", ".")
+    return s
+
+
 def _as_decimal(x: object) -> Decimal | None:
     if x is None or x == "":
         return None
-    s = str(x).strip()
+    s = _number_as_written_here(str(x).strip())
     # Support simple fractions (SAT grid-in style), e.g. "1/2" == 0.5.
     if "/" in s:
         num, _, den = s.partition("/")
