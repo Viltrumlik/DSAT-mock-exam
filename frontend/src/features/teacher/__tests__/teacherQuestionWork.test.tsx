@@ -79,7 +79,7 @@ vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
 }));
 
-const { answerKeyFromAssessmentQuestion, judgeAnswer, EMPTY_ANSWER_KEY } = await import("../questionWork");
+const { answerKeyFromAssessmentQuestion, answerKeyFromReviewQuestion, judgeAnswer, EMPTY_ANSWER_KEY } = await import("../questionWork");
 const { TeacherPaper } = await import("../pastpapers/TeacherPaper");
 const TeacherAssessmentPracticePage = (
   await import("@/app/(teacher)/teacher/assessments/[setId]/practice/page")
@@ -527,6 +527,24 @@ describe("the verdict agrees with the grader — the rules an input cannot type"
 
     expect(judgeAnswer("10.000", key)).toBe("correct");
     expect(judgeAnswer("10.4", key)).toBe("incorrect");
+  });
+
+  it("reads an assessment number as students here write it, as the grader does", async () => {
+    const key = numericQuestion({ correct_answer: "5" });
+    expect(judgeAnswer("x=5", key), "an equation's answer").toBe("correct");
+    expect(judgeAnswer("x = 5", key)).toBe("correct");
+    expect(judgeAnswer("x=6", key)).toBe("incorrect");
+    expect(judgeAnswer("2x=10", key), "not one letter then =").toBe("incorrect");
+
+    const decimal = numericQuestion({ correct_answer: "2.5" });
+    expect(judgeAnswer("2,5", decimal), "a decimal comma").toBe("correct");
+    expect(judgeAnswer("\u22122,5", numericQuestion({ correct_answer: "-2.5" })), "the typographic minus").toBe("correct");
+  });
+
+  it("leaves a past-paper grid-in to its own grader", async () => {
+    // exams.Question.check_answer splits its key on "," and reads no "x=": unchanged here.
+    const key = answerKeyFromReviewQuestion({ isChoice: false, correctIds: [], correctText: "5", explanation: "" });
+    expect(judgeAnswer("x=5", key)).toBe("incorrect");
   });
 
   it("reads the boolean words the grader reads", async () => {

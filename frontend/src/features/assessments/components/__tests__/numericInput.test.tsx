@@ -114,6 +114,28 @@ function TwoQuestions({ onAnswered }: { onAnswered: (n: number) => void }) {
   );
 }
 
+describe("an x=… answer stays on its own question", () => {
+  // Owner, 2026-11-24: "x=5" / "x=12" were not taken, and moving on carried the same text
+  // into the next question's box. Each must stay on the question it was typed on.
+  it("does not ride along to the next question, and is still there on return", () => {
+    let answered = -1;
+    act(() => root.render(<TwoQuestions onAnswered={(n) => { answered = n; }} />));
+    const nav = (which: string) =>
+      act(() => host.querySelector<HTMLButtonElement>(`[data-nav="${which}"]`)!.click());
+
+    type("x=5");
+    expect(answered).toBe(1);
+    nav("next");
+    expect(field().value).toBe("");
+    type("x=12");
+    nav("back");
+    expect(field().value).toBe("x=5");
+    nav("next");
+    expect(field().value).toBe("x=12");
+    expect(answered).toBe(2);
+  });
+});
+
 describe("a comma answer survives Next and Back", () => {
   it("is still in the box on return and counts as answered", () => {
     let answered = -1;

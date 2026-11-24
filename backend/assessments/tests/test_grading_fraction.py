@@ -82,7 +82,18 @@ class LocalNumberWritingGradingTests(SimpleTestCase):
         self.assertTrue(self._num("-1/2", "\u22121/2"))
         self.assertFalse(self._num("3", "\u22123"))
 
+    def test_x_equals_answer_is_its_value(self):
+        # An equation's answer written the way it is solved on paper (owner, 2026-11-24:
+        # "x=5" / "x=12" must be accepted). One letter, "=", then the number.
+        self.assertTrue(self._num("5", "x=5"))
+        self.assertTrue(self._num("12", "x = 12"))
+        self.assertTrue(self._num("-3", "y=-3"))
+        self.assertTrue(self._num("2.5", "x=2,5"))
+        self.assertTrue(self._num("5", "\u0445=5"))  # Cyrillic "х" from a Russian keyboard
+        self.assertFalse(self._num("5", "x=6"))
+
     def test_text_that_is_no_number_stays_wrong(self):
-        self.assertFalse(self._num("5", "x=5"))
         self.assertFalse(self._num("25", "25%"))
         self.assertFalse(self._num("2.5", "2,5,0"))
+        self.assertFalse(self._num("5", "2x=10"))
+        self.assertFalse(self._num("5", "x=5 or x=-5"))

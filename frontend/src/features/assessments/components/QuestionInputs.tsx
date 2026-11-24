@@ -4,6 +4,7 @@ import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assess
 import StableHtml from "@/features/assessments/components/StableHtml";
 import { processInstructionalText } from "@/lib/assessmentText";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
+import { numberAsWrittenHere } from "@/features/assessments/numericAnswer";
 import { MinusCircle, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -140,17 +141,6 @@ function RecordedAnswer({ text }: { text: string }) {
     );
   }
   return <span>{t}</span>;
-}
-
-/**
- * Read a number the way students here write it: Uzbek schools write a decimal with a
- * comma ("2,5"), and phones and pasted worksheets give the typographic minus ("−3").
- * Only a single comma with no point is a decimal comma. Mirrors the backend grader's
- * `_number_as_written_here` (backend/assessments/grading.py).
- */
-function numberAsWrittenHere(s: string): string {
-  const t = s.replace(/\u2212/g, "-");
-  return (t.match(/,/g) ?? []).length === 1 && !t.includes(".") ? t.replace(",", ".") : t;
 }
 
 /** Text a number could still grow from: "-", ".", "1.", "5e-", "25/" (and "12" itself). */
