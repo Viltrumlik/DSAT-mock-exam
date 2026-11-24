@@ -32,6 +32,7 @@
 
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
 import type { ReviewQuestion } from "@/features/reviewCenter/types";
+import { numericAnswerText } from "@/features/assessments/numericAnswer";
 
 /** The em dash normalize.ts writes when a question has no recorded answer at all. */
 const NO_ANSWER = "—";
@@ -198,7 +199,8 @@ function matchesVariant(given: string, variant: string, compare: AnswerCompare):
   }
 
   if (compare.mode === "numeric") {
-    const a = toNumber(given);
+    // Read the way grade_answer reads it: "2,5", the typographic minus and "x=5" (numericAnswer.ts).
+    const a = toNumber(numericAnswerText(given));
     const b = toNumber(variant);
     if (a == null || b == null) return false;
     // No tolerance configured = exact, as grade_answer's `a == c` branch is. Both sides come

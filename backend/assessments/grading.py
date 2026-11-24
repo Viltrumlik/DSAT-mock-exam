@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from decimal import Decimal
 
@@ -17,10 +18,36 @@ def _norm_text(x: object) -> str:
     return " ".join(s.strip().lower().split())
 
 
+def _number_as_written_here(s: str) -> str:
+    """Read a number the way students here write it.
+
+    Uzbek schools write a decimal with a comma ("2,5"), and phones and pasted worksheets
+    give the typographic minus sign ("−3"). Both are read as the plain ASCII number.
+    Only a single comma with no point is a decimal comma; "2,5,0" stays unreadable.
+    """
+    s = s.replace("\u2212", "-")
+    if s.count(",") == 1 and "." not in s:
+        s = s.replace(",", ".")
+    return s
+
+
+# One letter (Latin or Cyrillic \u2014 "\u0445" from a Russian keyboard), "=", then the answer.
+_LETTER_EQUALS = re.compile(r"^[^\W\d_]\s*=\s*")
+
+
+def _numeric_answer_text(s: str) -> str:
+    """A numeric answer as written on paper: "x=5" and "x = 12" are 5 and 12.
+
+    Owner, 2026-11-24: an equation's answer typed as "x=5" must be accepted. Only one
+    letter then "=" is read away; "2x=10" or "x=5 or x=-5" stay unreadable, so wrong.
+    """
+    return _number_as_written_here(_LETTER_EQUALS.sub("", s.strip(), count=1))
+
+
 def _as_decimal(x: object) -> Decimal | None:
     if x is None or x == "":
         return None
-    s = str(x).strip()
+    s = _numeric_answer_text(str(x))
     # Support simple fractions (SAT grid-in style), e.g. "1/2" == 0.5.
     if "/" in s:
         num, _, den = s.partition("/")

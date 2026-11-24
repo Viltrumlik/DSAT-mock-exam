@@ -4,6 +4,7 @@ import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assess
 import StableHtml from "@/features/assessments/components/StableHtml";
 import { processInstructionalText } from "@/lib/assessmentText";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
+import { numberAsWrittenHere } from "@/features/assessments/numericAnswer";
 import { MinusCircle, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -142,6 +143,9 @@ function RecordedAnswer({ text }: { text: string }) {
   return <span>{t}</span>;
 }
 
+/** Text a number could still grow from: "-", ".", "1.", "5e-", "25/" (and "12" itself). */
+const NUMBER_SHAPED = /^[-+]?(\d+\.?\d*|\.\d*)?([eE][-+]?\d*)?$|^[-+]?\d+(\.\d*)?\/$/;
+
 export function NumericInput({
   value,
   onChange,
@@ -158,9 +162,10 @@ export function NumericInput({
   // input is never re-applied on re-render, so typed characters can't be clobbered.
   //
   // `raw` still mirrors the keystrokes, but only drives the live answer preview.
-  // Commit rules are unchanged: a finite number OR a complete fraction is sent up
-  // (the backend grades via Decimal(num)/Decimal(den), so "25/7" is canonical);
-  // transient tokens ("-", ".", "1.", "25/") leave the committed value untouched.
+  // Commit rules: a finite number OR a complete fraction is sent up (the backend
+  // grades via Decimal(num)/Decimal(den), so "25/7" is canonical); a number still
+  // being typed ("-", ".", "1.", "2,", "25/") leaves the committed value untouched;
+  // anything else is sent up exactly as typed, so what is on screen is what is recorded.
   const inputRef = useRef<HTMLInputElement>(null);
   const [raw, setRaw] = useState<string>(value == null ? "" : String(value));
   // Track the last value we committed so we can tell an external change
@@ -179,33 +184,43 @@ export function NumericInput({
     }
   }, [value]);
 
+  const commit = (v: number | string | null) => {
+    lastCommitted.current = v;
+    onChange(v);
+  };
+
   const handle = (next: string) => {
     setRaw(next);
-    const t = next.trim();
-    if (t === "") {
-      lastCommitted.current = null;
-      onChange(null);
+    const typed = next.trim();
+    if (typed === "") {
+      commit(null);
       return;
     }
-    // Transient tokens that are not yet a complete value — keep typing, don't commit
-    // (a trailing "/" means the denominator hasn't been typed yet).
-    if (t === "-" || t === "." || t === "-." || /[.\-+eE/]$/.test(t)) return;
-    // Fraction like "25/7" or "-1/3": commit the raw string once both sides parse.
+    const t = numberAsWrittenHere(typed);
+    // A number still being typed — keep typing, don't commit (a trailing "/" means the
+    // denominator hasn't been typed yet). Only number-shaped text waits: a word that
+    // happens to end in "e" is not half a number.
+    if (NUMBER_SHAPED.test(t) && /[.\-+eE/]$/.test(t)) return;
+    // Fraction like "25/7" or "-1/3": commit the string once both sides parse.
     if (t.includes("/")) {
       const [num, den] = t.split("/");
       const numOk = num.trim() !== "" && Number.isFinite(Number(num));
       const denOk = den != null && den.trim() !== "" && Number.isFinite(Number(den)) && Number(den) !== 0;
       if (numOk && denOk) {
-        lastCommitted.current = t;
-        onChange(t);
+        commit(t);
+        return;
       }
-      return;
+    } else {
+      const n = Number(t);
+      if (Number.isFinite(n)) {
+        commit(n);
+        return;
+      }
     }
-    const n = Number(t);
-    if (Number.isFinite(n)) {
-      lastCommitted.current = n;
-      onChange(n);
-    }
+    // Not a number ("x=5", "25%"). Record exactly what is on screen anyway: the grader
+    // marks it wrong, but the box must never show an answer it did not record. Until
+    // 2026-11-24 this was dropped, so the question came back empty and handed in Omitted.
+    commit(typed);
   };
 
   return (
