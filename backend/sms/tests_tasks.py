@@ -258,3 +258,62 @@ class CampaignTaskTests(TestCase):
             self.assertEqual(tasks.retry_campaign(999), {"skipped": "not sending"})
             SmsCampaign.objects.filter(pk=campaign.pk).update(status=SmsCampaign.STATUS_SENDING, started_at=timezone.now())
             self.assertEqual(tasks.retry_campaign(campaign.pk), {"status": "DONE", "sent": 0})
+
+
+@override_settings(**CONFIGURED)
+class BalanceWarningsTickTests(TestCase):
+    """The beat fires at :10 every hour; the hour set in /ops/sms (10 unless changed) decides which one runs."""
+
+    def setUp(self):
+        cache.clear()
+
+    def tick(self, hour, day=25):
+        with mock.patch("sms.balance_warnings.daily", return_value={"sent": 2}) as daily:
+            result = tasks._balance_tick(local(hour, day=day))
+        return result, daily
+
+    def test_any_other_hour_does_nothing(self):
+        for hour in (0, 9, 11, 23):
+            result, daily = self.tick(hour)
+            self.assertEqual(result, {"skipped": "not the hour"}, hour)
+            daily.assert_not_called()
+
+    def test_the_hour_runs_once_a_day(self):
+        result, daily = self.tick(10)
+        self.assertEqual(result, {"sent": 2})
+        daily.assert_called_once()
+        self.assertEqual(daily.call_args.args, (local(10, day=25),))
+        result, daily = self.tick(10)
+        self.assertEqual(result, {"skipped": "already ran today"})
+        daily.assert_not_called()
+
+    def test_the_next_day_runs_again(self):
+        self.tick(10, day=25)
+        result, daily = self.tick(10, day=26)
+        self.assertEqual(result, {"sent": 2})
+        daily.assert_called_once()
+
+    def test_a_changed_hour_is_honoured(self):
+        configure(balance_hour=14)
+        self.assertEqual(self.tick(10)[0], {"skipped": "not the hour"})
+        self.assertEqual(self.tick(14)[0], {"sent": 2})
+
+    def test_a_run_that_was_skipped_is_not_counted_as_the_days_run(self):
+        with mock.patch("sms.balance_warnings.daily", return_value={"skipped": "already running"}):
+            tasks._balance_tick(local(10, day=25))
+        result, daily = self.tick(10)
+        self.assertEqual(result, {"sent": 2})
+        daily.assert_called_once()
+
+    @override_settings(ESKIZ_EMAIL="", ESKIZ_SECRET_KEY="")
+    def test_without_credentials(self):
+        with mock.patch("sms.balance_warnings.daily") as daily:
+            self.assertEqual(tasks._balance_tick(local(10)), {"skipped": "eskiz is not configured"})
+        daily.assert_not_called()
+
+    def test_send_now_runs_at_any_hour_and_does_not_use_up_the_days_run(self):
+        with mock.patch("sms.balance_warnings.daily", return_value={"sent": 1}) as daily:
+            self.assertEqual(tasks._balance_now(local(15)), {"sent": 1})
+        daily.assert_called_once_with(local(15))
+        result, daily = self.tick(10)
+        self.assertEqual(result, {"sent": 2})

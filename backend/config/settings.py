@@ -756,6 +756,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sms.tasks.debt_warnings_tick",
         "schedule": crontab(minute=0),
     },
+    # "Balance low" and "frozen" SMS to the parent (backend/sms.balance_warnings): every hour at :10, and the
+    # code decides - at the hour set in /ops/sms -> Balance (10:00 by default) it runs once. Returns at once
+    # while SMS_BALANCE_WARNINGS_ENABLED or the panel's switch is off, the ledger is not ours or billing is monthly.
+    "sms-balance-warnings-tick": {
+        "task": "sms.tasks.balance_warnings_tick",
+        "schedule": crontab(minute=10),
+    },
     # eskiz's template list into /ops/sms, so one moderated overnight can be picked in the morning.
     "sms-sync-templates": {
         "task": "sms.tasks.sync_templates",
