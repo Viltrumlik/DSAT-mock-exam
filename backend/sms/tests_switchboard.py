@@ -3,7 +3,7 @@
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from sms import switchboard
+from sms import conf, switchboard
 from sms import templates as T
 from sms.models import EskizTemplate, SmsSettings
 from sms.testing import configure
@@ -62,3 +62,49 @@ class PriceTests(TestCase):
     @override_settings(SMS_PRICE_PER_PART=195)
     def test_from_the_environment(self):
         self.assertEqual(switchboard.price_per_part(), 195)
+
+
+OPEN_LEDGER = {"BILLING_PAYMENTS_OPEN": True, "BILLING_SHADOW_ENABLED": False}
+LESSON = {"BILLING_MODE": "lesson"}
+
+
+class BalanceEnabledTests(TestCase):
+    """The balance SMS has four switches: env, the panel, the ledger being ours and pay per lesson."""
+
+    def test_new_settings_start_switched_off_and_without_templates(self):
+        row = SmsSettings.get()
+        self.assertEqual((row.balance_enabled, row.balance_hour), (False, 10))
+        for prefix in ("low", "frozen"):
+            self.assertEqual(
+                (getattr(row, f"{prefix}_template_id"), getattr(row, f"{prefix}_pattern"), getattr(row, f"{prefix}_slots")),
+                (None, "", []),
+            )
+
+    @override_settings(SMS_BALANCE_WARNINGS_ENABLED=True, **OPEN_LEDGER, **LESSON)
+    def test_all_four_on(self):
+        configure(balance_enabled=True)
+        self.assertTrue(switchboard.balance_enabled())
+
+    @override_settings(SMS_BALANCE_WARNINGS_ENABLED=True, **OPEN_LEDGER, **LESSON)
+    def test_the_panel_off_by_default_is_off(self):
+        self.assertFalse(switchboard.balance_enabled())
+
+    @override_settings(SMS_BALANCE_WARNINGS_ENABLED=False, **OPEN_LEDGER, **LESSON)
+    def test_env_off(self):
+        configure(balance_enabled=True)
+        self.assertFalse(switchboard.balance_enabled())
+
+    @override_settings(SMS_BALANCE_WARNINGS_ENABLED=True, BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=True, **LESSON)
+    def test_the_ledger_not_ours(self):
+        configure(balance_enabled=True)
+        self.assertFalse(switchboard.balance_enabled())
+
+    @override_settings(SMS_BALANCE_WARNINGS_ENABLED=True, BILLING_MODE="month", **OPEN_LEDGER)
+    def test_not_paying_per_lesson(self):
+        configure(balance_enabled=True)
+        self.assertFalse(switchboard.balance_enabled())
+
+    def test_env_is_off_unless_set(self):
+        self.assertFalse(conf.balance_warnings_enabled())
+        with override_settings(SMS_BALANCE_WARNINGS_ENABLED=True):
+            self.assertTrue(conf.balance_warnings_enabled())

@@ -95,6 +95,51 @@ def _warn(*, retry_only: bool) -> dict:
         cache.delete(RUNNING_KEY)
 
 
+#: The beat's balance run is claimed per local day, so a second tick in the same hour finds it taken.
+BALANCE_DAY_KEY = "sms:balance-warnings-day:{day}"
+
+
+@shared_task(name="sms.tasks.balance_warnings_tick")
+def balance_warnings_tick() -> dict:
+    """Every hour at :10. At ``SmsSettings.balance_hour`` (10:00 unless /ops/sms changed it) the day's balance run
+    (``balance_warnings.daily``); every other hour, and a second tick of that hour, nothing. Returns at once
+    while a switch is off (``daily`` says which)."""
+    return _balance_tick(timezone.now())
+
+
+def _balance_tick(now) -> dict:
+    from . import switchboard
+
+    if timezone.localtime(now).hour != switchboard.current().balance_hour:
+        return {"skipped": "not the hour"}
+    key = BALANCE_DAY_KEY.format(day=timezone.localdate(now).isoformat())
+    if not cache.add(key, "1", timeout=36 * 3600):
+        return {"skipped": "already ran today"}
+    result = _balance_run(now)
+    if isinstance(result.get("skipped"), str):  # the whole run was skipped (not a run's own counts): try again
+        cache.delete(key)
+    return result
+
+
+@shared_task(name="sms.tasks.balance_warnings_now")
+def balance_warnings_now() -> dict:
+    """"Send now" from /ops/sms: today's balance run at once, whatever the hour. Whoever it tells is disarmed, so
+    the day's scheduled run tells nobody twice."""
+    return _balance_now(timezone.now())
+
+
+def _balance_now(now) -> dict:
+    return _balance_run(now)
+
+
+def _balance_run(now) -> dict:
+    if not conf.is_configured():
+        return {"skipped": "eskiz is not configured"}
+    from . import balance_warnings
+
+    return balance_warnings.daily(now)
+
+
 @shared_task(name="sms.tasks.sync_templates")
 def sync_templates() -> dict:
     """09:00: eskiz's template list into ``EskizTemplate``, so a template moderated overnight shows in

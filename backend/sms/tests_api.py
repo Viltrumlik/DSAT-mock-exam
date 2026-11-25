@@ -60,6 +60,8 @@ TEMPLATE_KEYS = {
 SETTINGS_KEYS = {
     "debt_enabled", "debt_hour", "warning_template_id", "warning_pattern", "warning_slots", "last_day_template_id",
     "last_day_pattern", "last_day_slots", "updated_at", "updated_by_name", "env_enabled", "freeze_enabled", "freeze_day",
+    "balance_enabled", "balance_hour", "low_template_id", "low_pattern", "low_slots", "frozen_template_id",
+    "frozen_pattern", "frozen_slots", "balance_env_enabled", "balance_billing_ready",
 }
 _OFFSET = re.compile(r"[+-]\d\d:\d\d$")
 
@@ -95,7 +97,7 @@ class ApiFixture(TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.queued = {}
-        for name in ("send_due_campaigns", "retry_campaign", "debt_warnings_now"):
+        for name in ("send_due_campaigns", "retry_campaign", "debt_warnings_now", "balance_warnings_now"):
             patcher = mock.patch(f"sms.tasks.{name}.delay")
             self.queued[name] = patcher.start()
             self.addCleanup(patcher.stop)
@@ -161,7 +163,7 @@ class EveryRouteIsGuardedTests(ApiFixture):
     BODIES = {
         "sms-admin-campaigns": None,  # filled in setUp: a valid draft
         "sms-admin-campaign-preview": None,
-        "sms-admin-settings": {"debt_enabled": False, "debt_hour": 9},
+        "sms-admin-settings": {"debt_enabled": False, "debt_hour": 9, "balance_enabled": True},
         "sms-admin-templates": {"text": "Salom (STUDENT)!"},
         "sms-admin-test": {"phone": "998901234567", "template_id": 64942},
     }
@@ -198,7 +200,7 @@ class EveryRouteIsGuardedTests(ApiFixture):
             list(SmsMessage.objects.order_by("id").values_list("id", "status", "attempts")),
             list(SmsCampaign.objects.order_by("id").values_list("id", "status")),
             list(EskizTemplate.objects.order_by("eskiz_id").values_list("eskiz_id", "status", "submitted_by")),
-            (settings.debt_enabled, settings.debt_hour, settings.updated_by_id),
+            (settings.debt_enabled, settings.debt_hour, settings.balance_enabled, settings.updated_by_id),
         )
 
     def test_every_route_refuses_anonymous_students_and_teachers_and_does_nothing(self):
@@ -363,7 +365,10 @@ class MessagesTests(ApiFixture):
         self.assertEqual([r["id"] for r in data["results"]], [self.test_sms.pk])
         kind = next(f for f in data["filters"] if f["key"] == "kind")
         self.assertEqual(kind["selected"], "test")
-        self.assertEqual({o["value"]: o["count"] for o in kind["options"]}, {"debt_warning": 1, "campaign": 0, "test": 1})
+        self.assertEqual(
+            {o["value"]: o["count"] for o in kind["options"]},
+            {"debt_warning": 1, "campaign": 0, "test": 1, "balance_low": 0, "balance_frozen": 0},
+        )
         self.assertEqual(
             [f["key"] for f in data["filters"]],
             ["kind", "status", "when", "operator", "group", "teacher", "template", "campaign"],
@@ -637,6 +642,172 @@ class DebtApiTests(ApiFixture):
         )
         runs = self.get("debt/runs/").json()["runs"]
         self.assertEqual(runs, [{"run_on": timezone.localdate().isoformat(), "total": 1, "by_status": {"DELIVERED": 1}, "parts": 1, "cost": 170}])
+
+
+LOW_PATTERN = "MASTER SAT: %w{1,4} hisobingizda %w{1,3} so'm qoldi."
+FROZEN_PATTERN = "MASTER SAT: %w{1,4} hisobingiz minusga tushgani uchun darslar to'xtatildi."
+BALANCE_ON = {
+    "SMS_BALANCE_WARNINGS_ENABLED": True, "BILLING_PAYMENTS_OPEN": True, "BILLING_SHADOW_ENABLED": False,
+    "BILLING_MODE": "lesson",
+}
+
+
+class BalanceApiTests(ApiFixture):
+    """The balance SMS: its switch, hour and two templates in the settings, who would get one, and "Send now"."""
+
+    def setUp(self):
+        super().setUp()
+        now = timezone.now()
+        for eskiz_id, pattern, original, status in (
+            (91001, LOW_PATTERN, "MASTER SAT: (STUDENT), hisobingizda (SUM) so'm qoldi.", "service"),
+            (91002, FROZEN_PATTERN, "MASTER SAT: (STUDENT) hisobingiz minusga tushgani uchun darslar to'xtatildi.", "service"),
+            (91003, "Qoldi %w{1,2} so'm, %w{1,4}", "Qoldi (SUM) so'm, (STUDENT)", "service"),
+            (91004, "Qoldi %d so'm, %w{1,4}", "Qoldi (SUM) so'm, (STUDENT)", "service"),
+        ):
+            EskizTemplate.objects.create(eskiz_id=eskiz_id, pattern=pattern, original=original, status=status, synced_at=now)
+        self.accountant = User.objects.create_user(None, password=None, username="acc", role=C.ROLE_ACCOUNTANT)
+
+    def pick_templates(self):
+        self.patch("settings/", {
+            "low_template_id": 91001, "low_slots": ["student", "balance"],
+            "frozen_template_id": 91002, "frozen_slots": ["student"],
+        })
+
+    def a_low_account(self, username="ali", *, balance=50_000, parent="998901112233"):
+        from billing import ledger
+        from billing.models import Account, EntryKind, Seat, SeatState, Span, SpanRule
+
+        user = User.objects.create_user(
+            None, password=None, username=username, role=C.ROLE_STUDENT, first_name=username.title(),
+            last_name="Testov", parent_phone=parent,
+        )
+        account = Account.objects.create(name=f"Testov {username.title()}", user=user)
+        seat = Seat.objects.create(
+            account=account, group_name="G1", lcup_group_id=1, price=500_000, days=[1, 3, 5], state=SeatState.ACTIVE
+        )
+        Span.objects.create(seat=seat, start=date(2026, 11, 2), rule=SpanRule.LESSON)
+        ledger.post(account, EntryKind.PAYMENT, balance, date(2026, 11, 2), f"t:{username}")
+        return user, account
+
+    def test_get_has_the_balance_fields_off_and_empty(self):
+        data = self.get("settings/").json()
+        self.assertEqual(
+            (data["balance_enabled"], data["balance_hour"], data["low_template_id"], data["low_pattern"], data["low_slots"]),
+            (False, 10, None, "", []),
+        )
+        self.assertEqual((data["frozen_template_id"], data["frozen_pattern"], data["frozen_slots"]), (None, "", []))
+        self.assertEqual((data["balance_env_enabled"], data["balance_billing_ready"]), (False, False))
+        with override_settings(**BALANCE_ON):
+            data = self.get("settings/").json()
+        self.assertEqual((data["balance_env_enabled"], data["balance_billing_ready"]), (True, True))
+
+    def test_a_usable_template_sets_the_pattern_and_slots(self):
+        data = self.patch("settings/", {"low_template_id": 91001, "low_slots": ["student", "balance"]}).json()
+        self.assertEqual(
+            (data["low_template_id"], data["low_pattern"], data["low_slots"]), (91001, LOW_PATTERN, ["student", "balance"])
+        )
+        self.assertEqual(SmsSettings.get().low_pattern, LOW_PATTERN)
+        data = self.patch("settings/", {"frozen_template_id": 91002, "frozen_slots": ["student"]}).json()
+        self.assertEqual((data["frozen_template_id"], data["frozen_slots"]), (91002, ["student"]))
+        self.assertEqual(SmsSettings.get().low_template_id, 91001)  # the other one is untouched
+        self.assertEqual(SmsSettings.get().debt_hour, 10)
+
+    def test_the_switch_and_the_hour(self):
+        for hour in (7, 21, "10", True):
+            with self.subTest(hour=hour):
+                response = self.patch("settings/", {"balance_hour": hour})
+                self.assertEqual((response.status_code, response.json()["code"]), (400, "hour"))
+        response = self.patch("settings/", {"balance_enabled": "yes"})
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "enabled"))
+        data = self.patch("settings/", {"balance_enabled": True, "balance_hour": 14}).json()
+        self.assertEqual((data["balance_enabled"], data["balance_hour"], data["debt_enabled"]), (True, 14, True))
+
+    def test_template_and_slot_refusals(self):
+        cases = [
+            ({"low_template_id": 80000, "low_slots": ["student"]}, "template"),  # still in moderation
+            ({"low_template_id": 1, "low_slots": []}, "template"),
+            ({"low_template_id": 91001, "low_slots": ["student", "debt"]}, "slots"),  # a debt is not a balance
+            ({"low_template_id": 91001, "low_slots": ["student", "text"]}, "slots"),  # nothing is typed in
+            ({"low_template_id": 91001, "low_slots": ["student"]}, "slots"),  # 2 slots
+            ({"low_template_id": 91003, "low_slots": ["balance", "student"]}, "slots"),  # 2 words cut "1 234 567"
+            ({"low_template_id": 91004, "low_slots": ["balance", "student"]}, "slots"),  # a number slot cannot hold it
+            ({"frozen_template_id": 91002, "frozen_slots": ["debt"]}, "slots"),  # a frozen SMS has no debt value...
+            ({"frozen_template_id": 91004, "frozen_slots": ["student", "student"]}, "slots"),  # ...and a name is no number
+        ]
+        for body, code in cases:
+            with self.subTest(body=body):
+                response = self.patch("settings/", body)
+                self.assertEqual((response.status_code, response.json()["code"]), (400, code))
+        self.assertEqual(SmsSettings.get().low_template_id, None)
+
+    def test_the_debt_templates_still_take_debt_but_not_balance(self):
+        self.assertEqual(self.patch("settings/", {"warning_template_id": 64950, "warning_slots": ["student", "debt"]}).status_code, 200)
+        response = self.patch("settings/", {"warning_template_id": 64942, "warning_slots": ["balance"]})
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "slots"))
+
+    def test_preview_lists_who_would_get_one_without_sending(self):
+        self.pick_templates()
+        _, account = self.a_low_account()
+        no_phone, _ = self.a_low_account("vali", parent="")
+        with override_settings(**BALANCE_ON), mock.patch("sms.views._today", return_value=date(2026, 11, 25)):
+            data = self.get("balance/preview/").json()
+        self.assertEqual(set(data), {"day", "blocked", "skipped", "count", "cost", "low", "frozen"})
+        self.assertEqual(
+            data["low"],
+            [{
+                "name": "Testov Ali", "phone": "998901112233", "balance": 50_000,
+                "text": "MASTER SAT: Testov Ali, hisobingizda 50 000 so'm qoldi.", "parts": 1,
+            }],
+        )
+        self.assertEqual((data["frozen"], data["skipped"], data["count"], data["cost"]), ([], {"no_phone": 1}, 1, 170))
+        self.assertEqual(data["blocked"], "the balance SMS is switched off in /ops/sms")
+        self.assertEqual((self.fake.sent, SmsMessage.objects.count()), ([], 0))
+        from sms.models import BalanceNotice
+
+        self.assertFalse(BalanceNotice.objects.filter(account=account, low_sent_at__isnull=False).exists())
+
+    def test_preview_with_no_templates_picked_says_so(self):
+        self.a_low_account()
+        with override_settings(**BALANCE_ON), mock.patch("sms.views._today", return_value=date(2026, 11, 25)):
+            self.patch("settings/", {"balance_enabled": True})
+            data = self.get("balance/preview/").json()
+        self.assertEqual(data["blocked"], "both balance templates must be picked in /ops/sms first")
+        self.assertEqual((len(data["low"]), data["low"][0]["text"], data["cost"]), (1, "", 0))
+
+    def test_an_accountant_reads_the_preview_but_cannot_send_now(self):
+        self.assertEqual(self.get("balance/preview/", self.accountant).status_code, 200)
+        response = self.post("balance/send-now/", user=self.accountant)
+        self.assertEqual(response.status_code, 403)
+        self.queued["balance_warnings_now"].assert_not_called()
+
+    def test_send_now_queues_the_run(self):
+        self.pick_templates()
+        self.patch("settings/", {"balance_enabled": True})
+        with override_settings(**BALANCE_ON), self.captureOnCommitCallbacks(execute=True):
+            response = self.post("balance/send-now/")
+        self.assertEqual((response.status_code, response.json()), (202, {"queued": True}))
+        self.queued["balance_warnings_now"].assert_called_once_with()
+
+    def test_send_now_is_refused_while_a_switch_is_off(self):
+        self.pick_templates()
+        response = self.post("balance/send-now/")
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "disabled"))
+        self.queued["balance_warnings_now"].assert_not_called()
+
+    def test_send_now_is_refused_with_409_while_the_templates_are_not_picked(self):
+        self.patch("settings/", {"balance_enabled": True})
+        with override_settings(**BALANCE_ON):
+            response = self.post("balance/send-now/")
+        self.assertEqual((response.status_code, response.json()["code"]), (409, "templates"))
+        self.queued["balance_warnings_now"].assert_not_called()
+
+    @override_settings(ESKIZ_EMAIL="", ESKIZ_SECRET_KEY="")
+    def test_send_now_is_refused_without_eskiz(self):
+        self.pick_templates()
+        self.patch("settings/", {"balance_enabled": True})
+        with override_settings(**BALANCE_ON):
+            response = self.post("balance/send-now/")
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "not_configured"))
 
 
 class AudienceOptionsApiTests(ApiFixture):

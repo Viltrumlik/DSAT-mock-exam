@@ -68,7 +68,7 @@ const SLOT = /%(d|w)(?:\{(\d+),(\d+)\})?/g;
 const APOSTROPHES = /[‘’ʻʼ`]/g;
 
 /** What the server fills a sample with (sms/templates.SAMPLE_VALUES). */
-export const SAMPLE = { student: "Test Testov,", debt: "100000" } as const;
+export const SAMPLE = { student: "Test Testov,", debt: "100000", balance: "77 000" } as const;
 
 /**
  * The pattern with `values` in its slots, in order — the server's `render`, repeated so a form
@@ -95,7 +95,7 @@ export function slotsOf(pattern: string): TemplateSlot[] {
 
 /** The sample values for slots in these roles, with `texts` in the `text` slots. */
 export function sampleValues(roles: SlotRole[], texts: string[]): string[] {
-  return roles.map((role, i) => (role === "student" ? SAMPLE.student : role === "debt" ? SAMPLE.debt : texts[i] ?? ""));
+  return roles.map((role, i) => (role === "text" ? texts[i] ?? "" : SAMPLE[role]));
 }
 
 /**
@@ -183,6 +183,8 @@ const KIND_LABEL: Record<SmsKind, string> = {
   debt_warning: "Debt warning",
   campaign: "Campaign",
   test: "Test",
+  balance_low: "Balance low",
+  balance_frozen: "Frozen for debt",
 };
 
 export function kindLabel(kind: string): string {
@@ -193,6 +195,7 @@ export const ROLE_LABEL: Record<SlotRole, string> = {
   student: "Student's name",
   debt: "Debt amount",
   text: "Same text for all",
+  balance: "Balance",
 };
 
 export function roleLabel(role: string): string {

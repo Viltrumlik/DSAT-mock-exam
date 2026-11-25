@@ -390,6 +390,9 @@ ESKIZ_EMAIL = os.getenv("ESKIZ_EMAIL", "").strip()
 ESKIZ_SECRET_KEY = os.getenv("ESKIZ_SECRET_KEY", "")
 ESKIZ_FROM = os.getenv("ESKIZ_FROM", "4546").strip()
 SMS_DEBT_WARNINGS_ENABLED = os.getenv("SMS_DEBT_WARNINGS_ENABLED", "False").lower() == "true"
+# "Balance low" and "frozen for debt" SMS to the parent (backend/sms.balance_warnings). Off by default; the panel's
+# switch (/ops/sms → Balance) is a second one, and both need the ledger to be ours and billing per lesson.
+SMS_BALANCE_WARNINGS_ENABLED = os.getenv('SMS_BALANCE_WARNINGS_ENABLED', 'False').lower() == 'true'
 # What /ops/sms counts an estimate at: so'm per SMS part (measured 2026-10-18). The panel's costs only.
 SMS_PRICE_PER_PART = int(os.getenv("SMS_PRICE_PER_PART", "170") or 170)
 
@@ -775,6 +778,13 @@ CELERY_BEAT_SCHEDULE = {
     "sms-debt-warnings-tick": {
         "task": "sms.tasks.debt_warnings_tick",
         "schedule": crontab(minute=0),
+    },
+    # "Balance low" and "frozen" SMS to the parent (backend/sms.balance_warnings): every hour at :10, and the
+    # code decides - at the hour set in /ops/sms -> Balance (10:00 by default) it runs once. Returns at once
+    # while SMS_BALANCE_WARNINGS_ENABLED or the panel's switch is off, the ledger is not ours or billing is monthly.
+    "sms-balance-warnings-tick": {
+        "task": "sms.tasks.balance_warnings_tick",
+        "schedule": crontab(minute=10),
     },
     # eskiz's template list into /ops/sms, so one moderated overnight can be picked in the morning.
     "sms-sync-templates": {

@@ -74,6 +74,16 @@ function settingsOf(over: Partial<SmsSettings> = {}): SmsSettings {
     env_enabled: true,
     freeze_enabled: true,
     freeze_day: 6,
+    balance_enabled: false,
+    balance_hour: 10,
+    low_template_id: null,
+    low_pattern: "",
+    low_slots: [],
+    frozen_template_id: null,
+    frozen_pattern: "",
+    frozen_slots: [],
+    balance_env_enabled: true,
+    balance_billing_ready: true,
     ...over,
   };
 }
