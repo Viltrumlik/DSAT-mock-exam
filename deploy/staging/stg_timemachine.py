@@ -355,6 +355,9 @@ def back(state: dict, cp_id: int) -> dict:
         for later in [c for c in state["checkpoints"] if c["id"] > cp_id]:
             drop(later["db"])
             state["checkpoints"].remove(later)
+        # A checkpoint taken before the copy's last rebuild lacks that release's tables: bring it up to the code.
+        check_copy(cp["offset_days"])
+        manage(["migrate", "--no-input"], cp["offset_days"], timeout=1800)
         return {"checkpoint": cp_id, "test_date": test_date(cp["offset_days"])}
     finally:
         save_state(state)
