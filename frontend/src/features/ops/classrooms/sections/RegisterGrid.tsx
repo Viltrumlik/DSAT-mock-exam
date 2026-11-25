@@ -12,7 +12,7 @@ import { monthShort, shortDay } from "@/features/ops/detail/groupFacts";
 import { P, holds } from "@/features/ops/permissions";
 import { useMe } from "@/hooks/useMe";
 import { classroomKeys, useClassroomRegister, type ClassroomRegister } from "../classroomsApi";
-import type { DayChange } from "../lessonChangesApi";
+import { lessonChangesKey, type DayChange } from "../lessonChangesApi";
 import { CancelLessonDialog, MoveLessonDialog, UndoChangeDialog } from "./LessonChangeDialogs";
 
 /**
@@ -22,8 +22,8 @@ import { CancelLessonDialog, MoveLessonDialog, UndoChangeDialog } from "./Lesson
  * not marked yet. Read-only: a register is marked from "Mark …'s lesson" in the header.
  *
  * A lesson day can be cancelled or moved from its column's "⋯" (`manage_lessons`, owner 2026-11-25): a cancelled
- * column is struck through, a moved one says where it went or came from, and a changed day offers Undo. A centre
- * holiday is undone on the timetable, for every group at once, so its column has no menu.
+ * column is struck through, a moved one says where it went or came from, and a changed day offers Undo — a centre
+ * holiday's too, which undoes it for every group (its dialog says so).
  */
 
 const MONTH_NAME = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -75,7 +75,6 @@ function DateHead({ d, today, canChange, onPick }: { d: DateCol; today: string; 
   const change = d.change ?? null;
   const note = change ? changeNote(change) : null;
   const day = shortDay(d.date);
-  const menu = canChange && !change?.holiday;
   return (
     <span className="inline-flex flex-col items-center gap-0.5" title={note ?? undefined}>
       <span className="inline-flex items-center gap-0.5">
@@ -88,7 +87,7 @@ function DateHead({ d, today, canChange, onPick }: { d: DateCol; today: string; 
         >
           {day}
         </span>
-        {menu ? (
+        {canChange ? (
           <DropdownMenu
             portal
             trigger={
@@ -128,8 +127,9 @@ export function RegisterGrid({ roomId }: { roomId: number }) {
   const changed = () => {
     setStep(null);
     void queryClient.invalidateQueries({ queryKey: classroomKeys.all });
-    // The Today board and the timetable list the day's lessons too.
+    // The Today board and the timetable list the day's lessons too, and the timetable every lesson change.
     void queryClient.invalidateQueries({ queryKey: ["classes", "admin", "lessons"] });
+    void queryClient.invalidateQueries({ queryKey: lessonChangesKey });
   };
   const shown = month ?? data?.month ?? null;
   const years = [...new Set((data?.months ?? []).map((m) => m.slice(0, 4)))];
@@ -246,6 +246,7 @@ export function RegisterGrid({ roomId }: { roomId: number }) {
             // A moved-in column is the new day: the change itself is about the day it came from.
             day: step.change.from_day ?? step.day,
             new_day: step.change.from_day ? step.day : (step.change.new_day ?? null),
+            holiday: step.change.holiday,
           }}
           onClose={() => setStep(null)}
           onDone={changed}

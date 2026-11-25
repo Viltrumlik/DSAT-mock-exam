@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import type { LessonChange } from "@/features/ops/classrooms/lessonChangesApi";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchLessonChanges, lessonChangesKey, type LessonChange } from "@/features/ops/classrooms/lessonChangesApi";
 import { HolidayDialog, UndoChangeDialog } from "@/features/ops/classrooms/sections/LessonChangeDialogs";
 import { P, holds } from "@/features/ops/permissions";
 import { useMe } from "@/hooks/useMe";
-import { Button } from "../ui";
+import { Button, ErrorState } from "../ui";
 import { LessonChangesTable } from "./LessonChangesTable";
 import { dayCountLine } from "./timetable";
 import { TimetableView, useTimetable } from "./TimetableView";
@@ -16,8 +16,8 @@ import { TimetableView, useTimetable } from "./TimetableView";
  * rows, 13:00–20:00 across, Today and the coming Mon … Sun. Asked only of whoever holds `view_people`, the
  * permission the endpoint and the nav item both require.
  *
- * Whoever holds `manage_lessons` sets a centre holiday here ("Holiday…"), and undoes the shown day's lesson changes
- * from the table under the grid (owner, 2026-11-25).
+ * Under it, every live lesson change from a month back to two months ahead (owner, 2026-11-25). Whoever holds
+ * `manage_lessons` sets a centre holiday here ("Holiday…") and undoes any change from that list.
  */
 export function TimetablePage() {
   const { me } = useMe();
@@ -25,14 +25,16 @@ export function TimetablePage() {
   const canChange = Boolean(me) && holds(me, P.manageLessons);
   const t = useTimetable(allowed);
   const data = t.query.data;
+  const changes = useQuery({ queryKey: lessonChangesKey, queryFn: fetchLessonChanges, enabled: allowed });
   const [holiday, setHoliday] = useState(false);
   const [undo, setUndo] = useState<LessonChange | null>(null);
   const queryClient = useQueryClient();
   const changed = () => {
     setHoliday(false);
     setUndo(null);
-    // Every day's lessons, today's and the tabs', and the classes' registers.
+    // Every day's lessons, today's and the tabs', the list of changes, and the classes' registers.
     void queryClient.invalidateQueries({ queryKey: ["classes", "admin", "lessons"] });
+    void queryClient.invalidateQueries({ queryKey: lessonChangesKey });
     void queryClient.invalidateQueries({ queryKey: ["ops", "classrooms"] });
   };
   return (
@@ -58,8 +60,10 @@ export function TimetablePage() {
       ) : me ? (
         <p className="text-[15px] text-ms-fg-2">The timetable is for staff who can see students and groups.</p>
       ) : null}
-      {allowed && data?.changes?.length ? (
-        <LessonChangesTable date={data.date} changes={data.changes} canUndo={canChange} onUndo={setUndo} />
+      {allowed && changes.data ? (
+        <LessonChangesTable list={changes.data} canUndo={canChange} onUndo={setUndo} />
+      ) : allowed && changes.isError ? (
+        <ErrorState what="the lesson changes" onRetry={() => void changes.refetch()} />
       ) : null}
       {holiday ? <HolidayDialog day={t.current.date} onClose={() => setHoliday(false)} onDone={changed} /> : null}
       {undo ? (

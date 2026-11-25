@@ -9,6 +9,7 @@ import {
   cancelLesson,
   givenBackLine,
   moveLesson,
+  netLine,
   setHoliday,
   undoLessonChange,
   type LessonChangeResult,
@@ -76,8 +77,16 @@ function useChange(send: () => Promise<LessonChangeResult>, ready: () => string 
   return { busy, error, done, submit };
 }
 
-function Done({ title, line, onDone }: { title: string; line: string; onDone: () => void }) {
-  return <ConfirmDialog title={title} body={<p role="status">{line}</p>} confirmLabel="Done" cancelLabel={null} busy={false} onCancel={onDone} onConfirm={onDone} />;
+/** What a change did, once it went through: its lines, then Done. */
+function Done({ title, lines, onDone }: { title: string; lines: string[]; onDone: () => void }) {
+  const body = (
+    <div role="status" className="space-y-1">
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+    </div>
+  );
+  return <ConfirmDialog title={title} body={body} confirmLabel="Done" cancelLabel={null} busy={false} onCancel={onDone} onConfirm={onDone} />;
 }
 
 const needReason = (reason: string) => (reason.trim() ? null : "A lesson change needs a reason.");
@@ -97,7 +106,7 @@ export function CancelLessonDialog({
 }) {
   const [reason, setReason] = useState("");
   const change = useChange(() => cancelLesson(roomId, { day, reason: reason.trim() }), () => needReason(reason));
-  if (change.done) return <Done title={`Lesson of ${shortDay(day)} cancelled`} line={givenBackLine(change.done.money)} onDone={onDone} />;
+  if (change.done) return <Done title={`Lesson of ${shortDay(day)} cancelled`} lines={[givenBackLine(change.done.money)]} onDone={onDone} />;
   return (
     <ConfirmDialog
       title={`Cancel the lesson of ${shortDay(day)}?`}
@@ -138,7 +147,10 @@ export function MoveLessonDialog({
   );
   if (change.done) {
     const to = change.done.change.new_day ?? newDay;
-    return <Done title={`Lesson moved to ${shortDay(to)}`} line={`Charged on ${shortDay(to)}`} onDone={onDone} />;
+    // Charged only when the money says so: a month-paid class, a new student's first month or a day still ahead is
+    // only held there (charged on the day, if at all).
+    const when = change.done.money.charged ? `Charged on ${shortDay(to)}` : `Held on ${shortDay(to)}`;
+    return <Done title={`Lesson moved to ${shortDay(to)}`} lines={[when, netLine(change.done.money)]} onDone={onDone} />;
   }
   return (
     <ConfirmDialog
@@ -178,7 +190,7 @@ export function HolidayDialog({
     () => setHoliday({ day: date, reason: reason.trim() }),
     () => (date ? needReason(reason) : "Choose the day."),
   );
-  if (change.done) return <Done title={`${shortDay(date)} is a centre holiday`} line={givenBackLine(change.done.money)} onDone={onDone} />;
+  if (change.done) return <Done title={`${shortDay(date)} is a centre holiday`} lines={[givenBackLine(change.done.money)]} onDone={onDone} />;
   return (
     <ConfirmDialog
       title="Set a centre holiday"
@@ -221,17 +233,19 @@ export function UndoChangeDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<LessonChangeResult | null>(null);
   const undo = async () => {
     setBusy(true);
     setError(null);
     try {
-      await undoLessonChange(change.id);
-      onDone();
+      setDone(await undoLessonChange(change.id));
     } catch (e: unknown) {
       setError(serverReason(e, "That did not go through. Try again."));
+    } finally {
       setBusy(false);
     }
   };
+  if (done) return <Done title="Change undone" lines={[netLine(done.money)]} onDone={onDone} />;
   return (
     <ConfirmDialog
       title="Undo this change?"

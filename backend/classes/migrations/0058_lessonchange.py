@@ -30,7 +30,7 @@ class Migration(migrations.Migration):
             ],
             options={
                 'indexes': [models.Index(fields=['day'], name='classes_les_day_8864bf_idx'), models.Index(fields=['new_day'], name='classes_les_new_day_9305c2_idx')],
-                'constraints': [models.UniqueConstraint(condition=models.Q(('classroom__isnull', False), ('undone_at__isnull', True)), fields=('classroom', 'day'), name='lesson_change_one_live_per_class_day'), models.UniqueConstraint(condition=models.Q(('classroom__isnull', True), ('undone_at__isnull', True)), fields=('day',), name='lesson_change_one_live_holiday_per_day'), models.CheckConstraint(condition=models.Q(models.Q(('classroom__isnull', False), ('kind', 'move'), ('new_day__isnull', False)), models.Q(('kind', 'cancel'), ('new_day__isnull', True)), _connector='OR'), name='lesson_change_move_has_a_class_and_a_new_day')],
+                'constraints': [models.UniqueConstraint(condition=models.Q(('classroom__isnull', False), ('undone_at__isnull', True)), fields=('classroom', 'day'), name='lesson_change_one_live_per_class_day'), models.UniqueConstraint(condition=models.Q(('classroom__isnull', True), ('undone_at__isnull', True)), fields=('day',), name='lesson_change_one_live_holiday_per_day'), models.UniqueConstraint(condition=models.Q(('kind', 'move'), ('undone_at__isnull', True)), fields=('classroom', 'new_day'), name='lesson_change_one_live_move_into_class_day'), models.CheckConstraint(condition=models.Q(models.Q(('classroom__isnull', False), ('kind', 'move'), ('new_day__isnull', False)), models.Q(('kind', 'cancel'), ('new_day__isnull', True)), _connector='OR'), name='lesson_change_move_has_a_class_and_a_new_day')],
             },
         ),
     ]

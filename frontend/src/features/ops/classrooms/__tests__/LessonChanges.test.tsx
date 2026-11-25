@@ -41,7 +41,10 @@ const REGISTER: ClassroomRegister = {
   ],
 };
 
-const MONEY = { voided: 2, students: 2, amount: 77_000, unfrozen: 0 };
+const MONEY = { voided: 2, students: 2, amount: 77_000, charged: 0, charged_amount: 0, unfrozen: 0 };
+/** A move between two days gone by: one lesson given back, the same one charged on its new day. */
+const MOVED = { voided: 1, students: 1, amount: 38_500, charged: 1, charged_amount: 38_500, unfrozen: 0 };
+const NONE = { voided: 0, students: 0, amount: 0, charged: 0, charged_amount: 0, unfrozen: 0 };
 
 let host: HTMLElement;
 let root: Root;
@@ -115,10 +118,10 @@ describe("Register grid — lesson changes", () => {
     expect(host.querySelectorAll('button[aria-label^="Change the lesson of"]').length).toBe(0);
   });
 
-  it("offers Cancel and Move on a day as the timetable has it, Undo on a changed one, nothing on a centre holiday", async () => {
+  it("offers Cancel and Move on a day as the timetable has it, and Undo on a changed one, a centre holiday too", async () => {
     await mount();
     const days = [...host.querySelectorAll('button[aria-label^="Change the lesson of"]')].map((b) => b.getAttribute("aria-label"));
-    expect(days).toEqual(["7 Dec", "9 Dec", "11 Dec", "12 Dec", "16 Dec"].map((d) => `Change the lesson of ${d}`));
+    expect(days).toEqual(["7 Dec", "9 Dec", "11 Dec", "12 Dec", "14 Dec", "16 Dec"].map((d) => `Change the lesson of ${d}`));
     await click(dayMenu("7 Dec"));
     expect(menuItems()).toEqual(["Cancel lesson…", "Move lesson…"]);
   });
@@ -165,7 +168,7 @@ describe("Register grid — lesson changes", () => {
   });
 
   it("says so when nothing had been charged", async () => {
-    post.mockResolvedValue({ data: { change: { id: 21 }, money: { voided: 0, students: 0, amount: 0, unfrozen: 0 } } });
+    post.mockResolvedValue({ data: { change: { id: 21 }, money: NONE } });
     await mount();
     await click(dayMenu("16 Dec"));
     await click(item("Cancel lesson…"));
@@ -175,7 +178,7 @@ describe("Register grid — lesson changes", () => {
   });
 
   it("moves a lesson to a new day, then says when it is charged", async () => {
-    post.mockResolvedValue({ data: { change: { id: 22, new_day: "2026-12-17" }, money: MONEY } });
+    post.mockResolvedValue({ data: { change: { id: 22, new_day: "2026-12-17" }, money: MOVED } });
     await mount();
     await click(dayMenu("16 Dec"));
     await click(item("Move lesson…"));
@@ -186,6 +189,20 @@ describe("Register grid — lesson changes", () => {
       day: "2026-12-16", new_day: "2026-12-17", reason: "Teacher at a seminar",
     });
     expect(dialog()?.textContent).toContain("Charged on 17 Dec");
+    expect(dialog()?.textContent).toContain("Balances unchanged.");
+  });
+
+  it("says a lesson moved to a day nobody is charged for yet is held there", async () => {
+    post.mockResolvedValue({ data: { change: { id: 22, new_day: "2026-12-17" }, money: NONE } });
+    await mount();
+    await click(dayMenu("16 Dec"));
+    await click(item("Move lesson…"));
+    setValue(dialog()!.querySelector('input[type="date"]') as HTMLInputElement, "2026-12-17");
+    setValue(dialog()!.querySelector("textarea")!, "Teacher at a seminar");
+    await click(button("Move lesson"));
+    expect(dialog()?.textContent).toContain("Held on 17 Dec");
+    expect(dialog()?.textContent).not.toContain("Charged on");
+    expect(dialog()?.textContent).toContain("No money moved.");
   });
 
   it("keeps the server's refusal on screen", async () => {
@@ -201,14 +218,28 @@ describe("Register grid — lesson changes", () => {
     );
   });
 
-  it("undoes a change by its id", async () => {
-    post.mockResolvedValue({ data: { change: { id: 12 }, money: MONEY } });
+  it("undoes a change by its id, then says what it did to the balances", async () => {
+    post.mockResolvedValue({ data: { change: { id: 12 }, money: MOVED } });
     await mount();
     await click(dayMenu("12 Dec"));
     await click(item("Undo"));
     expect(dialog()?.textContent).toContain("The lesson goes back to 11 Dec and is charged then, not on 12 Dec.");
     await click(button("Undo"));
     expect(post).toHaveBeenCalledWith("/classes/admin/lesson-changes/12/undo/", {});
+    expect(dialog()?.textContent).toContain("Balances unchanged.");
+    await click(button("Done"));
     expect(dialog()).toBeNull();
+  });
+
+  it("undoes a centre holiday from its column, for every group", async () => {
+    post.mockResolvedValue({ data: { change: { id: 13 }, money: { ...NONE, charged: 3, charged_amount: 115_500 } } });
+    await mount();
+    await click(dayMenu("14 Dec"));
+    expect(menuItems()).toEqual(["Undo"]);
+    await click(item("Undo"));
+    expect(dialog()?.textContent).toContain("Every group's lesson on 14 Dec is held and charged again.");
+    await click(button("Undo"));
+    expect(post).toHaveBeenCalledWith("/classes/admin/lesson-changes/13/undo/", {});
+    expect(dialog()?.textContent).toContain("Charged in all: 115 500 so'm.");
   });
 });

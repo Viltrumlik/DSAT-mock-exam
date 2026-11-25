@@ -117,7 +117,8 @@ class LessonChangeUndoView(APIView):
 
 class LessonChangeListView(APIView):
     """``GET …/lesson-changes/?from=&to=&classroom=``: the live changes touching those days (by their day or their new
-    day), by default the days that can be changed. With ``classroom``, that class's own and every centre holiday."""
+    day), by default the days that can be changed — the timetable's list, where each can be undone. Centre holidays
+    first, then the class changes, each by day. With ``classroom``, that class's own and every centre holiday."""
 
     permission_classes = [READ]
 
@@ -136,5 +137,8 @@ class LessonChangeListView(APIView):
             if not room_id:
                 return Response({"detail": "That is not a class."}, status=http.HTTP_400_BAD_REQUEST)
             rows = rows.filter(Q(classroom_id=room_id) | Q(classroom__isnull=True))
-        rows = rows.select_related("classroom", "created_by", "undone_by").order_by("day", "pk")
+        rows = sorted(
+            rows.select_related("classroom", "created_by", "undone_by"),
+            key=lambda row: (row.classroom_id is not None, row.day, row.pk),
+        )
         return Response({"from": start.isoformat(), "to": end.isoformat(), "changes": [change_row(row) for row in rows]})

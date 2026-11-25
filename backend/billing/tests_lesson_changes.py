@@ -7,12 +7,14 @@ charged from their first day, except in ``FirstMonthTests``. Today is passed in,
 """
 
 from datetime import date
+from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.db.models.query import QuerySet
 from django.test import TestCase, override_settings
 
 from billing import ledger
-from billing.models import Account, EndReason, Entry, EntryKind, SpanRule
+from billing.models import Account, EndReason, Entry, EntryKind, Span, SpanRule
 from billing.tests_lesson_rule import LESSON_MODE, MWF, TTS, seat_for, student
 from billing.tests_seat_class import make_room
 from billing.views import _row_label
@@ -76,7 +78,10 @@ class CancelTests(Case):
         self.assertEqual((row.void_reason, row.voided_by, row.amount), ("Lesson cancelled: Teacher ill", self.admin, -PRICE))
         self.assertIsNotNone(row.voided_at)
         self.assertEqual(ledger.balance(account), before + PRICE)
-        self.assertEqual(change.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0})
+        self.assertEqual(
+            change.money,
+            {"voided": 1, "students": 1, "amount": PRICE, "charged": 0, "charged_amount": 0, "unfrozen": 0},
+        )
         ledger.own_tick(FRI)  # the tick does not charge it again
         self.assertEqual(Entry.objects.filter(key=key("lesson:", span, MON)).count(), 1)
 
@@ -136,7 +141,10 @@ class MoveTests(Case):
             (TUE, -PRICE, "2026-12", span.seat_id, "Lesson 2026-12-07 moved to 2026-12-08", None),
         )
         self.assertEqual(ledger.balance(account), before)
-        self.assertEqual(change.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0})
+        self.assertEqual(
+            change.money,
+            {"voided": 1, "students": 1, "amount": PRICE, "charged": 1, "charged_amount": PRICE, "unfrozen": 0},
+        )
         ledger.own_tick(THU)
         self.assertEqual(Entry.objects.filter(key__in=[key("lesson:", span, MON), key("moved:", span, MON)]).count(), 2)
         self.assertEqual(ledger.balance(account), before)
@@ -198,7 +206,10 @@ class UndoTests(Case):
         monday = Entry.objects.filter(key=key("lesson:", span, MON)).order_by("id")
         self.assertEqual([row.voided_at is None for row in monday], [False, True])
         self.assertEqual(ledger.balance(account), before)
-        self.assertEqual(undone.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0})
+        self.assertEqual(
+            undone.money,
+            {"voided": 1, "students": 1, "amount": PRICE, "charged": 1, "charged_amount": PRICE, "unfrozen": 0},
+        )
 
 
 class HolidayTests(Case):
@@ -256,7 +267,9 @@ class FirstMonthTests(Case):
         ledger.start_span(seat, NOV_30, today=WED)  # 500,000 for 30 Nov - 29 Dec
         rows = list(account.entries.values_list("key", "amount", "voided_at"))
         change = self.cancel(MON)
-        self.assertEqual(change.money, {"voided": 0, "students": 0, "amount": 0, "unfrozen": 0})
+        self.assertEqual(
+            change.money, {"voided": 0, "students": 0, "amount": 0, "charged": 0, "charged_amount": 0, "unfrozen": 0}
+        )
         ledger.own_tick(FRI)
         L.undo(change, by=self.admin, today=FRI)
         ledger.own_tick(FRI)
@@ -283,3 +296,132 @@ class LabelTests(TestCase):
     def test_a_moved_lesson_reads_lesson_moved(self):
         self.assertEqual(_row_label(Entry(key="moved:3:2026-12-07", kind=EntryKind.CHARGE)), "Lesson (moved)")
         self.assertEqual(_row_label(Entry(key="lesson:3:2026-12-07", kind=EntryKind.CHARGE)), "Lesson")
+
+
+class FirstMonthMoveTests(Case):
+    """A moved lesson's charge follows its old day (ruling of 2026-11-25): one inside a new student's flat first month
+    stays free wherever it goes, and one after it is charged on its new day even inside the month. A move changes the
+    day of a charge, never what a student pays. The new students start on Monday 30 November: their month covers
+    30 Nov - 29 Dec, so Monday 28 December is covered and Wednesday 30 December is the first lesson paid per lesson."""
+
+    def new_student(self, name, room):
+        _, account = student(name)
+        seat = seat_for(account)
+        seat.classroom = room
+        seat.save(update_fields=["classroom"])
+        ledger.start_span(seat, NOV_30, today=NOV_30)
+        return account
+
+    def test_a_covered_lesson_moved_past_the_first_month_stays_free(self):
+        moved, still = self.new_student("new1", self.room), self.new_student("new2", make_room("Junior G2"))
+        jan_2 = date(2027, 1, 2)
+        L.move(self.room, date(2026, 12, 28), jan_2, "Room taken", by=self.admin, today=jan_2)
+        ledger.own_tick(jan_2)
+        self.assertEqual(ledger.balance(moved), ledger.balance(still))
+        self.assertFalse(Entry.objects.filter(key__startswith="moved:").exists())
+
+    def test_a_charged_lesson_moved_into_the_first_month_is_charged_once_on_its_new_day(self):
+        moved, still = self.new_student("new1", self.room), self.new_student("new2", make_room("Junior G2"))
+        dec_29, dec_30 = date(2026, 12, 29), date(2026, 12, 30)
+        L.move(self.room, dec_30, dec_29, "Teacher away", by=self.admin, today=dec_29)
+        ledger.own_tick(date(2027, 1, 2))
+        self.assertEqual(ledger.balance(moved), ledger.balance(still))
+        row = Entry.objects.get(key__startswith="moved:")
+        self.assertEqual((row.day, row.amount, row.voided_at), (dec_29, -PRICE, None))
+
+
+class PriceTests(Case):
+    """A lesson already written keeps its price (``set_personal_price``): an undo charges the day again at the voided
+    row's own amount, and a moved lesson carries the price its old day was charged at."""
+
+    def test_an_undo_after_a_price_change_ends_where_it_started(self):
+        _, account, span = self.old_student(today=WED)
+        before = ledger.balance(account)
+        change = self.cancel(MON)
+        ledger.set_personal_price(span.seat, 400_000, reason="sibling", by=None, today=WED)
+        undone = L.undo(change, by=self.admin, today=WED)
+        self.assertEqual(ledger.balance(account), before)
+        rows = Entry.objects.filter(key=key("lesson:", span, MON)).order_by("id")
+        self.assertEqual(
+            [(row.amount, row.day, row.note, row.voided_at is None) for row in rows],
+            [(-PRICE, MON, "Lesson 2026-12-07", False), (-PRICE, MON, "Lesson 2026-12-07", True)],
+        )
+        self.assertEqual((undone.money["charged"], undone.money["charged_amount"]), (1, PRICE))
+
+    def test_a_move_after_a_price_change_keeps_the_lessons_own_price(self):
+        _, account, span = self.old_student(today=WED)
+        before = ledger.balance(account)
+        ledger.set_personal_price(span.seat, 400_000, reason="sibling", by=None, today=WED)
+        change = self.move(MON, TUE)
+        self.assertEqual(Entry.objects.get(key=key("moved:", span, MON)).amount, -PRICE)
+        self.assertEqual((ledger.balance(account), change.money["charged_amount"]), (before, PRICE))
+        L.undo(change, by=self.admin, today=WED)
+        self.assertEqual(ledger.balance(account), before)
+
+
+class SpanLockTests(Case):
+    """A lesson change and a tick billing the same span take turns on the span's row (``select_for_update``), so the
+    second sees the first's work: a charge the tick wrote first is voided by the cancel that waited for it, and a cancel
+    committed first keeps the tick off the day. The real two-connection race runs in ``tests_lesson_changes_race`` on
+    PostgreSQL (SQLite takes no row locks)."""
+
+    def locked(self, call):
+        seen, real = [], QuerySet.select_for_update
+
+        def spy(queryset, *args, **kwargs):
+            seen.append(queryset.model)
+            return real(queryset, *args, **kwargs)
+
+        with mock.patch.object(QuerySet, "select_for_update", autospec=True, side_effect=spy):
+            call()
+        return seen
+
+    def test_the_tick_and_a_change_both_lock_the_span(self):
+        _, _, span = self.old_student(today=DEC_4)
+        self.assertIn(Span, self.locked(lambda: ledger.bill_span(span, MON)))
+        self.assertIn(Span, self.locked(lambda: self.cancel(MON, today=MON)))
+
+    def test_a_charge_written_first_is_voided_by_the_cancel_after_it(self):
+        _, _, span = self.old_student(today=DEC_4)
+        ledger.bill_span(span, MON)
+        self.cancel(MON, today=MON)
+        ledger.own_tick(FRI)
+        self.assertFalse(Entry.objects.filter(key=key("lesson:", span, MON), voided_at__isnull=True).exists())
+
+    def test_a_cancel_committed_first_keeps_the_tick_off_the_day(self):
+        _, _, span = self.old_student(today=DEC_4)
+        self.cancel(MON, today=MON)
+        ledger.bill_span(span, MON)
+        ledger.own_tick(FRI)
+        self.assertFalse(Entry.objects.filter(key=key("lesson:", span, MON)).exists())
+
+
+class MoreChangeTests(Case):
+    def test_moving_a_day_again_after_an_undo_reuses_its_key(self):
+        _, account, span = self.old_student(today=FRI)
+        before = ledger.balance(account)
+        L.undo(self.move(MON, TUE, today=FRI), by=self.admin, today=FRI)
+        self.move(MON, THU, today=FRI)
+        rows = Entry.objects.filter(key=key("moved:", span, MON)).order_by("id")
+        self.assertEqual([(row.day, row.voided_at is None) for row in rows], [(TUE, False), (THU, True)])
+        self.assertEqual(ledger.balance(account), before)
+
+    def test_a_holiday_after_a_class_cancel_the_same_day(self):
+        _, account, span = self.old_student(today=WED)
+        before = ledger.balance(account)
+        cancel = self.cancel(MON)
+        holiday = L.cancel(None, MON, "Independence Day", by=self.admin, today=WED)
+        self.assertEqual(holiday.money["voided"], 0)  # this class's Monday was voided already
+        L.undo(cancel, by=self.admin, today=WED)
+        self.assertEqual(ledger.balance(account), before + PRICE)  # still a holiday: not charged again
+        L.undo(holiday, by=self.admin, today=WED)
+        self.assertEqual(ledger.balance(account), before)
+        self.assertEqual(Entry.objects.filter(key=key("lesson:", span, MON), voided_at__isnull=True).count(), 1)
+
+    def test_a_moved_lesson_landing_on_a_day_off_is_not_charged(self):
+        # Past the rules (they refuse a move onto a holiday, and a holiday on a moved-in day), the ledger still skips it.
+        _, _, span = self.old_student(today=WED)
+        LessonChange.objects.create(classroom=self.room, day=MON, kind=LessonChange.Kind.MOVE, new_day=TUE, reason="r")
+        LessonChange.objects.create(day=TUE, kind=LessonChange.Kind.CANCEL, reason="Closed")
+        ledger.bill_span(span, WED)
+        self.assertFalse(Entry.objects.filter(key=key("moved:", span, MON)).exists())

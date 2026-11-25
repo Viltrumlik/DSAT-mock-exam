@@ -25,10 +25,18 @@ export type LessonChange = {
 };
 
 /**
- * What the change did to the money (`billing.lesson_money`): lessons voided, for how many students, so'm given back,
- * and the debt freezes it lifted. A change never freezes anyone: the 15-minute tick does.
+ * What the change did to the money (`billing.lesson_money`): lessons voided (for how many students, so'm given back),
+ * lessons charged now (`charged`, `charged_amount`) and the debt freezes it lifted. A change never freezes anyone: the
+ * 15-minute tick does.
  */
-export type LessonMoney = { voided: number; students: number; amount: number; unfrozen: number };
+export type LessonMoney = {
+  voided: number;
+  students: number;
+  amount: number;
+  charged: number;
+  charged_amount: number;
+  unfrozen: number;
+};
 
 export type LessonChangeResult = { change: LessonChange; money: LessonMoney };
 
@@ -37,7 +45,7 @@ export type DayChange = {
   id: number;
   kind: LessonChangeKind;
   reason: string;
-  /** A centre holiday: undone on the timetable, not on a class. */
+  /** A centre holiday: undoing it undoes it for every group. */
   holiday: boolean;
   /** The day it moved to (the moved-away column). */
   new_day?: string;
@@ -64,6 +72,16 @@ export async function undoLessonChange(id: number): Promise<LessonChangeResult> 
   return (await api.post<LessonChangeResult>(`/classes/admin/lesson-changes/${id}/undo/`, {})).data;
 }
 
+export const lessonChangesKey = ["classes", "admin", "lesson-changes"] as const;
+
+/** Every live change of the days that can be changed (a month back to two months ahead): centre holidays first, then
+ * the class changes, each by day. */
+export type LessonChangeList = { from: string; to: string; changes: LessonChange[] };
+
+export async function fetchLessonChanges(): Promise<LessonChangeList> {
+  return (await api.get<LessonChangeList>("/classes/admin/lesson-changes/")).data;
+}
+
 /** "1 250 000" — whole so'm grouped by spaces, as the console writes money. */
 function grouped(amount: number): string {
   return Math.round(amount).toLocaleString("en-US").replace(/,/g, " ");
@@ -74,4 +92,13 @@ export function givenBackLine(money: LessonMoney): string {
   if (!money.voided) return "Nothing had been charged for it, so nothing is given back.";
   const who = money.students === 1 ? "1 student" : `${money.students} students`;
   return `Given back to ${who}: ${grouped(money.amount)} so'm`;
+}
+
+/** What a change or an undo did to the balances in all: "Given back in all: 38 500 so'm", "Balances unchanged." */
+export function netLine(money: LessonMoney): string {
+  if (!money.voided && !money.charged) return "No money moved.";
+  const net = money.amount - money.charged_amount;
+  if (net > 0) return `Given back in all: ${grouped(net)} so'm.`;
+  if (net < 0) return `Charged in all: ${grouped(-net)} so'm.`;
+  return "Balances unchanged.";
 }

@@ -1,12 +1,14 @@
 /**
  * The timetable's lesson changes (owner, 2026-11-25): "Holiday…" for whoever holds manage_lessons, a dialog that posts
- * the day and the reason and says what came back, and a ruled "Lesson changes" table for the shown day, with Undo.
+ * the day and the reason and says what came back, and a ruled "Lesson changes" list of every live change from a month
+ * back to two months ahead (centre holidays first, then by day, as the server orders them), each with Undo.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { LessonChangeList } from "@/features/ops/classrooms/lessonChangesApi";
 import type { LessonsToday } from "../../lessonsToday";
 
 const get = vi.fn();
@@ -24,11 +26,20 @@ const DAY: LessonsToday = {
   date: "2026-11-18",
   lessons: [],
   counts: { lessons: 0, now: 0, not_marked: 0, no_teacher: 0 },
+  changes: [],
+};
+
+const LIST: LessonChangeList = {
+  from: "2026-10-18",
+  to: "2027-01-17",
   changes: [
     { id: 7, classroom_id: null, classroom: null, kind: "cancel", reason: "Independence Day", day: "2026-11-18", new_day: null },
-    { id: 8, classroom_id: 45, classroom: "Junior G1", kind: "move", reason: "Room taken", day: "2026-11-17", new_day: "2026-11-18" },
+    { id: 8, classroom_id: 45, classroom: "Junior G1", kind: "move", reason: "Room taken", day: "2026-11-17", new_day: "2026-11-19" },
+    { id: 9, classroom_id: 46, classroom: "Middle G2", kind: "cancel", reason: "Teacher ill", day: "2026-12-04", new_day: null },
   ],
 };
+
+const NONE = { voided: 0, students: 0, amount: 0, charged: 0, charged_amount: 0, unfrozen: 0 };
 
 let host: HTMLElement;
 let root: Root;
@@ -44,6 +55,7 @@ beforeEach(() => {
   post.mockReset();
   get.mockImplementation((url: string) => {
     if (url === "/classes/admin/lessons/today/") return Promise.resolve({ data: DAY });
+    if (url === "/classes/admin/lesson-changes/") return Promise.resolve({ data: LIST });
     return Promise.reject(new Error(`unexpected GET ${url}`));
   });
   me = { permissions: ["view_people", "manage_lessons"] };
@@ -86,17 +98,18 @@ async function click(el: Element | null | undefined) {
 const byText = (scope: ParentNode, label: string) =>
   [...scope.querySelectorAll("button")].find((b) => b.textContent?.trim() === label);
 const dialog = () => document.body.querySelector('[role="dialog"]') as HTMLElement | null;
-const changeRows = () =>
-  [...host.querySelectorAll('section[aria-label="Lesson changes"] tbody tr')].map((tr) =>
-    [...tr.querySelectorAll("td")].map((td) => td.textContent?.trim()),
-  );
+const list = () => host.querySelector('section[aria-label="Lesson changes"]') as HTMLElement;
+const rows = () =>
+  [...list().querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent?.trim()));
 
 describe("Timetable — lesson changes", () => {
-  it("lists the shown day's changes, a centre holiday first, each with Undo", async () => {
+  it("lists every live change of the window as the server orders it, each with Undo", async () => {
     await mount();
-    expect(changeRows()).toEqual([
-      ["Centre holiday", "Cancelled", "Independence Day", "Undo"],
-      ["Junior G1", "Moved from 17 Nov", "Room taken", "Undo"],
+    expect(get).toHaveBeenCalledWith("/classes/admin/lesson-changes/");
+    expect(rows()).toEqual([
+      ["18 Nov", "Centre holiday", "Cancelled", "Independence Day", "Undo"],
+      ["17 Nov", "Junior G1", "Moved to 19 Nov", "Room taken", "Undo"],
+      ["4 Dec", "Middle G2", "Cancelled", "Teacher ill", "Undo"],
     ]);
   });
 
@@ -104,14 +117,19 @@ describe("Timetable — lesson changes", () => {
     me = { permissions: ["view_people"] };
     await mount();
     expect(byText(host, "Holiday…")).toBeUndefined();
-    expect(changeRows()).toEqual([
-      ["Centre holiday", "Cancelled", "Independence Day"],
-      ["Junior G1", "Moved from 17 Nov", "Room taken"],
-    ]);
+    expect(rows()[0]).toEqual(["18 Nov", "Centre holiday", "Cancelled", "Independence Day"]);
+  });
+
+  it("says so when no lesson is changed", async () => {
+    get.mockImplementation((url: string) =>
+      Promise.resolve({ data: url === "/classes/admin/lesson-changes/" ? { ...LIST, changes: [] } : DAY }),
+    );
+    await mount();
+    expect(list().textContent).toContain("No lesson is cancelled or moved from 18 Oct to 17 Jan.");
   });
 
   it("sets a centre holiday on the shown day with a reason, then says what came back", async () => {
-    post.mockResolvedValue({ data: { change: { id: 9 }, money: { voided: 1, students: 1, amount: 38_500, unfrozen: 1 } } });
+    post.mockResolvedValue({ data: { change: { id: 9 }, money: { ...NONE, voided: 1, students: 1, amount: 38_500, unfrozen: 1 } } });
     await mount();
     await click(byText(host, "Holiday…"));
     expect((dialog()!.querySelector('input[type="date"]') as HTMLInputElement).value).toBe("2026-11-18");
@@ -123,18 +141,21 @@ describe("Timetable — lesson changes", () => {
     await click(byText(dialog()!, "Set holiday"));
     expect(post).toHaveBeenCalledWith("/classes/admin/lessons/holiday/", { day: "2026-11-18", reason: "Teachers' day" });
     expect(dialog()?.textContent).toContain("Given back to 1 student: 38 500 so'm");
+    get.mockClear();
     await click(byText(dialog()!, "Done"));
     expect(dialog()).toBeNull();
+    expect(get).toHaveBeenCalledWith("/classes/admin/lesson-changes/");
   });
 
-  it("undoes a change from the table", async () => {
-    post.mockResolvedValue({ data: { change: { id: 7 }, money: { voided: 0, students: 0, amount: 0, unfrozen: 0 } } });
+  it("undoes a centre holiday from the list, for every group", async () => {
+    post.mockResolvedValue({ data: { change: { id: 7 }, money: { ...NONE, charged: 2, charged_amount: 77_000 } } });
     await mount();
-    const holidayRow = host.querySelector('section[aria-label="Lesson changes"] tbody tr')!;
-    await click(byText(holidayRow, "Undo"));
+    await click(byText(list().querySelector("tbody tr")!, "Undo"));
     expect(dialog()?.textContent).toContain("Every group's lesson on 18 Nov is held and charged again.");
     await click(byText(dialog()!, "Undo"));
     expect(post).toHaveBeenCalledWith("/classes/admin/lesson-changes/7/undo/", {});
+    expect(dialog()?.textContent).toContain("Charged in all: 77 000 so'm.");
+    await click(byText(dialog()!, "Done"));
     expect(dialog()).toBeNull();
   });
 });

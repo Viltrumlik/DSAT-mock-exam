@@ -51,6 +51,12 @@ class LessonChange(models.Model):
                 condition=Q(undone_at__isnull=True, classroom__isnull=True),
                 name="lesson_change_one_live_holiday_per_day",
             ),
+            # One lesson moved into a class's day at a time: a class has one register a day.
+            models.UniqueConstraint(
+                fields=["classroom", "new_day"],
+                condition=Q(undone_at__isnull=True, kind="move"),
+                name="lesson_change_one_live_move_into_class_day",
+            ),
             models.CheckConstraint(
                 condition=Q(kind="move", new_day__isnull=False, classroom__isnull=False)
                 | Q(kind="cancel", new_day__isnull=True),

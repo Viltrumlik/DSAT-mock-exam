@@ -7,7 +7,9 @@ the change's own transaction.
   ``ledger._bill_lessons`` skips the day, so the 15-minute tick never writes it again.
 * A moved lesson is charged once, on its new day, by ``_bill_lessons`` (``ledger.MOVED_KEY``): ``bill_span`` writes it
   now when that day has come, else the tick on that day does.
-* An undo voids the moved lesson and lets ``bill_span`` write the day again: a new row, the voided one stays.
+* An undo voids the moved lesson and lets ``bill_span`` write the day again: a new row at the voided row's own amount,
+  and the voided one stays.
+* Each takes the spans' rows first (``_spans``), so the 15-minute tick billing the same span never interleaves with it.
 * A new student's first month is flat (owner, 2026-11-22), so a change inside it finds nothing to void or write.
 
 Each ends by lifting the debt freeze of every student it touched who is back to zero or above
@@ -36,7 +38,11 @@ def _running_on(days) -> Q:
 
 def _spans(change) -> list[Span]:
     """The spans paid per lesson that the change touches: running on its day or its new day, in its class — or, for a
-    centre holiday, every seat with a lesson that weekday whose class has no change of its own that day."""
+    centre holiday, every seat with a lesson that weekday whose class has no change of its own that day.
+
+    Locked, in id order (so two changes never wait on each other in a circle): a tick billing one of them finishes
+    first and this sees what it wrote, and a tick coming after waits and then sees this change (``ledger.lock_span``).
+    Only the spans' own rows are locked (``of=("self",)``), not their students."""
     from classes.models_lesson_changes import LessonChange  # here, not at the top: classes imports billing
 
     days = [day for day in (change.day, change.new_day) if day is not None]
@@ -45,6 +51,7 @@ def _spans(change) -> list[Span]:
         .filter(_running_on(days))
         .exclude(end__lt=F("start"))
         .select_related("seat__account__user")
+        .select_for_update(of=("self",))
         .order_by("pk")
     )
     if change.classroom_id is not None:
@@ -66,9 +73,17 @@ def _void_live(key: str, reason: str, by) -> Entry | None:
     return row
 
 
-def _summary(spans, voided) -> dict:
-    """What moved: the rows voided, for how many students and how much came back, and the debt freezes lifted. Only
-    lifted: a change never freezes anyone (the tick does)."""
+def _bill(spans, today: date, keys: set[str], *, prices: dict[str, int] | None = None) -> list[Entry]:
+    """Bill the spans (``ledger.bill_span``); the rows written now under ``keys``, the change's own."""
+    had = set(Entry.objects.filter(key__in=keys, voided_at__isnull=True).values_list("pk", flat=True))
+    for span in spans:
+        ledger.bill_span(span, today, prices=prices)
+    return [row for row in Entry.objects.filter(key__in=keys, voided_at__isnull=True) if row.pk not in had]
+
+
+def _summary(spans, voided, charged) -> dict:
+    """What moved: the rows voided (for how many students, how much came back), the rows charged now and how much,
+    and the debt freezes lifted. Only lifted: a change never freezes anyone (the tick does)."""
     unfrozen = 0
     if conf.lesson_billing() and conf.ledger_is_ours():
         accounts = {span.seat.account_id: span.seat.account for span in spans}
@@ -78,13 +93,16 @@ def _summary(spans, voided) -> dict:
         "voided": len(voided),
         "students": len({row.account_id for row in voided}),
         "amount": sum(-row.amount for row in voided),
+        "charged": len(charged),
+        "charged_amount": sum(-row.amount for row in charged),
         "unfrozen": unfrozen,
     }
 
 
 def apply(change, *, today: date, by) -> dict:
     """The change's day is not charged: its lesson already written is voided with the reason. A move's lesson is
-    charged on its new day once that day has come. Returns ``{"voided", "students", "amount", "unfrozen"}``."""
+    charged on its new day once that day has come. Returns ``{"voided", "students", "amount", "charged",
+    "charged_amount", "unfrozen"}``."""
     words = (
         f"Lesson moved to {change.new_day}: {change.reason}" if change.new_day else f"Lesson cancelled: {change.reason}"
     )
@@ -95,15 +113,17 @@ def apply(change, *, today: date, by) -> dict:
             row = _void_live(f"{ledger.LESSON_KEY}{span.pk}:{change.day.isoformat()}", words, by)
             if row is not None:
                 voided.append(row)
+        charged = []
         if change.new_day is not None:
-            for span in spans:
-                ledger.bill_span(span, today)
-        return _summary(spans, voided)
+            moved = {f"{ledger.MOVED_KEY}{span.pk}:{change.day.isoformat()}" for span in spans}
+            charged = _bill(spans, today, moved)
+        return _summary(spans, voided, charged)
 
 
 def revert(change, *, today: date, by) -> dict:
     """An undone change: a move's lesson on its new day is voided, then the day is charged again (``bill_span``, for
-    a day that has come; the tick writes one still ahead on its day). ``change`` is already undone."""
+    a day that has come; the tick writes one still ahead on its day), at what it was charged at before the change took
+    it back — a lesson already written keeps its price (``ledger.set_personal_price``). ``change`` is already undone."""
     with transaction.atomic():
         spans = _spans(change)
         voided = []
@@ -113,6 +133,6 @@ def revert(change, *, today: date, by) -> dict:
                 row = _void_live(f"{ledger.MOVED_KEY}{span.pk}:{change.day.isoformat()}", words, by)
                 if row is not None:
                     voided.append(row)
-        for span in spans:
-            ledger.bill_span(span, today)
-        return _summary(spans, voided)
+        days = {f"{ledger.LESSON_KEY}{span.pk}:{change.day.isoformat()}" for span in spans}
+        charged = _bill(spans, today, days, prices=ledger.last_voided_amounts(days))
+        return _summary(spans, voided, charged)

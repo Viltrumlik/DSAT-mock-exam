@@ -107,7 +107,9 @@ class EndpointTests(ApiCase):
              "reason": "Teacher ill", "day": "2026-12-07", "new_day": None},
         )
         self.assertEqual((body["change"]["created_by"], body["change"]["undone_at"]), ("boss", None))
-        self.assertEqual(body["money"], {"voided": 0, "students": 0, "amount": 0, "unfrozen": 0})
+        self.assertEqual(
+            body["money"], {"voided": 0, "students": 0, "amount": 0, "charged": 0, "charged_amount": 0, "unfrozen": 0}
+        )
         self.assertEqual(change.created_by, self.admin)
 
     def test_move(self):
@@ -140,9 +142,17 @@ class EndpointTests(ApiCase):
         self.undo(self.move("2026-12-11", "2026-12-12").json()["change"]["id"])
         body = self.listed(**{"from": "2026-12-07", "to": "2026-12-13", "classroom": str(self.room.pk)}).json()
         self.assertEqual((body["from"], body["to"]), ("2026-12-07", "2026-12-13"))
-        self.assertEqual([row["id"] for row in body["changes"]], [mine, holiday])
+        self.assertEqual([row["id"] for row in body["changes"]], [holiday, mine])  # a centre holiday first
         self.assertEqual(len(self.listed(**{"from": "2026-12-07", "to": "2026-12-13"}).json()["changes"]), 3)
         self.assertEqual(self.listed(**{"from": "2026-12-08", "to": "2026-12-08"}).json()["changes"][0]["id"], holiday)
+
+    def test_the_list_puts_centre_holidays_first_then_the_class_changes_by_day(self):
+        later = self.cancel("2026-12-11").json()["change"]["id"]
+        earlier = self.move("2026-12-07", "2026-12-08").json()["change"]["id"]
+        holiday_14 = self.holiday("2026-12-14").json()["change"]["id"]
+        holiday_10 = self.holiday("2026-12-10").json()["change"]["id"]
+        rows = self.listed().json()["changes"]
+        self.assertEqual([row["id"] for row in rows], [holiday_10, holiday_14, earlier, later])
 
     def test_the_list_by_default_is_the_days_that_can_be_changed(self):
         self.cancel()
@@ -188,7 +198,9 @@ class MoneyTests(ApiCase):
         seat.save(update_fields=["classroom"])
         ledger.start_span(seat, date(2026, 12, 2), today=TODAY)
         money = self.cancel().json()["money"]
-        self.assertEqual(money, {"voided": 1, "students": 1, "amount": 38_500, "unfrozen": 0})
+        self.assertEqual(
+            money, {"voided": 1, "students": 1, "amount": 38_500, "charged": 0, "charged_amount": 0, "unfrozen": 0}
+        )
         self.assertEqual(self.undo(LessonChange.objects.get().pk).json()["money"]["voided"], 0)
         self.assertEqual(account.entries.filter(key__startswith="lesson:", voided_at__isnull=True).count(), 4)
 

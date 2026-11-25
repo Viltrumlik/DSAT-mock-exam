@@ -227,6 +227,14 @@ class ConstraintTests(Case):
         LessonChange.objects.filter(pk=first.pk).update(undone_at=first.created_at)
         self.create(classroom=self.room, kind="move", new_day=TUE)
 
+    def test_one_live_move_into_a_class_day(self):
+        first = self.create(classroom=self.room, kind="move", new_day=TUE)
+        with self.assertRaises(IntegrityError):
+            self.create(classroom=self.room, day=WED, kind="move", new_day=TUE)
+        self.create(classroom=make_room("Middle G2"), day=WED, kind="move", new_day=TUE)  # another class may
+        LessonChange.objects.filter(pk=first.pk).update(undone_at=first.created_at)
+        self.create(classroom=self.room, day=WED, kind="move", new_day=TUE)
+
     def test_a_class_with_changes_on_record_cannot_be_deleted_even_undone_ones(self):
         L.undo(self.cancel(MON), by=self.admin, today=TODAY)
         with self.assertRaises(ProtectedError):
