@@ -248,7 +248,7 @@ def _today(room, student_ids: list) -> dict | None:
     # says so, with the reason, instead of counting marks.
     off = off_on([room.pk], day).get(room.pk)
     if off and room.is_active and day.isoweekday() in weekdays_of(room):
-        return {"lesson_time": room.lesson_time or "", "students": students, "marked": None, "change": off}
+        return {"lesson_time": room.lesson_time or "", "students": len(student_ids), "marked": None, "change": off}
     if not (register or scheduled):
         return None
     marked = None
