@@ -47,6 +47,8 @@ export interface LedgerRules {
 export interface LedgerSummary {
   rules?: LedgerRules;
   enabled: boolean;
+  /** True once payments are entered here and lc-up no longer writes the ledger (after the cutover). */
+  ledger_is_ours?: boolean;
   opened_at: string | null;
   last_tick_at: string | null;
   accounts: number;

@@ -53,6 +53,7 @@ from .views_assign import (
     ClassroomGovernanceDeleteView,
     ClassroomGovernanceUpdateView,
     SupportTeacherAssignView,
+    TeacherChoicesView,
     TransferOwnershipView,
 )
 from .views_lessons import (
@@ -218,6 +219,7 @@ urlpatterns = [
     # them through assign-teacher/ would evict the real teacher.
     # Support-teacher booking. Collection routes sit ABOVE the <int:pk> classroom routes
     # so "support" is never parsed as a classroom id.
+    path("teacher-choices/", TeacherChoicesView.as_view(), name="class-teacher-choices"),
     path("support/calendar/", SupportCalendarView.as_view(), name="support-calendar"),
     path("support/slots/", SupportSlotsView.as_view(), name="support-slots"),
     path("support/availability/", SupportAvailabilityView.as_view(), name="support-availability"),
