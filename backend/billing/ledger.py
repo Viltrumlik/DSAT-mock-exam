@@ -47,6 +47,8 @@ MAX_AMOUNT = 50_000_000
 #: A new student's first month (one per student) and each lesson of a span billed per lesson.
 FIRST_KEY = "first:"
 LESSON_KEY = "lesson:"
+#: A lesson moved to another day (owner, 2026-11-25): charged once, on its new day, keyed by the day it left.
+MOVED_KEY = "moved:"
 #: The freeze's own words in the people's history (``users.RoleChange``).
 REASON_DEBT = "billing_debt"
 SOURCE_BILLING = "billing"
@@ -321,7 +323,12 @@ def first_month_window(account) -> tuple[Entry, date, set[int]] | None:
 def _bill_lessons(span, today: date) -> None:
     """A span paid per lesson (owner, 2026-11-22): a new student's first month in full on its first day, then one
     lesson's price on each lesson day of the group, written on that day. Lessons after the span's end, or not yet
-    come, are not written; an absence changes nothing, as with the monthly rule."""
+    come, are not written; an absence changes nothing, as with the monthly rule.
+
+    A day the class called off or moved away, or a centre holiday (owner, 2026-11-25), is skipped here, so no tick
+    charges it again once ``lesson_money`` voided it; a moved lesson is charged once, on its new day."""
+    from classes.lesson_changes import day_changes  # here, not at the top: classes imports billing
+
     seat = span.seat
     if span.start > today or (span.end is not None and span.end < span.start):
         return  # not begun yet, or called off before it began
@@ -332,10 +339,17 @@ def _bill_lessons(span, today: date) -> None:
     if not price:
         return  # a grant
     last = min(span.end, today) if span.end else today
+    # The rows before the changes: a change commits together with its voids, so a row read here as voided always
+    # has its change in the read below, and a tick running beside an admin never writes a voided day again.
     have = set(
-        span.entries.filter(voided_at__isnull=True, key__startswith=LESSON_KEY).values_list("key", flat=True)
+        span.entries.filter(voided_at__isnull=True)
+        .filter(Q(key__startswith=LESSON_KEY) | Q(key__startswith=MOVED_KEY))
+        .values_list("key", flat=True)
     )
+    changes = day_changes(seat.classroom_id, span.start, last)
     for day in lesson_days(seat.days, span.start, last):
+        if day in changes.off:
+            continue
         if covered and covered[0] <= day < covered[1]:
             continue
         key = f"{LESSON_KEY}{span.pk}:{day.isoformat()}"
@@ -343,6 +357,16 @@ def _bill_lessons(span, today: date) -> None:
             post(
                 seat.account, EntryKind.CHARGE, -price, day, key, span=span, seat=seat, month=month_of(day),
                 note=f"Lesson {day.isoformat()}",
+            )
+    for old, new in sorted(changes.moved.items()):
+        # One lesson of the class on its new day, whether or not its old day was one of this span's: they attend it.
+        if not (span.start <= new <= last) or (covered and covered[0] <= new < covered[1]):
+            continue
+        key = f"{MOVED_KEY}{span.pk}:{old.isoformat()}"
+        if key not in have:
+            post(
+                seat.account, EntryKind.CHARGE, -price, new, key, span=span, seat=seat, month=month_of(new),
+                note=f"Lesson {old.isoformat()} moved to {new.isoformat()}",
             )
 
 
@@ -399,6 +423,8 @@ def end_span(span, day: date, why: str, *, today: date) -> None:
         if day < span.start:  # called off before it began: nothing of it stands, the first month neither
             later = span.entries.filter(voided_at__isnull=True)
         else:  # the first month is paid in full and stays (owner: "to'liq 500 ming")
+            # Every charge dated after the end: its lessons (LESSON_KEY), and the lessons moved to a day after it
+            # (MOVED_KEY rows carry their new day), whatever day they were moved from.
             later = span.entries.filter(voided_at__isnull=True, kind=EntryKind.CHARGE, day__gt=day).exclude(
                 key__startswith=FIRST_KEY
             )
