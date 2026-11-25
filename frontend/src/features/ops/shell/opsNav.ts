@@ -55,6 +55,8 @@ export type OpsNavItem = {
   hidden?: boolean;
   /** One of the daily lc-up jobs: drawn a little taller in the sidebar. */
   main?: boolean;
+  /** A small word the sidebar draws after the label ("TEST" on the test copy's Toolbox). */
+  badge?: string;
   /** A verdict waiting behind this page — the shell fetches it and the sidebar draws it beside the label. */
   countKey?: OpsNavCountKey;
   /** The page's own tabs, in its own words; the first is the one it opens on. */
@@ -232,6 +234,20 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
           { href: "/ops/mobile", label: "Mobile app", icon: "ms-appversion", tone: HUE.cyan, superAdminOnly: true },
           // A broadcast cannot be recalled — super admins only, like the endpoint.
           { href: "/ops/broadcast", label: "Broadcast", icon: "ms-broadcast", tone: HUE.purple, superAdminOnly: true },
+          // The test copy's toolbox: its time machine, test students, the messages it would have sent. Only where the
+          // build says so (NEXT_PUBLIC_STAGING_TOOLBOX=1); the owner and admins, as its API allows.
+          ...(process.env.NEXT_PUBLIC_STAGING_TOOLBOX === "1"
+            ? [
+                {
+                  href: "/ops/toolbox",
+                  label: "Toolbox",
+                  icon: "history",
+                  tone: HUE.slate,
+                  badge: "TEST",
+                  requires: [P.manageUsers],
+                } satisfies OpsNavItem,
+              ]
+            : []),
         ],
       },
     ],
