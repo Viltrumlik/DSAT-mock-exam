@@ -1,8 +1,9 @@
 """The "balance low" and "frozen for debt" SMS (owner, 2026-11-25), once per occurrence.
 
 * Low: the balance is at or above zero but under two lessons' worth — twice the sum of one lesson's price over the
-  account's running per-lesson seats (a grant, price 0, counts nothing). Told once per dip; armed again when the
-  balance is back at or above that line.
+  account's running per-lesson seats (a grant, price 0, counts nothing; a seat whose span ends today is leaving).
+  A first month's prepaid lessons count toward it, but not toward a second group's per-lesson seats. Told once per
+  dip; armed again when neither holds.
 * Frozen: the learner is frozen for debt. Told once per freeze; armed again when it is lifted.
 
 To the parent's phone first, then the student's own, then the account's; nobody else. The state that makes it "once"
@@ -57,39 +58,81 @@ class Plan:
     skipped: Counter = field(default_factory=Counter)
 
 
-def threshold(account, today: date) -> int:
-    """Two lessons' worth: 2 × the sum of one lesson's price over the seats with a per-lesson span running on
-    ``today``. A seat at price 0 (a grant) counts 0, so an account of grants has no line."""
+def _running_seats(account, today: date) -> dict:
+    """The seats with a per-lesson span still running after ``today`` (no end, or an end later than today): a student
+    who leaves today is not told to top up."""
     spans = (
         Span.objects.filter(seat__account=account, rule=SpanRule.LESSON, start__lte=today)
-        .filter(Q(end__isnull=True) | Q(end__gte=today))
+        .filter(Q(end__isnull=True) | Q(end__gt=today))
         .select_related("seat")
     )
-    seats = {span.seat_id: span.seat for span in spans}
+    return {span.seat_id: span.seat for span in spans}
+
+
+def threshold(account, today: date) -> int:
+    """Two lessons' worth: 2 × the sum of one lesson's price over the seats with a per-lesson span running after
+    ``today``. A seat at price 0 (a grant) counts 0, so an account of grants has no line."""
+    seats = _running_seats(account, today)
     return LINE_LESSONS * sum(ledger.lesson_price(seat) for seat in seats.values() if seat.charge_price > 0)
+
+
+def charged_threshold(account, today: date) -> int:
+    """Two lessons' worth of only the seats actually charged per lesson today: those not inside a first-month window
+    (its prepaid lessons cannot pay another group's charges)."""
+    seats = _running_seats(account, today)
+    window = ledger.first_month_window(account)
+    if window is not None and today < window[1]:
+        prepaid = set(Span.objects.filter(pk__in=window[2]).values_list("seat_id", flat=True))
+        seats = {pk: seat for pk, seat in seats.items() if pk not in prepaid}
+    return LINE_LESSONS * sum(ledger.lesson_price(seat) for seat in seats.values() if seat.charge_price > 0)
+
+
+def counted_days(days, off, moved, start: date, end: date) -> list[date]:
+    """The lesson ``days`` that count inside ``start``..``end`` (both included) once lesson changes are applied: the
+    ``off`` days and the old dates of ``moved`` drop out, the new dates of moves that fall inside the window come in."""
+    gone = set(off) | set(moved)
+    kept = {day for day in days if day not in gone}
+    kept |= {new for new in moved.values() if start <= new <= end}
+    return sorted(kept)
+
+
+def is_low(account, today: date, line: int | None = None) -> bool:
+    """Low today: no debt, and either the balance plus the prepaid first-month lessons is under the line, or the
+    balance alone is under two lessons of the seats really charged per lesson (a second group beside a first month)."""
+    balance = ledger.balance(account)
+    if balance < 0:
+        return False
+    line = threshold(account, today) if line is None else line
+    if line > 0 and balance + prepaid_left(account, today) < line:
+        return True
+    return balance < charged_threshold(account, today)
 
 
 def prepaid_left(account, today: date) -> int:
     """What a new student's first month still holds: no lesson is charged inside it (the fee paid them all), so the
     balance sits at 0 while lessons run out. The lesson days of the window's spans from ``today`` (included) to the
-    window's end (excluded), at each seat's lesson price. 0 for anyone who has no first month, or past it."""
+    window's end (excluded), at each seat's lesson price, less cancelled and holiday days and plus moved-in ones
+    when the lesson-changes module is there. 0 for anyone who has no first month, or past it."""
     window = ledger.first_month_window(account)
     if window is None:
         return 0
     _, end, chain = window
+    try:
+        from classes.lesson_changes import day_changes
+    except ImportError:
+        day_changes = None
     total = 0
     for span in Span.objects.filter(pk__in=chain).select_related("seat"):
         last = end - timedelta(days=1)
         if span.end is not None:
             last = min(last, span.end)
-        days = lesson_days(span.seat.days, max(today, span.start), last)
+        first = max(today, span.start)
+        days = lesson_days(span.seat.days, first, last)
+        if day_changes is not None and span.seat.classroom_id:
+            changes = day_changes(span.seat.classroom_id, first, last)
+            days = counted_days(days, changes.off, changes.moved, first, last)
         total += len(days) * ledger.lesson_price(span.seat)
     return total
-
-
-def _cover(account, today: date) -> int:
-    """The balance plus the prepaid lessons still to come: what the low line is compared with."""
-    return ledger.balance(account) + prepaid_left(account, today)
 
 
 def phone_of(account) -> str:
@@ -145,7 +188,7 @@ def plan(today: date) -> Plan:
             notice = BalanceNotice.objects.filter(account=account).first()
             low_armed = notice.low_armed if notice else True
             frozen_armed = notice.frozen_armed if notice else True
-            wants_low = 0 <= balance and balance + prepaid_left(account, today) < line and low_armed
+            wants_low = is_low(account, today, line) and low_armed
             wants_frozen = _debt_frozen(user) and frozen_armed
             if not (wants_low or wants_frozen):
                 continue
@@ -175,7 +218,7 @@ def rearm(today: date) -> int:
         try:
             notice, _ = BalanceNotice.objects.get_or_create(account=account)
             fields = []
-            if not notice.low_armed and _cover(account, today) >= threshold(account, today):
+            if not notice.low_armed and ledger.balance(account) >= 0 and not is_low(account, today):
                 notice.low_armed = True
                 fields.append("low_armed")
             if not notice.frozen_armed and not _debt_frozen(account.user):
