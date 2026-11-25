@@ -54,6 +54,8 @@ export type ClassroomCore = {
   max_students: number | null;
   /** What a month costs, whole so'm; null until someone states it. */
   monthly_price: number | null;
+  /** Seats are billed per lesson (first month whole, then each lesson day); absent on an older server. */
+  lesson_billing?: boolean;
   /** The seat actions are open: lc-up no longer runs. */
   seats_open: boolean;
   schedule_summary: string;
@@ -179,6 +181,8 @@ export type ClassroomRegister = {
     /** "YYYY-MM-DD": a lesson before it is not theirs. Null for someone who has left. */
     joined: string | null;
     seat_status: SeatStatus | null;
+    /** A demo (trial) seat: listed after the paying rows, with the DEMO badge. Absent on an older server. */
+    is_demo?: boolean;
     /** "YYYY-MM-DD": the day a frozen seat froze, when the ledger knows it. */
     frozen_on: string | null;
     /** Marked this month, and has left the group since. */
@@ -226,8 +230,9 @@ export function useClassrooms(params: ChangeListParams) {
 
 export const isNotFound = (err: unknown) => (err as { response?: { status?: number } })?.response?.status === 404;
 
-export function useClassroom(id: number) {
+export function useClassroom(id: number, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: classroomKeys.core(id),
     queryFn: async () => (await api.get<ClassroomCore>(`/classes/admin/classrooms/${id}/`)).data,
     retry: (count, err) => !isNotFound(err) && count < 2,

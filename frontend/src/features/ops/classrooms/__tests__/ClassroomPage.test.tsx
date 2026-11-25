@@ -516,6 +516,28 @@ describe("the register grid", () => {
     expect(get).toHaveBeenCalledWith("/classes/admin/classrooms/45/register/", { params: { month: "2026-10" } });
   });
 
+  it("marks a demo student's row with the DEMO badge, after the paying rows", async () => {
+    route(core());
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((url: string, config?: unknown) => {
+      if (url !== "/classes/admin/classrooms/45/register/") return base(url, config);
+      return Promise.resolve({
+        data: {
+          ...(PARTS.register as object),
+          students: [
+            { id: 7, name: "Zoya Paying", section: "students", joined: "2026-10-01", seat_status: "active", is_demo: false, frozen_on: null, left: false, marks: {} },
+            { id: 9, name: "Alim Trial", section: "students", joined: "2026-11-02", seat_status: "trial", is_demo: true, frozen_on: null, left: false, marks: { "2026-11-02": "PRESENT" } },
+          ],
+        },
+      });
+    });
+    await renderPage();
+    const rows = [...box("Register")!.querySelectorAll("tbody tr")];
+    expect(rows.map((tr) => tr.querySelector("td")?.textContent)).toEqual(["Zoya Paying", expect.stringContaining("Alim Trial")]);
+    expect(rows[0].querySelector("td")?.textContent).not.toContain("DEMO");
+    expect(rows[1].querySelector("td")?.textContent).toContain("DEMO");
+  });
+
   it("says a failed load failed, with a retry", async () => {
     route(core());
     const base = get.getMockImplementation()!;
