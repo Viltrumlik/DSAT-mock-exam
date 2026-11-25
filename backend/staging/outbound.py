@@ -29,3 +29,10 @@ def capture(channel: str, to: str, body: str, *, subject: str = "", meta: dict |
     CapturedMessage.objects.create(
         channel=channel, to=str(to or ""), subject=str(subject or ""), body=str(body or ""), meta=dict(meta or {})
     )
+
+
+def person(user) -> str:
+    """Who a push was for, as Messages shows it: the name and the sign-in, so its filter finds either."""
+    name = " ".join(f"{getattr(user, 'first_name', '') or ''} {getattr(user, 'last_name', '') or ''}".split())
+    login = str(getattr(user, "username", "") or getattr(user, "email", "") or getattr(user, "pk", ""))
+    return f"{name} ({login})" if name else login

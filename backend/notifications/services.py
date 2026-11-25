@@ -297,9 +297,11 @@ def _hint_many(user_ids) -> None:
 
 def _apns_configured() -> bool:
     try:
+        from staging.outbound import captured
+
         from . import apns
 
-        return apns.is_configured()
+        return apns.is_configured() or captured()  # the test copy captures every push (staging.outbound)
     except Exception:
         return False
 

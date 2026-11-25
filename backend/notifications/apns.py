@@ -157,6 +157,18 @@ def send_to_device(device, payload: dict) -> bool:
     production — so the other host is tried once before the token is called dead, and the
     environment that worked is remembered.
     """
+    from staging.outbound import capture, captured, person
+
+    if captured():  # the test copy: written to the toolbox's Messages, never sent
+        alert = (payload.get("aps") or {}).get("alert") or {}
+        capture(
+            "push", person(device.user), alert.get("body", ""), subject=alert.get("title", ""),
+            meta={
+                "transport": "apns", "user_id": device.user_id, "device_id": device.pk,
+                "link": payload.get("link", ""), "category": payload.get("category", ""),
+            },
+        )
+        return True
     if not is_configured():
         return False
 
