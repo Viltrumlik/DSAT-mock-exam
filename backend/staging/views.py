@@ -114,9 +114,12 @@ class StatusView(ToolboxView):
 
         state = tm.read_state()
         left = cutover.status()
+        base = next((cp for cp in state["checkpoints"] if isinstance(cp, dict) and cp.get("kind") == "base"), None)
         return Response({
             "release": _release(),
             "database": connection.settings_dict.get("NAME"),
+            # The database's age: when the copy was taken from prod (the time machine's base checkpoint).
+            "database_copied_at": base.get("taken_at") if base else None,
             "toolbox": True,
             "capture": captured(),
             "clock": {"offset_days": state["offset_days"], "test_now": timezone.now()},
@@ -337,8 +340,14 @@ class TaskRunView(ToolboxView):
         name = str(_data(request).get("name") or "")
 
         def work():
-            result = tools.run_task(name)
-            return result, {"ok": result["ok"]}
+            try:
+                result = tools.run_task(name)
+            except tm.ToolboxRefused:
+                raise
+            except Exception as exc:  # noqa: BLE001 - "Run now" answers in JSON, never a 500, whatever went wrong
+                result = {"name": name, "task": "", "ok": False, "result": f"{type(exc).__name__}: {exc}"[:2000]}
+            logged = {"ok": result["ok"]} if result["ok"] else {"ok": False, "error": result["result"][:300]}
+            return result, logged
 
         return _run(request, "task.run", {"name": name}, work)
 
@@ -394,7 +403,7 @@ class SignInLinkView(ToolboxView):
             if not tools.may_sign_in_as(request.user, user):
                 raise tm.ToolboxRefused("Only the owner can sign in as someone ranked as high as you.", status=403)
             scheme, host = request.scheme, request.get_host()
-            link = tools.sign_in_link(user, host_for=lambda side: tools.console_origin(scheme, host, side))
+            link = tools.sign_in_link(user, host_for=lambda side: tools.console_origin(scheme, host, side), by=request.user)
             return link, {"name": display_name(user), "expires_at": link["expires_at"].isoformat()}
 
         return _run(request, "sign_in_link", {"user_id": data.get("user_id")}, work)
@@ -416,7 +425,7 @@ class SignInView(ToolboxView):
         from users.views import _console_refusal_for, _session_fingerprint
 
         try:
-            user = tools.link_holder(token)
+            user, maker = tools.link_holder(token)
         except tm.ToolboxRefused as refused:
             return Response({"detail": str(refused)}, status=refused.status)
         # Only on the host the link was made for: a student's link opened on the admin host would otherwise replace
@@ -444,4 +453,8 @@ class SignInView(ToolboxView):
             )
         except Exception:  # pragma: no cover - a missing session row must not undo a sign-in
             logger.exception("staging_sign_in_session_row_failed user_id=%s", user.pk)
+        # Who was signed in, by whose link.
+        ToolboxAction.objects.create(
+            user=maker, action="sign_in", detail={"user_id": user.pk, "name": display_name(user), "side": tools.side_of(user)}
+        )
         return response

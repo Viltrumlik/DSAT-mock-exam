@@ -35,6 +35,11 @@ def double(x):
     return {"doubled": x * 2}
 
 
+@celery_app.task(name="staging.tests_tools.explode")
+def explode():
+    raise RuntimeError("the task broke")
+
+
 def open_ledger():
     state = BillingState.get()
     state.opened_at = NOW
@@ -195,6 +200,11 @@ class TaskTests(TestCase):
         with self.assertRaises(ToolboxRefused):
             tools.run_task("no-such-entry")
 
+    @override_settings(CELERY_BEAT_SCHEDULE={"stub-explode": {"task": "staging.tests_tools.explode", "schedule": 60.0}})
+    def test_a_task_that_raises_is_a_failed_run_not_an_error(self):
+        result = tools.run_task("stub-explode")
+        self.assertEqual((result["ok"], result["result"]), (False, "RuntimeError: the task broke"))
+
 
 class ToolApiTests(ToolboxApiCase):
     def setUp(self):
@@ -208,10 +218,8 @@ class ToolApiTests(ToolboxApiCase):
         self.assertEqual(len(response.data["students"]), 2)
         self.assertTrue(response.data["students"][0]["name"].startswith("TEST "))
         self.assertEqual(ToolboxAction.objects.get().action, "students")
-        self.assertEqual(
-            self.call("post", "/api/staging/students/", {"classroom_id": self.room.pk, "status": "trial", "count": 9}).status_code,
-            400,
-        )
+        nine = {"classroom_id": self.room.pk, "status": "trial", "count": 9}
+        self.assertEqual(self.refused("post", "/api/staging/students/", nine).status_code, 400)
 
     @LESSON_MODE
     @LEFT_LCUP
@@ -245,6 +253,18 @@ class ToolApiTests(ToolboxApiCase):
         self.assertEqual((response.status_code, response.data["result"]), (200, '{"doubled": 42}'))
         self.assertEqual(ToolboxAction.objects.get().action, "task.run")
 
+    @override_settings(CELERY_BEAT_SCHEDULE={"stub-explode": {"task": "staging.tests_tools.explode", "schedule": 60.0}})
+    def test_run_now_answers_in_json_whatever_goes_wrong(self):
+        broken = self.call("post", "/api/staging/tasks/run/", {"name": "stub-explode"})
+        self.assertEqual((broken.status_code, broken.data["ok"], broken.data["result"]), (200, False, "RuntimeError: the task broke"))
+        with mock.patch("staging.tools.run_task", side_effect=LookupError("the task registry broke")):
+            crashed = self.call("post", "/api/staging/tasks/run/", {"name": "stub-explode"})
+        self.assertEqual((crashed.status_code, crashed.data["ok"]), (200, False))
+        self.assertEqual(crashed.data["result"], "LookupError: the task registry broke")
+        rows = list(ToolboxAction.objects.order_by("id"))
+        self.assertEqual([(r.action, r.detail["ok"]) for r in rows], [("task.run", False), ("task.run", False)])
+        self.assertEqual(rows[1].detail["error"], "LookupError: the task registry broke")
+
 
 class MessagesApiTests(ToolboxApiCase):
     def setUp(self):
@@ -274,14 +294,14 @@ class SignInTests(ToolboxApiCase):
         self.student = User.objects.create_user(None, password=None, username="998901234567", role="student")
         self.teacher = User.objects.create_user(None, password=None, username="t", role="teacher", subject="math")
 
-    def link(self, user, *, by=None):
-        return self.call("post", "/api/staging/sign-in-link/", {"user_id": user.pk}, user=by)
+    def link(self, user, *, by=None, refused=False):
+        return (self.refused if refused else self.call)("post", "/api/staging/sign-in-link/", {"user_id": user.pk}, user=by)
 
-    def redeem(self, url):
+    def redeem(self, url, *, host=None, refused=False):
         parts = urlsplit(url)
-        return self.call("get", parts.path, authenticate=False, host=parts.netloc)
+        return (self.refused if refused else self.call)("get", parts.path, authenticate=False, host=host or parts.netloc)
 
-    def test_a_student_link_opens_the_student_side_once(self):
+    def test_a_student_link_opens_the_student_side_once_and_both_are_logged(self):
         response = self.link(self.student)
         self.assertEqual(response.status_code, 200)
         url = response.data["url"]
@@ -291,8 +311,11 @@ class SignInTests(ToolboxApiCase):
         self.assertTrue(first.cookies[ACCESS_COOKIE].value)
         self.assertTrue(first.cookies[REFRESH_COOKIE].value)
         self.assertTrue(RefreshSession.objects.filter(user=self.student).exists())
-        self.assertEqual(self.redeem(url).status_code, 403)
-        self.assertEqual(ToolboxAction.objects.get().detail["user_id"], self.student.pk)
+        self.assertEqual(self.redeem(url, refused=True).status_code, 403)
+        made = ToolboxAction.objects.get(action="sign_in_link")
+        used = ToolboxAction.objects.get(action="sign_in")  # who was signed in, by whose link
+        self.assertEqual((made.user, made.detail["user_id"]), (self.admin, self.student.pk))
+        self.assertEqual((used.user, used.detail["user_id"], used.detail["name"]), (self.admin, self.student.pk, "998901234567"))
 
     def test_a_teacher_link_opens_the_teacher_portal(self):
         url = self.link(self.teacher).data["url"]
@@ -310,31 +333,42 @@ class SignInTests(ToolboxApiCase):
         with mock.patch("time.time", return_value=start):
             url = self.link(self.student).data["url"]
         with mock.patch("time.time", return_value=start + 601):
-            self.assertEqual(self.redeem(url).status_code, 403)
+            self.assertEqual(self.redeem(url, refused=True).status_code, 403)
         with mock.patch("time.time", return_value=start + 599):
             self.assertEqual(self.redeem(url).status_code, 302)
+
+    def test_a_link_signed_in_the_future_is_refused(self):
+        # A link made at a later test date, then the time machine went Back: its age is negative, not small.
+        start = 1_800_000_000.0
+        with mock.patch("time.time", return_value=start):
+            url = self.link(self.student).data["url"]
+        with mock.patch("time.time", return_value=start - 86_400):
+            response = self.redeem(url, refused=True)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("not valid", response.data["detail"])
+        self.assertFalse(ToolboxAction.objects.filter(action="sign_in").exists())
 
     def test_an_inactive_account_or_a_forged_link_is_refused(self):
         url = self.link(self.student).data["url"]
         User.objects.filter(pk=self.student.pk).update(is_active=False)
-        self.assertEqual(self.redeem(url).status_code, 403)
-        forged = self.call("get", "/api/staging/sign-in/1:abc:def:ghi/", authenticate=False, host=MAIN_HOST)
+        self.assertEqual(self.redeem(url, refused=True).status_code, 403)
+        forged = self.refused("get", "/api/staging/sign-in/1:abc:def:ghi/", authenticate=False, host=MAIN_HOST)
         self.assertEqual(forged.status_code, 403)
 
     def test_the_wrong_console_is_refused_and_the_link_kept(self):
         url = self.link(self.student).data["url"]
         for host in (TEACHER_HOST, ADMIN_HOST):
-            self.assertEqual(self.call("get", urlsplit(url).path, authenticate=False, host=host).status_code, 403, host)
+            self.assertEqual(self.redeem(url, host=host, refused=True).status_code, 403, host)
         self.assertEqual(self.redeem(url).status_code, 302)
 
     def test_an_admin_cannot_become_someone_ranked_as_high(self):
         owner = User.objects.create_user(None, password=None, username="owner", role="super_admin")
         other = User.objects.create_user(None, password=None, username="other", role="admin")
         for target in (owner, other):
-            self.assertEqual(self.link(target).status_code, 403, target.role)
+            self.assertEqual(self.link(target, refused=True).status_code, 403, target.role)
         self.assertEqual(self.link(other, by=owner).status_code, 200)
 
     def test_off_the_copy_a_link_is_not_found(self):
         url = self.link(self.student).data["url"]
         with override_settings(STAGING_TOOLBOX=False):
-            self.assertEqual(self.redeem(url).status_code, 404)
+            self.assertEqual(self.redeem(url, refused=True).status_code, 404)

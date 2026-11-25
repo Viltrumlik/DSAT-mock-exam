@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import random
+import time
 import uuid
 from datetime import timedelta
 
@@ -272,27 +273,37 @@ def may_sign_in_as(actor, target) -> bool:
     return account_rank(target) < account_rank(actor)
 
 
-def sign_in_link(user, *, host_for) -> dict:
+def sign_in_link(user, *, host_for, by=None) -> dict:
     """A link that signs its opener in as ``user`` on their side (``host_for(side)`` is that side's origin), once,
-    within ten minutes."""
-    token = signing.TimestampSigner(salt=SIGN_IN_SALT).sign(f"{user.pk}:{uuid.uuid4().hex}")
+    within ten minutes. It carries who made it (``by``), for the action log when it is used."""
+    maker = getattr(by, "pk", None) or 0
+    token = signing.TimestampSigner(salt=SIGN_IN_SALT).sign(f"{user.pk}:{maker}:{uuid.uuid4().hex}")
     path = reverse("staging-sign-in", kwargs={"token": token})
     return {"url": f"{host_for(side_of(user))}{path}", "expires_at": timezone.now() + timedelta(seconds=SIGN_IN_MAX_AGE)}
 
 
-def link_holder(token: str):
-    """The active person a link names while it is under ten minutes old. Refused (403) otherwise."""
+def link_holder(token: str) -> tuple:
+    """``(the active person a link names, who made it or None)`` while the link is under ten minutes old. Refused (403)
+    otherwise — and when it was signed later than now: after the time machine goes Back, a link made at a later test
+    date would have a negative age, which ``max_age`` lets through."""
+    signer = signing.TimestampSigner(salt=SIGN_IN_SALT)
+    not_valid = ToolboxRefused("This sign-in link is not valid.", status=403)
     try:
-        value = signing.TimestampSigner(salt=SIGN_IN_SALT).unsign(token, max_age=SIGN_IN_MAX_AGE)
+        value = signer.unsign(token, max_age=SIGN_IN_MAX_AGE)
+        signed_at = signing.b62_decode(token.rsplit(signer.sep, 2)[1])
     except signing.SignatureExpired:
         raise ToolboxRefused("This sign-in link has expired. Make a new one in the toolbox.", status=403) from None
-    except signing.BadSignature:
-        raise ToolboxRefused("This sign-in link is not valid.", status=403) from None
-    pk = value.split(":", 1)[0]
-    user = get_user_model().objects.filter(pk=int(pk) if pk.isdigit() else 0, is_active=True).first()
+    except (signing.BadSignature, ValueError, IndexError):
+        raise not_valid from None
+    parts = value.split(":")
+    if signed_at > time.time() or len(parts) != 3 or not parts[0].isdigit():
+        raise not_valid
+    User = get_user_model()
+    user = User.objects.filter(pk=int(parts[0]), is_active=True).first()
     if user is None:
         raise ToolboxRefused("This account cannot be signed in to.", status=403)
-    return user
+    maker = User.objects.filter(pk=int(parts[1])).first() if parts[1].isdigit() and int(parts[1]) else None
+    return user, maker
 
 
 def use_link(token: str) -> None:
