@@ -51,6 +51,7 @@ export const smsKeys = {
   settings: ["sms", "settings"] as const,
   debtPreview: (day: string) => ["sms", "debt", "preview", day] as const,
   debtRuns: ["sms", "debt", "runs"] as const,
+  balancePreview: ["sms", "balance", "preview"] as const,
   templates: ["sms", "templates"] as const,
   classrooms: ["sms", "audience", "classrooms"] as const,
   audienceOptions: ["sms", "audience", "options"] as const,
@@ -150,6 +151,15 @@ export function useDebtPreview(day = "", pollUntil = 0) {
   });
 }
 
+/** Today's balance list; until `pollUntil` it is asked again every DEBT_POLL_MS while anyone is still to be told. */
+export function useBalancePreview(pollUntil = 0) {
+  return useQuery({
+    queryKey: smsKeys.balancePreview,
+    queryFn: () => smsApi.balancePreview(),
+    refetchInterval: (query) => (Date.now() < pollUntil && (query.state.data?.count ?? 0) > 0 ? DEBT_POLL_MS : false),
+  });
+}
+
 /** The past runs; asked again every DEBT_POLL_MS until `pollUntil`, as "Send now" fills today's. */
 export function useDebtRuns(pollUntil = 0) {
   return useQuery({
@@ -238,6 +248,12 @@ export function useDebtSendNow() {
   const invalidate = useInvalidateSms();
   const onError = useRefreshIfMaybeSent();
   return useMutation({ ...MUTATION_DEFAULTS, mutationFn: () => smsApi.debtSendNow(), onSuccess: invalidate, onError });
+}
+
+export function useBalanceSendNow() {
+  const invalidate = useInvalidateSms();
+  const onError = useRefreshIfMaybeSent();
+  return useMutation({ ...MUTATION_DEFAULTS, mutationFn: () => smsApi.balanceSendNow(), onSuccess: invalidate, onError });
 }
 
 export function useSyncTemplates() {

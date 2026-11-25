@@ -114,7 +114,7 @@ describe("OPS_CATEGORIES", () => {
     // lc-up's Moliya opens on Qarzdorlar: Debtors is Finance's first tab.
     expect(tabsFor(SUPER_ADMIN, "/ops/finance")?.[0]).toBe("Debtors");
     expect(tabsFor(SUPER_ADMIN, "/ops/finance")).toEqual(expect.arrayContaining(["Overview", "Debtors", "Payments", "Ledger"]));
-    expect(tabsFor(SUPER_ADMIN, "/ops/sms")).toEqual(["Overview", "Journal", "Campaigns", "Debt warnings", "Templates"]);
+    expect(tabsFor(SUPER_ADMIN, "/ops/sms")).toEqual(["Overview", "Journal", "Campaigns", "Debt warnings", "Balance", "Templates"]);
     expect(tabsFor(SUPER_ADMIN, "/ops/lcup")).toEqual(["Status", "Groups", "Students", "Teachers", "Accounts", "Attendance", "Archive"]);
     expect(tabsFor(SUPER_ADMIN, "/ops/trials")).toEqual(["Trial students", "Not on class list"]);
   });

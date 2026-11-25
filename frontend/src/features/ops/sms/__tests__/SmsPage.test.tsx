@@ -9,7 +9,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 /**
- * /ops/sms: one page, five tabs, the open one in `?tab=` so a link and a reload land on it. The
+ * /ops/sms: one page, six tabs, the open one in `?tab=` so a link and a reload land on it. The
  * panels are each tested on their own; here only which one the address opens.
  */
 
@@ -25,6 +25,7 @@ vi.mock("@/features/ops/sms/OverviewPanel", () => ({ OverviewPanel: () => <p>ove
 vi.mock("@/features/ops/sms/JournalPanel", () => ({ JournalPanel: () => <p>journal-panel</p> }));
 vi.mock("@/features/ops/sms/CampaignsPanel", () => ({ CampaignsPanel: () => <p>campaigns-panel</p> }));
 vi.mock("@/features/ops/sms/DebtPanel", () => ({ DebtPanel: () => <p>debt-panel</p> }));
+vi.mock("@/features/ops/sms/BalancePanel", () => ({ BalancePanel: () => <p>balance-panel</p> }));
 vi.mock("@/features/ops/sms/TemplatesPanel", () => ({ TemplatesPanel: () => <p>templates-panel</p> }));
 
 const overview = vi.fn();
@@ -66,7 +67,7 @@ describe("SmsPage", () => {
     expect(text()).toContain("overview-panel");
     expect(text()).not.toContain("journal-panel");
     const labels = Array.from(document.body.querySelectorAll('[role="tab"]')).map((t) => t.textContent?.trim());
-    expect(labels).toEqual(["Overview", "Journal", "Campaigns", "Debt warnings", "Templates"]);
+    expect(labels).toEqual(["Overview", "Journal", "Campaigns", "Debt warnings", "Balance", "Templates"]);
     expect(tab("Overview").getAttribute("aria-selected")).toBe("true");
   });
 
@@ -74,6 +75,7 @@ describe("SmsPage", () => {
     ["tab=journal", "journal-panel"],
     ["tab=campaigns", "campaigns-panel"],
     ["tab=debt", "debt-panel"],
+    ["tab=balance", "balance-panel"],
     ["tab=templates", "templates-panel"],
   ])("opens the tab the address names (%s)", async (query, panel) => {
     await render(query);

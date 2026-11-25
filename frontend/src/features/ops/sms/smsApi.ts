@@ -14,10 +14,10 @@ import type { ChangeListParams } from "@/features/ops/changelist/useChangeListPa
 // ── enums ────────────────────────────────────────────────────────────────
 
 export type SmsStatus = "PENDING" | "SENT" | "DELIVERED" | "UNDELIVERED" | "REJECTED" | "FAILED" | "UNCERTAIN";
-export type SmsKind = "debt_warning" | "campaign" | "test";
+export type SmsKind = "debt_warning" | "campaign" | "test" | "balance_low" | "balance_frozen";
 export type CampaignStatus = "SCHEDULED" | "SENDING" | "DONE" | "CANCELLED" | "FAILED";
 export type AudienceKind = "student" | "group" | "debtors" | "filter";
-export type SlotRole = "student" | "debt" | "text";
+export type SlotRole = "student" | "debt" | "text" | "balance";
 export type TemplateStatus = "service" | "reklama" | "moderation" | "inproccess" | "rejected" | "gone";
 /**
  * Why a person a campaign meant to reach gets nothing. `stale_balance`: a debtors list, or a text
@@ -380,6 +380,19 @@ export interface SmsSettings {
   freeze_enabled: boolean;
   /** lc-up's freeze day of the month: warnings go out the days before it. */
   freeze_day: number;
+  /** The balance SMS (low balance / frozen for debt): off until switched on; no template until one is picked. */
+  balance_enabled: boolean;
+  balance_hour: number;
+  low_template_id: number | null;
+  low_pattern: string;
+  low_slots: SlotRole[];
+  frozen_template_id: number | null;
+  frozen_pattern: string;
+  frozen_slots: SlotRole[];
+  /** The server's SMS_BALANCE_WARNINGS_ENABLED. */
+  balance_env_enabled: boolean;
+  /** The ledger is ours and students pay per lesson: without both there is no balance to warn about. */
+  balance_billing_ready: boolean;
 }
 
 /** Any of these. A template id travels with its slots: the server copies that template's pattern. */
@@ -390,6 +403,38 @@ export interface SmsSettingsPatch {
   warning_slots?: SlotRole[];
   last_day_template_id?: number;
   last_day_slots?: SlotRole[];
+  balance_enabled?: boolean;
+  balance_hour?: number;
+  low_template_id?: number;
+  low_slots?: SlotRole[];
+  frozen_template_id?: number;
+  frozen_slots?: SlotRole[];
+}
+
+// ── balance SMS ──────────────────────────────────────────────────────────
+
+export interface BalanceRow {
+  name: string;
+  phone: string;
+  /** Whole so'm; negative for a frozen account that owes. */
+  balance: number;
+  /** The text as it would go out; "" while the template is not picked. */
+  text: string;
+  parts: number;
+}
+
+export interface BalancePreview {
+  day: string;
+  /** Why nothing would go out now, "" when it would. */
+  blocked: string;
+  /** Reason → how many (e.g. no_phone). */
+  skipped: Record<string, number>;
+  /** low + frozen. */
+  count: number;
+  /** All parts × price_per_part. */
+  cost: number;
+  low: BalanceRow[];
+  frozen: BalanceRow[];
 }
 
 // ── debt warning ─────────────────────────────────────────────────────────
@@ -568,6 +613,14 @@ export const smsApi = {
   },
   async debtSendNow(): Promise<{ queued: boolean }> {
     const { data } = await api.post<{ queued: boolean }>(`${BASE}/debt/send-now/`);
+    return { queued: Boolean(data?.queued) };
+  },
+  async balancePreview(): Promise<BalancePreview> {
+    const { data } = await api.get<BalancePreview>(`${BASE}/balance/preview/`);
+    return data;
+  },
+  async balanceSendNow(): Promise<{ queued: boolean }> {
+    const { data } = await api.post<{ queued: boolean }>(`${BASE}/balance/send-now/`);
     return { queued: Boolean(data?.queued) };
   },
   async debtRuns(): Promise<DebtRun[]> {
