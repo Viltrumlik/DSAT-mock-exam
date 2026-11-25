@@ -30,6 +30,24 @@ export interface AttendanceSessionBrief {
   counts?: Record<string, number> | null;
   /** Absent only against a server that predates the window. */
   marking?: AttendanceMarkingWindow | null;
+  /** The lesson of this day was called off or moved (owner, 2026-11-25): nothing to mark. Null otherwise. */
+  change?: LessonDayChange | null;
+}
+
+export interface LessonDayChange {
+  kind: "cancel" | "move";
+  reason: string;
+  /** "YYYY-MM-DD": where a moved lesson went. */
+  new_day: string | null;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** What the register says instead of its marks: "Lesson cancelled: Teacher ill" / "Lesson moved to 9 Dec". */
+export function lessonChangeBanner(change: LessonDayChange): string {
+  const bare = change.new_day ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(change.new_day) : null;
+  if (change.kind === "move" && bare) return `Lesson moved to ${Number(bare[3])} ${MONTHS[Number(bare[2]) - 1]}`;
+  return `Lesson cancelled: ${change.reason}`;
 }
 
 export interface RosterRow {

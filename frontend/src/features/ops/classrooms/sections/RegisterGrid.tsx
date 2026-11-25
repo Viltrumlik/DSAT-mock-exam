@@ -2,17 +2,28 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+// The day menu is the portalled DropdownMenu: the grid scrolls sideways and would cut an absolute menu off.
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { cn } from "@/lib/cn";
 import { Button, Segmented, Select } from "@/features/console/ui";
 import { monthShort, shortDay } from "@/features/ops/detail/groupFacts";
-import { useClassroomRegister, type ClassroomRegister } from "../classroomsApi";
+import { P, holds } from "@/features/ops/permissions";
+import { useMe } from "@/hooks/useMe";
+import { classroomKeys, useClassroomRegister, type ClassroomRegister } from "../classroomsApi";
+import type { DayChange } from "../lessonChangesApi";
+import { CancelLessonDialog, MoveLessonDialog, UndoChangeDialog } from "./LessonChangeDialogs";
 
 /**
  * The group page's Attendance tab, lc-up's "Davomat" (Group board, 22 Nov 2026): a year and a month, then a ruled
  * register — students down, the month's lesson dates across — with a mark in every cell: ✓ came, ✓ late, ✕ absent,
  * a flag for excused, a snowflake for a frozen seat, a dash before the student joined, an empty ring for a lesson
  * not marked yet. Read-only: a register is marked from "Mark …'s lesson" in the header.
+ *
+ * A lesson day can be cancelled or moved from its column's "⋯" (`manage_lessons`, owner 2026-11-25): a cancelled
+ * column is struck through, a moved one says where it went or came from, and a changed day offers Undo. A centre
+ * holiday is undone on the timetable, for every group at once, so its column has no menu.
  */
 
 const MONTH_NAME = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -30,10 +41,11 @@ const MARK: Record<string, Cell> = {
 
 type Student = ClassroomRegister["students"][number];
 
-/** What one cell says, from the mark if there is one, else from the seat and the day. */
-export function cellOf(s: Student, date: string, held: boolean, today: string): Cell {
+/** What one cell says, from the mark if there is one, else from the seat and the day. ``off``: no lesson that day. */
+export function cellOf(s: Student, date: string, held: boolean, today: string, off = false): Cell {
   const mark = s.marks[date];
   if (mark) return MARK[mark] ?? { icon: null, title: mark, tone: "text-ms-fg-3" };
+  if (off) return { icon: "minus", title: "No lesson", tone: "text-ms-fg-disabled" };
   if (s.left) return { icon: "minus", title: "Not in the group", tone: "text-ms-fg-disabled" };
   if (s.joined && date < s.joined) return { icon: "minus", title: "Not in the group yet", tone: "text-ms-fg-disabled" };
   if (s.seat_status === "frozen" && (!s.frozen_on || date >= s.frozen_on)) {
@@ -48,10 +60,77 @@ function monthName(month: string): string {
   return m ? MONTH_NAME[Number(m[2]) - 1] : month;
 }
 
+/** What a changed column says under its day: "Cancelled: Teacher ill", "Moved to 9 Dec", "Moved from 8 Dec". */
+export function changeNote(change: DayChange): string {
+  if (change.from_day) return `Moved from ${shortDay(change.from_day)}`;
+  if (change.new_day) return `Moved to ${shortDay(change.new_day)}`;
+  return `Cancelled: ${change.reason}`;
+}
+
+type DateCol = ClassroomRegister["dates"][number];
+type Step = { action: "cancel" | "move"; day: string } | { action: "undo"; day: string; change: DayChange };
+
+/** A date's header: the day (struck through when cancelled), what changed under it, and its "⋯" for whoever may. */
+function DateHead({ d, today, canChange, onPick }: { d: DateCol; today: string; canChange: boolean; onPick: (step: Step) => void }) {
+  const change = d.change ?? null;
+  const note = change ? changeNote(change) : null;
+  const day = shortDay(d.date);
+  const menu = canChange && !change?.holiday;
+  return (
+    <span className="inline-flex flex-col items-center gap-0.5" title={note ?? undefined}>
+      <span className="inline-flex items-center gap-0.5">
+        <span
+          className={cn(
+            "whitespace-nowrap text-[12.5px] tabular-nums",
+            d.date === today ? "rounded-ms-badge bg-ms-info-soft px-1.5 py-0.5 font-semibold text-ms-info-fg" : "font-medium text-ms-fg-3",
+            change?.kind === "cancel" && "line-through",
+          )}
+        >
+          {day}
+        </span>
+        {menu ? (
+          <DropdownMenu
+            portal
+            trigger={
+              <button
+                type="button"
+                aria-label={`Change the lesson of ${day}`}
+                className="inline-grid h-6 w-6 place-items-center rounded-[6px] text-ms-fg-3 hover:bg-ms-surface-2 hover:text-ms-fg"
+              >
+                <Icon name="more" size="sm" />
+              </button>
+            }
+          >
+            {change ? (
+              <DropdownMenuItem onClick={() => onPick({ action: "undo", day: d.date, change })}>Undo</DropdownMenuItem>
+            ) : (
+              <>
+                <DropdownMenuItem onClick={() => onPick({ action: "cancel", day: d.date })}>Cancel lesson…</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onPick({ action: "move", day: d.date })}>Move lesson…</DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenu>
+        ) : null}
+      </span>
+      {note ? <span className="block max-w-[96px] truncate text-[11px] font-normal text-ms-fg-3">{note}</span> : null}
+    </span>
+  );
+}
+
 export function RegisterGrid({ roomId }: { roomId: number }) {
   const [month, setMonth] = useState<string | null>(null);
+  const [step, setStep] = useState<Step | null>(null);
+  const { me } = useMe();
+  const canChange = holds(me, P.manageLessons);
+  const queryClient = useQueryClient();
   const query = useClassroomRegister(roomId, month);
   const data = query.data;
+  const changed = () => {
+    setStep(null);
+    void queryClient.invalidateQueries({ queryKey: classroomKeys.all });
+    // The Today board and the timetable list the day's lessons too.
+    void queryClient.invalidateQueries({ queryKey: ["classes", "admin", "lessons"] });
+  };
   const shown = month ?? data?.month ?? null;
   const years = [...new Set((data?.months ?? []).map((m) => m.slice(0, 4)))];
   const year = shown?.slice(0, 4) ?? years[years.length - 1] ?? "";
@@ -124,14 +203,7 @@ export function RegisterGrid({ roomId }: { roomId: number }) {
                 </th>
                 {data.dates.map((d) => (
                   <th key={d.date} scope="col" className="px-1 text-center">
-                    <span
-                      className={cn(
-                        "whitespace-nowrap text-[12.5px] tabular-nums",
-                        d.date === data.today ? "rounded-ms-badge bg-ms-info-soft px-1.5 py-0.5 font-semibold text-ms-info-fg" : "font-medium text-ms-fg-3",
-                      )}
-                    >
-                      {shortDay(d.date)}
-                    </span>
+                    <DateHead d={d} today={data.today} canChange={canChange} onPick={setStep} />
                   </th>
                 ))}
               </tr>
@@ -146,7 +218,8 @@ export function RegisterGrid({ roomId }: { roomId: number }) {
                     {s.left ? <span className="ml-1.5 text-[12px] font-normal text-ms-fg-3">left</span> : null}
                   </td>
                   {data.dates.map((d) => {
-                    const c = cellOf(s, d.date, d.held, data.today);
+                    // Called off, moved away or a centre holiday: nobody had a lesson that day.
+                    const c = cellOf(s, d.date, d.held, data.today, Boolean(d.change && !d.change.from_day));
                     return (
                       <td key={d.date} className="px-1 py-1.5 text-center">
                         <span title={c.title} aria-label={c.title} role="img" className={cn("inline-grid h-7 w-[34px] place-items-center rounded-[8px]", c.tone)}>
@@ -160,6 +233,23 @@ export function RegisterGrid({ roomId }: { roomId: number }) {
             </tbody>
           </table>
         </div>
+      ) : null}
+      {step?.action === "cancel" ? (
+        <CancelLessonDialog roomId={roomId} day={step.day} onClose={() => setStep(null)} onDone={changed} />
+      ) : step?.action === "move" ? (
+        <MoveLessonDialog roomId={roomId} day={step.day} onClose={() => setStep(null)} onDone={changed} />
+      ) : step?.action === "undo" ? (
+        <UndoChangeDialog
+          change={{
+            id: step.change.id,
+            kind: step.change.kind,
+            // A moved-in column is the new day: the change itself is about the day it came from.
+            day: step.change.from_day ?? step.day,
+            new_day: step.change.from_day ? step.day : (step.change.new_day ?? null),
+          }}
+          onClose={() => setStep(null)}
+          onDone={changed}
+        />
       ) : null}
     </section>
   );
