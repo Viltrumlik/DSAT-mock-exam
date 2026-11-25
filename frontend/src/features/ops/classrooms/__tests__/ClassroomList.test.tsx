@@ -136,6 +136,9 @@ describe("the Groups list", () => {
     expect(paired).toContain("MonWedFri");
     expect(paired).toContain("12 · 85.7%");
     expect(paired).toContain("Ends in 2");
+    // The students figure leaves the demo seats out and says them apart.
+    expect(paired).toContain("+1 demo");
+    expect(own).not.toContain("demo");
     expect(paired).toContain("6 Nov 2026");
     // A class without lc-up's name gets its subject; no course length, no lessons figure; archived says so.
     expect(own).toContain("Own class · English");
