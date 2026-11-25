@@ -380,10 +380,16 @@ export function LedgerPanel() {
   const counts = summary.comparison?.ok ? summary.comparison.counts : null;
   return (
     <div className="space-y-3">
-      <p className="text-[13px] text-ms-fg-3">
-        The ledger runs beside lc-up and changes nothing yet: payments are still entered in lc-up.{" "}
-        {summary.enabled ? `Last followed lc-up: ${moment(summary.last_tick_at)}.` : "Following lc-up is switched off."}
-      </p>
+      {summary.ledger_is_ours ? (
+        <p className="text-[13px] text-ms-fg-3">
+          This ledger is the centre&apos;s record: payments, refunds and lesson charges are kept here.
+        </p>
+      ) : (
+        <p className="text-[13px] text-ms-fg-3">
+          The ledger runs beside lc-up and changes nothing yet: payments are still entered in lc-up.{" "}
+          {summary.enabled ? `Last followed lc-up: ${moment(summary.last_tick_at)}.` : "Following lc-up is switched off."}
+        </p>
+      )}
       {/* Seven figures leave a hole in two or four columns, so the last one takes the rest of its row. */}
       <dl
         className={cn(
@@ -405,7 +411,7 @@ export function LedgerPanel() {
       </dl>
       {counts ? (
         <p className="text-[12px] text-ms-fg-3">
-          Compared on {day(summary.comparison?.day)}. A small difference is up to 1,000 UZS, usually rounding.
+          {summary.ledger_is_ours ? "lc-up comparison (history): compared on " : "Compared on "}{day(summary.comparison?.day)}. A small difference is up to 1,000 UZS, usually rounding.
         </p>
       ) : null}
       <Problems problems={summary.problems} />

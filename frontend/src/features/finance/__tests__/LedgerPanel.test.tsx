@@ -305,4 +305,21 @@ describe("LedgerPanel on a device outside Tashkent", () => {
     expect(text).toContain("first month 500 000 so’m");
     expect(text).toContain("top-up at least 500 000");
   });
+
+  it("still says lc-up runs while lc-up is the master", async () => {
+    await mount(<LedgerPanel />, { "/billing/summary/": { ...SUMMARY, ledger_is_ours: false } });
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("The ledger runs beside lc-up and changes nothing yet");
+    expect(text).toContain("Matched498");
+  });
+
+  it("says the ledger is the centre's record once it is ours, and calls the lc-up comparison history", async () => {
+    await mount(<LedgerPanel />, { "/billing/summary/": { ...SUMMARY, ledger_is_ours: true, enabled: false } });
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("This ledger is the centre's record: payments, refunds and lesson charges are kept here.");
+    expect(text).not.toContain("runs beside lc-up");
+    expect(text).not.toContain("Following lc-up is switched off");
+    expect(text).toContain("lc-up comparison (history)");
+    expect(text).toContain("compared on 20 Nov 2026");
+  });
 });
