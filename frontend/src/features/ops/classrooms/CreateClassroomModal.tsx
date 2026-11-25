@@ -71,18 +71,10 @@ export function CreateClassroomModal({
     let alive = true;
     (async () => {
       try {
-        const u = await examsAdminApi.getUsers();
-        const list = (Array.isArray(u) ? u : (u as { results?: unknown[] })?.results ?? []) as Record<string, unknown>[];
-        const toOpt = (x: Record<string, unknown>): StaffOpt => ({
-          id: Number(x.id),
-          email: String(x.email ?? ""),
-          name: [x.first_name, x.last_name].filter(Boolean).join(" ").trim() || String(x.email ?? `#${x.id}`),
-          subject: (x.subject as string | null) ?? null,
-        });
-        const role = (x: Record<string, unknown>) => String(x.role).toLowerCase();
+        const choices = await classesApi.teacherChoices();
         if (!alive) return;
-        setTeachers(list.filter((x) => role(x) === "teacher").map(toOpt));
-        setSupportOpts(list.filter((x) => role(x) === "support_teacher").map(toOpt));
+        setTeachers(choices.teachers);
+        setSupportOpts(choices.support_teachers);
       } catch {
         /* the pickers are optional: a class can be created and staffed later */
       }
