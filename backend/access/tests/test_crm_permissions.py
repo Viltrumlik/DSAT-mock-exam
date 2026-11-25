@@ -32,6 +32,7 @@ User = get_user_model()
 #: Modules where every view is a CRM endpoint.
 CRM_MODULES = frozenset({
     "billing.views", "lcup.views", "sms.views", "classes.views_seats", "classes.views_ops_classrooms", "classes.views_ops_archive",
+    "classes.views_lesson_changes",
 })
 #: In those modules, what a learner uses on their own account.
 LEARNER_ENDPOINTS = frozenset({
@@ -111,7 +112,8 @@ class RolePresetTests(TestCase):
     TABLE = {
         C.ROLE_SUPER_ADMIN: {C.WILDCARD},
         # Every CRM permission but managing staff (PR 4: staff are the owner's) and the centre's expenses (owner,
-        # 2026-11-22: the owner's and the accountant's; one tick on the Staff page gives them to an admin).
+        # 2026-11-22: the owner's and the accountant's; one tick on the Staff page gives them to an admin). Cancelling
+        # and moving lessons is the admin's (2026-11-25), and the Staff page can untick it.
         C.ROLE_ADMIN: set(C.CRM_PERMISSION_CODENAMES) - {C.PERM_MANAGE_STAFF, C.PERM_MANAGE_EXPENSES},
         C.ROLE_ACCOUNTANT: {
             C.PERM_VIEW_PEOPLE, C.PERM_VIEW_MONEY, C.PERM_TAKE_PAYMENT, C.PERM_VOID_PAYMENT, C.PERM_ADJUST_BALANCE,
@@ -144,8 +146,15 @@ class RolePresetTests(TestCase):
     def test_the_migration_adds_a_row_for_each(self):
         first = importlib.import_module("access.migrations.0012_crm_permissions")
         expenses = importlib.import_module("access.migrations.0013_expense_permission")
-        rows = [row[0] for row in first.CRM_PERMISSIONS] + [expenses.ROW[0]]
+        lessons = importlib.import_module("access.migrations.0014_lessons_permission")
+        rows = [row[0] for row in first.CRM_PERMISSIONS] + [expenses.ROW[0], lessons.ROW["codename"]]
         self.assertEqual(rows, list(C.CRM_PERMISSION_CODENAMES))
+
+    def test_lessons_are_the_admins_and_tickable_but_not_the_accountants(self):
+        matrix = role_permissions_matrix()
+        self.assertIn(C.PERM_MANAGE_LESSONS, matrix[C.ROLE_ADMIN])
+        self.assertNotIn(C.PERM_MANAGE_LESSONS, matrix[C.ROLE_ACCOUNTANT])
+        self.assertIn(C.PERM_MANAGE_LESSONS, C.TICKABLE_PERMISSION_CODENAMES)
 
     def test_requires_refuses_a_subject_scoped_codename(self):
         with self.assertRaises(ValueError):
