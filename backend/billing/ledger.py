@@ -336,6 +336,11 @@ def last_voided_amounts(keys) -> dict[str, int]:
     return dict(rows.values_list("key", "amount"))  # the latest row of a key comes last, so it wins
 
 
+def _had(span, day: date) -> bool:
+    """Whether the span covered this day: begun by it, and not ended before it."""
+    return span.start <= day and (span.end is None or day <= span.end)
+
+
 def _bill_lessons(span, today: date, prices: dict[str, int]) -> None:
     """A span paid per lesson (owner, 2026-11-22): a new student's first month in full on its first day, then one
     lesson's price on each lesson day of the group, written on that day. Lessons after the span's end, or not yet
@@ -344,7 +349,9 @@ def _bill_lessons(span, today: date, prices: dict[str, int]) -> None:
     A day the class called off or moved away, or a centre holiday (owner, 2026-11-25), is skipped here, so no tick
     charges it again once ``lesson_money`` voided it. A moved lesson follows its old day (ruling of 2026-11-25): free
     when the old day falls in the new student's first month, else charged once on its new day, at what the old day was
-    charged at — a move changes the day of a charge, never the money."""
+    charged at. For a student seated on both days at an unchanged price, a move changes only the day of the charge. A
+    student who joined after the old day never had it, so the new day decides for them: inside their first month it is
+    covered, outside it is charged."""
     from classes.lesson_changes import day_changes  # here, not at the top: classes imports billing
 
     with transaction.atomic():
@@ -384,7 +391,7 @@ def _bill_lessons(span, today: date, prices: dict[str, int]) -> None:
         moved = [
             (old, new) for old, new in sorted(changes.moved.items())
             if span.start <= new <= last and new not in changes.off
-            and not (covered and covered[0] <= old < covered[1])
+            and not (covered and covered[0] <= (old if _had(span, old) else new) < covered[1])
         ]
         was = last_voided_amounts(f"{LESSON_KEY}{span.pk}:{old.isoformat()}" for old, _ in moved)
         for old, new in moved:

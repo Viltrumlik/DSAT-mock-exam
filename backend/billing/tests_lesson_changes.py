@@ -305,11 +305,14 @@ class FirstMonthMoveTests(Case):
     30 Nov - 29 Dec, so Monday 28 December is covered and Wednesday 30 December is the first lesson paid per lesson."""
 
     def new_student(self, name, room):
+        return self.new_student_on(name, room, NOV_30)
+
+    def new_student_on(self, name, room, day):
         _, account = student(name)
         seat = seat_for(account)
         seat.classroom = room
         seat.save(update_fields=["classroom"])
-        ledger.start_span(seat, NOV_30, today=NOV_30)
+        ledger.start_span(seat, day, today=day)
         return account
 
     def test_a_covered_lesson_moved_past_the_first_month_stays_free(self):
@@ -328,6 +331,25 @@ class FirstMonthMoveTests(Case):
         self.assertEqual(ledger.balance(moved), ledger.balance(still))
         row = Entry.objects.get(key__startswith="moved:")
         self.assertEqual((row.day, row.amount, row.voided_at), (dec_29, -PRICE, None))
+
+    def test_a_student_who_joins_after_the_old_day_follows_the_new_day_inside_the_month(self):
+        # Monday 7 Dec moved to Thursday 10 Dec; a new student starts Tuesday 8 Dec, after the old day. Thursday is in
+        # their flat first month, so it is covered: no moved row, the same total as a twin in a class with no move.
+        joined = self.new_student_on("new1", self.room, TUE)
+        twin = self.new_student_on("new2", make_room("Junior G2"), TUE)
+        L.move(self.room, MON, THU, "Teacher away", by=self.admin, today=TUE)
+        ledger.own_tick(THU)
+        self.assertEqual(ledger.balance(joined), ledger.balance(twin))
+        self.assertFalse(Entry.objects.filter(key__startswith="moved:").exists())
+
+    def test_a_not_new_student_who_joins_between_the_old_and_the_new_day_is_charged_once_on_the_new_day(self):
+        _, account, span = self.old_student(name="late", start=TUE, today=TUE)
+        L.move(self.room, MON, THU, "Teacher away", by=self.admin, today=TUE)
+        ledger.own_tick(THU)
+        ledger.own_tick(THU)
+        rows = Entry.objects.filter(key=key("moved:", span, MON))
+        self.assertEqual([(row.day, row.amount, row.voided_at) for row in rows], [(THU, -PRICE, None)])
+        self.assertFalse(Entry.objects.filter(key=key("lesson:", span, MON)).exists())
 
 
 class PriceTests(Case):
