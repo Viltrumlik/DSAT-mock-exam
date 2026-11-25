@@ -19,6 +19,8 @@ from .models import EskizTemplate, SmsSettings
 DEFAULT_PRICE_PER_PART = 170
 #: The values a debt warning can fill: it goes to every debtor at once, so nothing is typed in.
 DEBT_ROLES = frozenset({T.ROLE_STUDENT, T.ROLE_DEBT})
+#: The values a balance SMS can fill: the student's name and the balance.
+BALANCE_ROLES = frozenset({T.ROLE_STUDENT, T.ROLE_BALANCE})
 #: lc-up's "(STUDENT), sizda…": what #64942 and #52393 put after the name, and the answer while a
 #: template's original text is not cached.
 LIVE_NAME_SUFFIX = ","
@@ -34,6 +36,28 @@ def env_enabled() -> bool:
 
 def debt_enabled(row: SmsSettings | None = None) -> bool:
     return env_enabled() and (row or current()).debt_enabled
+
+
+def balance_enabled(row: SmsSettings | None = None) -> bool:
+    """The balance SMS (low / frozen): env, the panel, and the ledger being ours and billing per lesson —
+    without both of those there is no balance to speak of."""
+    from billing import conf as billing
+
+    return (
+        conf.balance_warnings_enabled()
+        and (row or current()).balance_enabled
+        and billing.ledger_is_ours()
+        and billing.lesson_billing()
+    )
+
+
+def balance_templates(row: SmsSettings | None = None) -> tuple[T.SmsTemplate, T.SmsTemplate]:
+    """(low, frozen). Raises ``TemplateError`` when a pattern and its slots disagree."""
+    row = row or current()
+    return (
+        T.SmsTemplate("balance_low", row.low_pattern, tuple(row.low_slots or ())),
+        T.SmsTemplate("balance_frozen", row.frozen_pattern, tuple(row.frozen_slots or ())),
+    )
 
 
 def debt_templates(row: SmsSettings | None = None) -> tuple[T.SmsTemplate, T.SmsTemplate]:
