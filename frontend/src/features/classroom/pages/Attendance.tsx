@@ -19,6 +19,7 @@ import {
   useFinalizeSession,
 } from "../attendanceHooks";
 import type { AttendanceStatus, RosterRow } from "../attendanceApi";
+import { lessonChangeBanner } from "../attendanceApi";
 
 const STATUSES: AttendanceStatus[] = ["PRESENT", "ABSENT", "LATE", "EXCUSED"];
 const META: Record<AttendanceStatus, { letter: string; label: string; tone: PillTone; active: string }> = {
@@ -209,6 +210,17 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
 
   if (isLoading) return <Card><LoadingState label="Loading roster…" /></Card>;
   if (isError || !data) return <Card><ErrorState onRetry={() => refetch()} /></Card>;
+  // The lesson of this day was called off or moved (owner, 2026-11-25): the banner replaces the marking.
+  if (data.change) {
+    return (
+      <Card>
+        <CardHeader title={fmtDate(data.date)} description="No lesson to mark" />
+        <div role="status" className="mt-3 rounded-xl border border-amber-400/60 bg-amber-500/[0.07] px-3.5 py-2.5 text-sm font-medium text-foreground">
+          {lessonChangeBanner(data.change)}
+        </div>
+      </Card>
+    );
+  }
 
   const finalized = data.status === "FINALIZED";
   // Absent `marking` means a server that predates the window, and the honest default there

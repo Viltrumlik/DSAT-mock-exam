@@ -1,4 +1,5 @@
 import api from "@/lib/api";
+import type { LessonChange } from "@/features/ops/classrooms/lessonChangesApi";
 import type { AttentionItem } from "./attention";
 
 /** `GET /api/classes/admin/lessons/today/` — every active class meeting today and its register. */
@@ -26,6 +27,8 @@ export type LessonsToday = {
   date: string;
   lessons: LessonRow[];
   counts: { lessons: number; now: number; not_marked: number; no_teacher: number };
+  /** The day's lessons cancelled, moved away or moved in, and a centre holiday (absent on an older server). */
+  changes?: LessonChange[];
 };
 
 export const lessonsTodayKey = ["classes", "admin", "lessons", "today"] as const;

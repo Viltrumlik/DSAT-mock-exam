@@ -49,6 +49,7 @@ PERM_EVENTS_SHOP = "events_shop"  # events, shop, Telegram posts, stories, someb
 PERM_MANAGE_STAFF = "manage_staff"  # staff accounts, roles, per-person ticks (the Staff page uses it)
 PERM_LCUP_TOOLS = "lcup_tools"  # lc-up pairing, sync, review; goes at the cutover
 PERM_MANAGE_EXPENSES = "manage_expenses"  # enter and void the centre's expenses, keep their categories
+PERM_MANAGE_LESSONS = "manage_lessons"  # cancel or move a lesson day, set a centre holiday, undo them
 
 CRM_PERMISSION_CODENAMES = (
     PERM_VIEW_PEOPLE,
@@ -69,6 +70,7 @@ CRM_PERMISSION_CODENAMES = (
     PERM_MANAGE_STAFF,
     PERM_LCUP_TOOLS,
     PERM_MANAGE_EXPENSES,
+    PERM_MANAGE_LESSONS,
 )
 
 #: What the owner may tick on or off for one staff person (the Staff page): every CRM permission but

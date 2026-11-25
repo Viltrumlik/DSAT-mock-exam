@@ -222,14 +222,16 @@ def _today(room, students: int) -> dict | None:
     "Does it meet today, and is the register done?" (design handoff, scenario 5: "header shows today's
     lesson and the roster count"). None when the class has no lesson today — by its days once it has
     begun (a live class only), or a register opened today on any day. ``marked`` is None while no
-    register is open, else today's marks by kind.
+    register is open, else today's marks by kind. Its days are the timetable's less a day called off or
+    moved away, plus a lesson moved in (``lesson_changes.is_lesson_day``).
     """
-    from .lesson_schedule import has_begun, lesson_weekdays
+    from .lesson_changes import is_lesson_day
+    from .lesson_schedule import has_begun
     from .models_attendance import AttendanceRecord, AttendanceSession
 
     day = timezone.localdate()
     register = AttendanceSession.objects.filter(classroom=room, date=day).exists()
-    scheduled = room.is_active and day.weekday() in lesson_weekdays(room) and has_begun(room, day)
+    scheduled = room.is_active and is_lesson_day(room, day) and has_begun(room, day)
     if not (register or scheduled):
         return None
     marked = None
@@ -464,6 +466,36 @@ def _register_month(request, today):
         return today.replace(day=1)
 
 
+def _changed_days(room, first, last) -> dict:
+    """Each day of ``[first, last]`` a lesson change touches for this class, and how (``lesson_changes``, 2026-11-25):
+    a day it called off or moved away (``new_day``), a lesson moved to it (``from_day``), or a centre holiday on one
+    of its weekdays. Its own change wins over a holiday the same day."""
+    from .lesson_schedule import has_begun
+    from .models_lesson_changes import LessonChange
+    from .seat_actions import weekdays_of
+
+    rows = (
+        LessonChange.objects.filter(undone_at__isnull=True)
+        .filter(Q(classroom=room) | Q(classroom__isnull=True))
+        .filter(Q(day__range=(first, last)) | Q(new_day__range=(first, last)))
+        .order_by("pk")
+    )
+    weekdays = weekdays_of(room)
+    out = {}
+    for change in rows:
+        said = {"id": change.pk, "kind": change.kind, "reason": change.reason, "holiday": change.classroom_id is None}
+        if change.classroom_id is None:
+            day = change.day
+            if room.is_active and first <= day <= last and day.isoweekday() in weekdays and has_begun(room, day):
+                out.setdefault(day, said)
+            continue
+        if first <= change.day <= last:
+            out[change.day] = {**said, "new_day": iso(change.new_day)} if change.new_day else said
+        if change.new_day and first <= change.new_day <= last:
+            out[change.new_day] = {**said, "from_day": iso(change.day)}
+    return out
+
+
 def register_part(room, request=None) -> dict:
     """``…/register/?month=YYYY-MM`` — the group page's register grid, lc-up's "Davomat" (22 Nov 2026): every
     lesson date of one month (the registers held, and the days it meets that are still ahead) by every student, with
@@ -471,6 +503,9 @@ def register_part(room, request=None) -> dict:
 
     A student sitting now is listed with the day they joined (a lesson before it is not theirs) and, for a frozen
     seat, the day it froze. Someone marked that month who has since left is listed too, flagged ``left``.
+
+    Each date says its lesson ``change`` (``_changed_days``), else null. A day called off or moved away stays a
+    column, gone by or not, so it can be undone; a lesson moved in is a column of its own.
     """
     from .lesson_schedule import has_begun, lesson_days_in_range
     from .models_attendance import AttendanceRecord, AttendanceSession
@@ -521,11 +556,15 @@ def register_part(room, request=None) -> dict:
     )
     months = {d.strftime("%Y-%m") for d in AttendanceSession.objects.filter(classroom=room).dates("date", "month")}
     months |= {today.strftime("%Y-%m"), first.strftime("%Y-%m")}
+    changed = _changed_days(room, first, last)
     return {
         "month": first.strftime("%Y-%m"),
         "months": sorted(months),
         "today": iso(today),
-        "dates": [{"date": iso(d), "held": d in held} for d in sorted(held | set(scheduled))],
+        "dates": [
+            {"date": iso(d), "held": d in held, "change": changed.get(d)}
+            for d in sorted(held | set(scheduled) | set(changed))
+        ],
         "students": students,
     }
 

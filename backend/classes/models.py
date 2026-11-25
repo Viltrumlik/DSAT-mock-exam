@@ -1137,6 +1137,7 @@ from .models_support import (  # noqa: E402,F401
 )
 from .models_org import Branch, Region  # noqa: E402,F401
 from .models_membership_audit import ClassroomMembershipEvent  # noqa: E402,F401
+from .models_lesson_changes import LessonChange  # noqa: E402,F401
 
 from .models_telegram import (  # noqa: E402,F401
     ClassroomTelegramEvent,

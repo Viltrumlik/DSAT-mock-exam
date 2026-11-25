@@ -77,12 +77,41 @@ def _active_students(classroom, *, on_date=None):
     return [m for m in members if timezone.localdate(m.joined_at) <= on_date]
 
 
+def _off_days(classroom, dates) -> dict:
+    """Why each of these days has no lesson (``lesson_changes``, 2026-11-25): called off, moved away or a centre
+    holiday, as ``{"kind", "reason", "new_day"}``. The class's own change wins over a holiday. One query."""
+    from django.db.models import Q
+
+    from .models_lesson_changes import LessonChange
+
+    if not dates:
+        return {}
+    rows = (
+        LessonChange.objects.filter(undone_at__isnull=True, day__in=list(dates))
+        .filter(Q(classroom=classroom) | Q(classroom__isnull=True))
+        .order_by("pk")
+    )
+    out = {}
+    for change in rows:
+        said = {
+            "kind": change.kind, "reason": change.reason,
+            "new_day": change.new_day.isoformat() if change.new_day else None,
+        }
+        if change.classroom_id is None:
+            out.setdefault(change.day, said)
+        else:
+            out[change.day] = said
+    return out
+
+
 def _session_brief(s: AttendanceSession, counts: dict | None = None, *,
-                   classroom=None, user=None) -> dict:
+                   classroom=None, user=None, off: dict | None = None) -> dict:
     """One register, as the API reports it.
 
     ``marking`` is present whenever the caller passed the classroom, and is what lets the UI
-    disable a closed register instead of offering buttons the server will refuse.
+    disable a closed register instead of offering buttons the server will refuse. So is
+    ``change``: why a register held on a day since called off or moved away has no lesson
+    (``off``, from ``_off_days`` when not given), null for every other day.
     """
     out = {
         "id": s.id, "date": s.date.isoformat(), "title": s.title,
@@ -91,6 +120,7 @@ def _session_brief(s: AttendanceSession, counts: dict | None = None, *,
     }
     if classroom is not None:
         out["marking"] = attendance_window.window_payload(classroom, s.date, user=user)
+        out["change"] = (off if off is not None else _off_days(classroom, [s.date])).get(s.date)
     return out
 
 
@@ -105,10 +135,11 @@ class AttendanceSessionsView(_ClassroomScopedView):
         # it. Doing this on read as well as from the cron means a school with no scheduler
         # still gets today's register the moment a teacher opens the page.
         attendance_auto.ensure_sessions(classroom)
-        sessions = AttendanceSession.objects.filter(classroom=classroom).order_by("-date", "-id")
+        sessions = list(AttendanceSession.objects.filter(classroom=classroom).order_by("-date", "-id"))
+        off = _off_days(classroom, {s.date for s in sessions})
         return Response({
             "sessions": [
-                _session_brief(s, classroom=classroom, user=request.user) for s in sessions
+                _session_brief(s, classroom=classroom, user=request.user, off=off) for s in sessions
             ],
             # False means lesson days cannot be worked out from this classroom at all, so
             # nothing will ever materialise. The UI says so and re-opens the manual add
