@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { classesApi, examsAdminApi } from "@/lib/api";
+import { classesApi } from "@/lib/api";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
 import { useBranches, useRegions } from "@/features/org/orgHooks";
 import { Alert, Button, Checkbox, Field, Input, Modal, Select } from "@/components/ui";
