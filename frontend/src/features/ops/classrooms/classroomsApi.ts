@@ -20,7 +20,7 @@ export type ClassroomRow = {
   subject: string;
   level: string;
   teacher: { id: number; name: string } | null;
-  /** Active student seats. */
+  /** Active student seats, demo ones left out. */
   students: number;
   /** "ODD" | "EVEN" | "". */
   lesson_days: string;
@@ -54,6 +54,8 @@ export type ClassroomCore = {
   max_students: number | null;
   /** What a month costs, whole so'm; null until someone states it. */
   monthly_price: number | null;
+  /** Seats are billed per lesson (first month whole, then each lesson day); absent on an older server. */
+  lesson_billing?: boolean;
   /** The seat actions are open: lc-up no longer runs. */
   seats_open: boolean;
   schedule_summary: string;
@@ -62,7 +64,10 @@ export type ClassroomCore = {
   created_at: string | null;
   teacher: { id: number; name: string } | null;
   tas: { id: number; name: string }[];
+  /** Active student seats, the demo (trial) ones left out: they are counted apart, as `demo`. */
   students: number;
+  /** Demo seats: they hold a chair but are not students (absent on an older server). */
+  demo?: number;
   /** Null when the class has no lc-up group at all. `locked_fields` are lc-up's while it is managed. */
   lcup: { managed: boolean; group_name: string; status: string; locked_fields: string[] } | null;
   /** The header's figures on the Overview (`ops_classrooms._glance`), each the same reading as its tab. */
@@ -109,6 +114,8 @@ export type ClassroomRoster = {
     owes: number | null;
     attendance_rate: number | null;
     homework_rate: number | null;
+    /** A demo seat's lessons come to here (present or late); null for any other seat. */
+    demo_lessons?: number | null;
   }[];
   /** Whose seat ended here on a known day, latest first. */
   left: { id: number; name: string; section: PeopleSection; seat_left_on: string }[];
@@ -174,6 +181,8 @@ export type ClassroomRegister = {
     /** "YYYY-MM-DD": a lesson before it is not theirs. Null for someone who has left. */
     joined: string | null;
     seat_status: SeatStatus | null;
+    /** A demo (trial) seat: listed after the paying rows, with the DEMO badge. Absent on an older server. */
+    is_demo?: boolean;
     /** "YYYY-MM-DD": the day a frozen seat froze, when the ledger knows it. */
     frozen_on: string | null;
     /** Marked this month, and has left the group since. */
@@ -221,8 +230,9 @@ export function useClassrooms(params: ChangeListParams) {
 
 export const isNotFound = (err: unknown) => (err as { response?: { status?: number } })?.response?.status === 404;
 
-export function useClassroom(id: number) {
+export function useClassroom(id: number, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: classroomKeys.core(id),
     queryFn: async () => (await api.get<ClassroomCore>(`/classes/admin/classrooms/${id}/`)).data,
     retry: (count, err) => !isNotFound(err) && count < 2,

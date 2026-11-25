@@ -266,7 +266,8 @@ def summary(month: str) -> dict:
             "group": room.name,
             "teachers": [f"{teacher.first_name} {teacher.last_name}".strip() or teacher.username] if teacher else [],
             "monthly_cost": room.monthly_price or 0,
-            "students": len(seats),
+            # A demo (trial) seat pays nothing and is not a student.
+            "students": sum(1 for seat in seats if seat.state != SeatState.TRIAL),
             "debtors": len(in_debt),
             "debt": -sum(owing[seat.account_id] for seat in in_debt),
             "income": income.get(room.pk, 0),

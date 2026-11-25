@@ -10,7 +10,7 @@ import { attentionItems } from "../shellModel";
 
 describe("attentionItems", () => {
   it("keeps the items of finished sources only — loading and failed ones say so in the bell, not here", () => {
-    const item = { id: "a", tone: "attention" as const, title: "3 trial students", action: { label: "Open", href: "/ops/trials" } };
+    const item = { id: "a", tone: "attention" as const, title: "3 demo students", action: { label: "Open", href: "/ops/trials" } };
     const sources = [
       { id: "x", status: "done" as const, item },
       { id: "y", status: "done" as const, item: null },

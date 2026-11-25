@@ -179,8 +179,8 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
         id: "centre",
         caption: null,
         items: [
-          // Trial students and lc-up members missing from a class list (owner, 2026-10-20).
-          { href: "/ops/trials", label: "Trials", icon: "ms-trial", tone: HUE.sky, requires: [P.enroll], tabs: tabsOf(TRIALS_TAB_IDS, TRIALS_TAB_LABEL) },
+          // Demo (trial) students and lc-up members missing from a class list (owner, 2026-10-20).
+          { href: "/ops/trials", label: "Demo", icon: "ms-trial", tone: HUE.sky, requires: [P.enroll], tabs: tabsOf(TRIALS_TAB_IDS, TRIALS_TAB_LABEL) },
           // The eskiz SMS account: balance, the journal of every SMS, campaigns, the debt warning, templates.
           {
             href: "/ops/sms",

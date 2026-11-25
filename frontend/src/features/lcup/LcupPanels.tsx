@@ -925,18 +925,18 @@ export function ArchivePanel() {
   );
 }
 
-// ── trials ───────────────────────────────────────────────────────────────
+// ── demo (trial seats) ───────────────────────────────────────────────────────────────
 
 const TRIAL_STATE: Record<TrialState, { label: string; tone: string }> = {
-  used: { label: "Came after the free lesson", tone: "font-semibold text-amber-700 dark:text-amber-300" },
-  came: { label: "Came to trial", tone: "font-semibold text-sky-700 dark:text-sky-300" },
+  used: { label: "Free lesson used", tone: "font-semibold text-amber-700 dark:text-amber-300" },
+  came: { label: "Came to demo", tone: "font-semibold text-sky-700 dark:text-sky-300" },
   not_yet: { label: "Not come yet", tone: "text-ms-fg-3" },
 };
 
 const PERSON_LINK = "text-ms-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ms-ring";
 
 /**
- * Trial students, neediest first. While lc-up runs they are activated there and leave within one sync; once it is
+ * Demo (trial) students, neediest first. While lc-up runs they are activated there and leave within one sync; once it is
  * off (`seats_open`) an admin activates or removes them here.
  */
 export function TrialStudentsPanel() {
@@ -949,20 +949,20 @@ export function TrialStudentsPanel() {
   if (!q.data.trials.length) {
     return (
       <p className="text-[13px] text-ms-fg-3">
-        {open ? "No one is on trial right now." : "No one is on trial in lc-up right now."}
+        {open ? "No one is on a demo right now." : "No one is on a demo in lc-up right now."}
       </p>
     );
   }
   return (
     <>
       <DenseTable
-        caption="Trial students"
+        caption="Demo students"
         head={
           <>
             <th scope="col" className={TH}>Student</th>
             <th scope="col" className={TH}>Class</th>
             <th scope="col" className={TH}>Teacher</th>
-            <th scope="col" className={TH}>Trial since</th>
+            <th scope="col" className={TH}>Demo since</th>
             <th scope="col" className={TH_R}>Lessons came</th>
             <th scope="col" className={TH}>Status</th>
             {open ? <th scope="col" className={TH} aria-label="Actions" /> : null}

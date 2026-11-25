@@ -8,7 +8,7 @@ import api, { classesApi } from "@/lib/api";
 // The row menu stays the portalled DropdownMenu: the roster table scrolls sideways, and the console Menu
 // (absolute, not portalled yet) would be cut off inside it.
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
-import { Avatar, TextInput, buttonClass } from "@/features/console/ui";
+import { Avatar, DemoBadge, TextInput, buttonClass } from "@/features/console/ui";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
 import { formatUzs } from "@/features/finance/financeApi";
@@ -48,8 +48,8 @@ const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}%`);
 export const SEAT_ACTIONS: Record<SeatStatus, { action: SeatAction; label: string }[]> = {
   trial: [
     { action: "activate", label: "Activate" },
+    { action: "leave", label: "Remove" },
     { action: "move", label: "Move" },
-    { action: "leave", label: "Leave" },
     { action: "fix-date", label: "Fix date" },
   ],
   active: [
@@ -69,6 +69,7 @@ export const SEAT_ACTIONS: Record<SeatStatus, { action: SeatAction; label: strin
 export const FIXED_DATE: Record<SeatStatus, string> = { trial: "Start date", active: "Start date", frozen: "Frozen from" };
 
 type Found = (StudentRow | PublicRow) & { groups?: StudentRow["groups"] };
+type Row = ClassroomRoster["students"][number];
 
 export function AddStudent({
   room,
@@ -175,12 +176,15 @@ function SeatRowActions({
   status: SeatStatus;
   onChoose: (action: SeatAction) => void;
 }) {
-  const [first, ...others] = SEAT_ACTIONS[status];
+  // A demo's two everyday steps, Activate and Remove, are buttons; any other seat shows its first.
+  const [direct, others] = status === "trial" ? [SEAT_ACTIONS[status].slice(0, 2), SEAT_ACTIONS[status].slice(2)] : [SEAT_ACTIONS[status].slice(0, 1), SEAT_ACTIONS[status].slice(1)];
   return (
     <span className="inline-flex items-center justify-end gap-1.5">
-      <button type="button" onClick={() => onChoose(first.action)} className={SMALL_BUTTON}>
-        {first.label}
-      </button>
+      {direct.map((first) => (
+        <button key={first.action} type="button" onClick={() => onChoose(first.action)} className={SMALL_BUTTON}>
+          {first.label}
+        </button>
+      ))}
       <DropdownMenu
         portal
         trigger={
@@ -270,121 +274,143 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
       <PartBody
         query={query}
         isEmpty={(d) => d.students.length === 0 && !(d.left ?? []).length}
-        render={(d) => (
-          <>
-            {d.students.length > 0 ? (
-              <Table head={head}>
-                {d.students.map((s) => (
-                  <tr key={s.id}>
-                    <Td wrap className="sm:max-w-[18rem]">
-                      <span className="flex min-w-0 items-center gap-2.5">
-                        <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size="sm" />
-                        <span className="min-w-0">
-                          {/* Wrapped on a phone ("Muhammadali …" lost half the name), one line from sm up. */}
-                          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:flex-nowrap">
-                            <Link
-                              href={`/ops/${s.section}/${s.id}`}
-                              prefetch={false}
-                              title={s.name || s.username}
-                              className={cn(LINK_CLASS, "min-w-0 break-words sm:truncate")}
-                            >
-                              {s.name || s.username}
-                            </Link>
-                            {s.seat_status === "trial" ? <span className="shrink-0"><Pill tone="info">Trial</Pill></span> : null}
-                            {s.seat_status === "frozen" ? <span className="shrink-0"><Pill tone="frozen">Frozen</Pill></span> : null}
-                          </span>
-                          {s.owes ? (
-                            <span className="block text-xs font-semibold text-ms-critical-fg sm:hidden">owes {formatUzs(s.owes)}</span>
-                          ) : null}
-                        </span>
-                      </span>
-                    </Td>
-                    <Td className={`${spare} tabular-nums text-ms-fg-3`}>
-                      {s.seat_start_date ? formatDay(s.seat_start_date) : formatDate(s.joined_at)}
-                    </Td>
-                    <Td className={`${WIDE_ONLY} tabular-nums`}>
-                      {s.owes ? (
-                        <span className="font-semibold text-ms-critical-fg">{formatUzs(s.owes)}</span>
-                      ) : (
-                        <span className="text-ms-fg-3">—</span>
-                      )}
-                    </Td>
-                    <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(s.attendance_rate)])}>
-                      {pct(s.attendance_rate)}
-                    </Td>
-                    <Td className={cn(spare, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
-                      {pct(s.homework_rate)}
-                    </Td>
-                    {managed ? null : seatsOpen ? (
-                      <Td className="text-right">
-                        <SeatRowActions
-                          name={s.name || s.username}
-                          status={s.seat_status ?? "active"}
-                          onChoose={(action) =>
-                            setDialog({
-                              kind: "action",
-                              action,
-                              student: { id: s.id, name: s.name || s.username },
-                              trial: s.seat_status === "trial",
-                              ...(action === "fix-date"
-                                ? { day: s.seat_status === "frozen" ? s.seat_frozen_on : s.seat_start_date, dateLabel: FIXED_DATE[s.seat_status ?? "active"] }
-                                : {}),
-                            })
-                          }
-                        />
-                      </Td>
-                    ) : (
-                      <Td className="text-right">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void remove(s.id, s.name || s.username)}
-                          className={SMALL_BUTTON}
-                        >
-                          Remove
-                        </button>
-                      </Td>
-                    )}
-                  </tr>
-                ))}
-              </Table>
-            ) : null}
-            {seatsOpen && (d.left ?? []).length > 0 ? (
-              <div className="mt-5">
-                <h3 className="text-ms-over mb-2 text-ms-fg-3">Left this group</h3>
-                <Table head={["Name", "Last day", ""]}>
-                  {d.left.map((s) => (
+        render={(d) => {
+          // Paying and frozen students first; a demo (trial) seat is no student yet, so it sits in a block of its own.
+          const paying = d.students.filter((s) => s.seat_status !== "trial");
+          const demo = d.students.filter((s) => s.seat_status === "trial");
+          const nameCell = (s: Row) => (
+            <Td wrap className="sm:max-w-[18rem]">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size="sm" />
+                <span className="min-w-0">
+                  {/* Wrapped on a phone ("Muhammadali …" lost half the name), one line from sm up. */}
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:flex-nowrap">
+                    <Link
+                      href={`/ops/${s.section}/${s.id}`}
+                      prefetch={false}
+                      title={s.name || s.username}
+                      className={cn(LINK_CLASS, "min-w-0 break-words sm:truncate")}
+                    >
+                      {s.name || s.username}
+                    </Link>
+                    {s.seat_status === "trial" ? <span className="shrink-0"><DemoBadge /></span> : null}
+                    {s.seat_status === "frozen" ? <span className="shrink-0"><Pill tone="frozen">Frozen</Pill></span> : null}
+                  </span>
+                  {s.owes ? (
+                    <span className="block text-xs font-semibold text-ms-critical-fg sm:hidden">owes {formatUzs(s.owes)}</span>
+                  ) : null}
+                </span>
+              </span>
+            </Td>
+          );
+          const actionCell = (s: Row) =>
+            managed ? null : seatsOpen ? (
+              <Td className="text-right">
+                <SeatRowActions
+                  name={s.name || s.username}
+                  status={s.seat_status ?? "active"}
+                  onChoose={(action) =>
+                    setDialog({
+                      kind: "action",
+                      action,
+                      student: { id: s.id, name: s.name || s.username },
+                      trial: s.seat_status === "trial",
+                      ...(action === "fix-date"
+                        ? { day: s.seat_status === "frozen" ? s.seat_frozen_on : s.seat_start_date, dateLabel: FIXED_DATE[s.seat_status ?? "active"] }
+                        : {}),
+                    })
+                  }
+                />
+              </Td>
+            ) : (
+              <Td className="text-right">
+                <button type="button" disabled={busy} onClick={() => void remove(s.id, s.name || s.username)} className={SMALL_BUTTON}>
+                  Remove
+                </button>
+              </Td>
+            );
+          return (
+            <>
+              {paying.length > 0 ? (
+                <Table head={head}>
+                  {paying.map((s) => (
                     <tr key={s.id}>
-                      <Td wrap>
-                        <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={LINK_CLASS}>
-                          {s.name}
-                        </Link>
+                      {nameCell(s)}
+                      <Td className={`${spare} tabular-nums text-ms-fg-3`}>
+                        {s.seat_start_date ? formatDay(s.seat_start_date) : formatDate(s.joined_at)}
                       </Td>
-                      <Td className="tabular-nums text-ms-fg-3">{formatDay(s.seat_left_on)}</Td>
-                      <Td className="text-right">
-                        <button
-                          type="button"
-                          className={SMALL_BUTTON}
-                          onClick={() =>
-                            setDialog({
-                              kind: "action",
-                              action: "fix-date",
-                              student: { id: s.id, name: s.name },
-                              day: s.seat_left_on,
-                              dateLabel: "Last day",
-                            })
-                          }
-                        >
-                          Fix date
-                        </button>
+                      <Td className={`${WIDE_ONLY} tabular-nums`}>
+                        {s.owes ? (
+                          <span className="font-semibold text-ms-critical-fg">{formatUzs(s.owes)}</span>
+                        ) : (
+                          <span className="text-ms-fg-3">—</span>
+                        )}
                       </Td>
+                      <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(s.attendance_rate)])}>
+                        {pct(s.attendance_rate)}
+                      </Td>
+                      <Td className={cn(spare, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
+                        {pct(s.homework_rate)}
+                      </Td>
+                      {actionCell(s)}
                     </tr>
                   ))}
                 </Table>
-              </div>
-            ) : null}
-          </>
-        )}
+              ) : null}
+              {demo.length > 0 ? (
+                <div className="mt-5">
+                  <h3 className="text-ms-over mb-2 text-ms-fg-3">Demo ({demo.length})</h3>
+                  <Table head={["Name", "Added on", "Lessons attended", ...(managed ? [] : [""])]}>
+                    {demo.map((s) => (
+                      <tr key={s.id}>
+                        {nameCell(s)}
+                        <Td className="tabular-nums text-ms-fg-3">
+                          {s.seat_start_date ? formatDay(s.seat_start_date) : formatDate(s.joined_at)}
+                        </Td>
+                        <Td className="font-semibold tabular-nums">{s.demo_lessons ?? 0}</Td>
+                        {actionCell(s)}
+                      </tr>
+                    ))}
+                  </Table>
+                </div>
+              ) : null}
+              {seatsOpen && (d.left ?? []).length > 0 ? (
+                <div className="mt-5">
+                  <h3 className="text-ms-over mb-2 text-ms-fg-3">Left this group</h3>
+                  <Table head={["Name", "Last day", ""]}>
+                    {d.left.map((s) => (
+                      <tr key={s.id}>
+                        <Td wrap>
+                          <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={LINK_CLASS}>
+                            {s.name}
+                          </Link>
+                        </Td>
+                        <Td className="tabular-nums text-ms-fg-3">{formatDay(s.seat_left_on)}</Td>
+                        <Td className="text-right">
+                          <button
+                            type="button"
+                            className={SMALL_BUTTON}
+                            onClick={() =>
+                              setDialog({
+                                kind: "action",
+                                action: "fix-date",
+                                student: { id: s.id, name: s.name },
+                                day: s.seat_left_on,
+                                dateLabel: "Last day",
+                              })
+                            }
+                          >
+                            Fix date
+                          </button>
+                        </Td>
+                      </tr>
+                    ))}
+                  </Table>
+                </div>
+              ) : null}
+            </>
+          );
+        }}
       />
       {dialog?.kind === "action" ? (
         <SeatActionDialog

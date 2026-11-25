@@ -45,6 +45,10 @@ const AZIZ: StudentRow = {
   lcup: { linked: true, balance: -153846 },
   parent_phone: "998903001172",
 };
+const DEMO_ONLY: StudentRow = {
+  ...AZIZ, id: 9, username: "dema", name: "Dema Only", is_demo_only: true,
+  groups: [], lcup: { linked: false, balance: null }, parent_phone: "",
+};
 const LAYLO: StudentRow = {
   ...AZIZ, id: 8, username: "laylo", name: "Laylo Saidova", phone: "", is_frozen: true, status: "frozen_debt",
   groups: [], lcup: { linked: true, balance: 3000 }, parent_phone: "",
@@ -66,7 +70,7 @@ const PAGE: PeoplePage<StudentRow> = {
       options: [
         { value: "all", label: "All", count: 2 },
         { value: "owes", label: "Owe money", count: 1 },
-        { value: "trial", label: "Trial", count: 1 },
+        { value: "trial", label: "Demo", count: 1 },
         { value: "frozen", label: "Frozen", count: 0 },
         { value: "nogroup", label: "No group", count: 1 },
       ],
@@ -152,7 +156,8 @@ describe("the Students list", () => {
       ["middle", "Middle G4 · English"],
     ]);
     expect(aziz.textContent).toContain("Room 304");
-    expect(aziz.textContent).toContain("Trial");
+    expect(aziz.textContent).toContain("DEMO");
+    expect(aziz.textContent).not.toContain("Trial");
     expect(aziz.textContent).toContain("Bekzod Toshmatov Junior Math");
     const balance = aziz.querySelector("td[data-verdict]");
     expect(balance?.getAttribute("data-verdict")).toBe("critical");
@@ -188,7 +193,18 @@ describe("the Students list", () => {
     await renderList("", { ...TEACHER_ME, permissions: ["view_people"] });
     expect(heads()).not.toContain("Balance, so’m");
     const chips = [...host.querySelectorAll('[role="group"][aria-label="Show"] a')].map((a) => a.textContent);
-    expect(chips).toEqual(["All2", "Trial1", "Frozen0", "No group1"]);
+    expect(chips).toEqual(["All2", "Demo1", "Frozen0", "No group1"]);
+  });
+
+  it("badges someone whose only seats are demo ones next to the name", async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === "/users/admin/people/") return { data: { ...PAGE, count: 1, results: [DEMO_ONLY] } };
+      throw new Error(`unexpected ${url}`);
+    });
+    await renderList("show=trial");
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].textContent).toContain("Dema Only");
+    expect(rows()[0].textContent).toContain("DEMO");
   });
 
   it("puts a chip and the typed filters in the address", async () => {

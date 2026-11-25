@@ -11,6 +11,7 @@ import {
   Badge,
   Button,
   CourseTag,
+  DemoBadge,
   Menu,
   balanceVerdict,
   buttonClass,
@@ -84,6 +85,7 @@ function StateBadges({ person }: { person: PersonCore }) {
       ) : (
         <Badge tone="positive" dot>Active</Badge>
       )}
+      {person.is_demo_only ? <DemoBadge /> : null}
       {person.lcup ? <Badge tone="line" icon="link">lc-up linked</Badge> : null}
       {otp ? (
         <Badge tone={otp.locked ? "critical" : "attention"} icon="key">

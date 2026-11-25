@@ -45,7 +45,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/ops/classrooms/45",
 }));
 
-const { ClassroomPage } = await import("../ClassroomPage");
+const { ClassroomPage, classTabCounts } = await import("../ClassroomPage");
 
 const LOCKED = [
   "name", "subject", "level", "lesson_days", "lesson_time", "lesson_hours", "branch", "room_number", "start_date", "is_active",
@@ -358,6 +358,45 @@ describe("the header", () => {
     expect(header().textContent).not.toContain("a month");
   });
 
+  it("counts the students apart from the demo seats: 2 students · +1 demo, on the header, the tab count and the roster", async () => {
+    const roster = PARTS.roster;
+    PARTS.roster = {
+      students: [
+        ...(roster as { students: object[] }).students,
+        { id: 9, name: "Demo Kid", username: "kid", avatar_url: null, section: "students", phone: "", joined_at: null, seat_status: "trial", seat_start_date: "2026-11-10", owes: null, attendance_rate: null, homework_rate: null, demo_lessons: 1 },
+      ],
+      left: [],
+    };
+    try {
+      route(core({ demo: 1 }));
+      await renderPage();
+      expect(header().textContent).toContain("2 students · +1 demo");
+      expect(classTabCounts(core({ demo: 1 })).students?.count).toBe("2 +1 demo");
+      expect(classTabCounts(core({ students: 0, demo: 0 })).students).toBeUndefined();
+      const aside = host.querySelector('aside[aria-label="Students"]') as HTMLElement;
+      expect(aside.textContent).toContain("+1 demo");
+      const rows = [...aside.querySelectorAll('[data-testid="roster-row"]')].map((r) => r.textContent);
+      expect(rows).toHaveLength(2);
+      expect(rows.join()).not.toContain("Demo Kid");
+      const block = aside.querySelector('[aria-label="Demo"]') as HTMLElement;
+      expect(block.textContent).toContain("Demo (1)");
+      expect(block.textContent).toContain("Demo Kid");
+      expect(block.textContent).toContain("DEMO");
+      expect(block.textContent).toContain("1 lesson");
+      // After the paying rows.
+      expect(aside.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_CONTAINED_BY).toBeTruthy();
+      expect(aside.textContent!.indexOf("Demo Kid")).toBeGreaterThan(aside.textContent!.indexOf("Public Person"));
+    } finally {
+      PARTS.roster = roster;
+    }
+  });
+
+  it("a full class still counts the demo seat as a chair", async () => {
+    route(core({ students: 2, demo: 1, max_students: 3 }));
+    await renderPage();
+    expect(header().textContent).toContain("Full");
+  });
+
   it("says whether today's lesson is marked", async () => {
     route(core({ glance: { ...core().glance, today: { lesson_time: "14:00", students: 2, marked: null } } }));
     await renderPage();
@@ -475,6 +514,28 @@ describe("the register grid", () => {
     act(() => october.click());
     await settle();
     expect(get).toHaveBeenCalledWith("/classes/admin/classrooms/45/register/", { params: { month: "2026-10" } });
+  });
+
+  it("marks a demo student's row with the DEMO badge, after the paying rows", async () => {
+    route(core());
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((url: string, config?: unknown) => {
+      if (url !== "/classes/admin/classrooms/45/register/") return base(url, config);
+      return Promise.resolve({
+        data: {
+          ...(PARTS.register as object),
+          students: [
+            { id: 7, name: "Zoya Paying", section: "students", joined: "2026-10-01", seat_status: "active", is_demo: false, frozen_on: null, left: false, marks: {} },
+            { id: 9, name: "Alim Trial", section: "students", joined: "2026-11-02", seat_status: "trial", is_demo: true, frozen_on: null, left: false, marks: { "2026-11-02": "PRESENT" } },
+          ],
+        },
+      });
+    });
+    await renderPage();
+    const rows = [...box("Register")!.querySelectorAll("tbody tr")];
+    expect(rows.map((tr) => tr.querySelector("td")?.textContent)).toEqual(["Zoya Paying", expect.stringContaining("Alim Trial")]);
+    expect(rows[0].querySelector("td")?.textContent).not.toContain("DEMO");
+    expect(rows[1].querySelector("td")?.textContent).toContain("DEMO");
   });
 
   it("says a failed load failed, with a retry", async () => {

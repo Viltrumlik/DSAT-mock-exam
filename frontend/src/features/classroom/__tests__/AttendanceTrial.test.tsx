@@ -73,18 +73,18 @@ const row = (lcup_trial: object | null) => ({
 describe("Attendance register — lc-up trial students", () => {
   it("marks a trial student's first lesson", async () => {
     await mount({ roster: [row({ lessons_before: 0, free_used: false })] });
-    expect(host.textContent).toContain("Trial · 1st lesson");
+    expect(host.textContent).toContain("Demo · 1st lesson (free)");
     expect(host.textContent).not.toContain("send to the admin");
   });
 
   it("flags one who has had the free trial, and says it again when they are marked present", async () => {
     await mount({ roster: [row({ lessons_before: 1, free_used: true })] });
-    expect(host.textContent).toContain("Free trial used — send to the admin");
-    expect(host.textContent).not.toContain("has already had the free trial lesson");
+    expect(host.textContent).toContain("Free lesson used — send to the admin");
+    expect(host.textContent).not.toContain("has already had the free demo lesson");
     const present = host.querySelector<HTMLButtonElement>('button[title="Present"]');
     if (!present) throw new Error("no Present button");
     await act(async () => present.click());
-    expect(host.textContent).toContain("Ali Valiyev has already had the free trial lesson — send them to the admin");
+    expect(host.textContent).toContain("Ali Valiyev has already had the free demo lesson — send them to the admin to be activated.");
   });
 
   it("lets the name-and-badges group wrap, so a long badge drops under the name on a phone", async () => {
@@ -96,16 +96,48 @@ describe("Attendance register — lc-up trial students", () => {
     // Wrapping alone is not enough: a shrink-0 badge keeps its one-line width and still spills
     // into the P/A/L/E buttons. It may be as wide as the group and no wider, its text breaking.
     const badge = Array.from(host.querySelectorAll("span")).find(
-      (span) => span.textContent === "Free trial used — send to the admin",
+      (span) => span.textContent === "Free lesson used — send to the admin",
     );
     if (!badge) throw new Error("no free-trial badge");
     expect(badge.className).toContain("max-w-full");
     expect(badge.className).not.toContain("shrink-0");
   });
 
-  it("says nothing for a student who is not on trial", async () => {
+  it("says nothing for a student who is not a demo", async () => {
     await mount({ roster: [row(null)] });
-    expect(host.textContent).not.toContain("Trial");
+    expect(host.textContent).not.toContain("Demo");
+    expect(host.textContent).not.toContain("lc-up");
+  });
+
+  it("puts demo rows under a Demo heading, after the roster, the first lesson read as free", async () => {
+    await mount({
+      roster: [
+        { ...row({ lessons_before: 0, free_used: false }), student_id: 2, name: "Zed Demo", is_demo: true },
+        { ...row(null), student_id: 1, name: "Ali Paying", is_demo: false },
+      ],
+    });
+    const heading = host.querySelector('[aria-label="Demo"]') as HTMLElement;
+    expect(heading.textContent).toBe("Demo (1)");
+    const text = host.textContent!;
+    expect(text.indexOf("Ali Paying")).toBeLessThan(text.indexOf("Demo (1)"));
+    expect(text.indexOf("Demo (1)")).toBeLessThan(text.indexOf("Zed Demo"));
+    expect(text).toContain("Demo · 1st lesson (free)");
+  });
+
+  it("badges a demo row DEMO when no lc-up trial block comes with it (a class lc-up does not run)", async () => {
+    await mount({ roster: [{ ...row(null), is_demo: true }] });
+    expect(host.querySelector('[aria-label="Demo"]')).not.toBeNull();
+    expect(host.textContent).toContain("DEMO");
+  });
+
+  it("still finds a demo row when only lc-up's trial block says so (an older server)", async () => {
+    await mount({ roster: [row({ lessons_before: 0, free_used: false })] });
+    expect(host.querySelector('[aria-label="Demo"]')?.textContent).toBe("Demo (1)");
+  });
+
+  it("has no Demo heading when nobody is a demo", async () => {
+    await mount({ roster: [row(null)] });
+    expect(host.querySelector('[aria-label="Demo"]')).toBeNull();
   });
 
   it("names the lc-up members the register cannot show", async () => {

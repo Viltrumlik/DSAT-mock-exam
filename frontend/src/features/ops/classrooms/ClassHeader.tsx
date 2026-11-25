@@ -20,6 +20,12 @@ import type { ClassroomCore } from "./classroomsApi";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
+/** "2 students · +1 demo": the demo seats are no students, so they are said apart. */
+export function studentsText(room: Pick<ClassroomCore, "students" | "demo">): string {
+  const demo = room.demo ?? 0;
+  return `${plural(room.students, "student")}${demo ? ` · +${demo} demo` : ""}`;
+}
+
 /** Today's register in words: "Today 15:00 · 3 of 18 students marked", in the colour of how far it is. */
 export function todayBadge(room: ClassroomCore): { text: string; tone: "positive" | "attention" } | null {
   const today = room.glance.today;
@@ -50,6 +56,7 @@ function facts(room: ClassroomCore, canMoney: boolean): ReactNode[] {
     );
   }
   if (room.room_number) out.push(<Badge tone="line" icon="ms-room">Room {room.room_number}</Badge>);
+  out.push(<Badge tone="line" icon="users">{studentsText(room)}</Badge>);
   const schedule = scheduleLine(room.lesson_days, room.lesson_time);
   if (schedule) out.push(<Badge tone="line" icon="clock">{schedule}</Badge>);
   out.push(
@@ -120,7 +127,8 @@ export function ClassHeader({
   onDelete: () => void;
 }) {
   const managed = room.lcup?.managed ?? false;
-  const full = room.max_students != null && room.students >= room.max_students;
+  // A demo seat still takes a chair: a class is full by everyone sitting in it.
+  const full = room.max_students != null && room.students + (room.demo ?? 0) >= room.max_students;
   const today = todayBadge(room);
   const items: MenuItem[] = [{ label: "Group details", icon: "pencil", onSelect: onDetails }];
   if (!managed && canManage) {

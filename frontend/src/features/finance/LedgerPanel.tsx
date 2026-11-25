@@ -48,7 +48,7 @@ const VIEWS: { value: View; label: string }[] = [
   { value: "former", label: "Former students" },
 ];
 
-const SEAT_STATE: Record<string, string> = { active: "Active", trial: "Trial", frozen: "Frozen", left: "Left" };
+const SEAT_STATE: Record<string, string> = { active: "Active", trial: "Demo", frozen: "Frozen", left: "Left" };
 
 /** A balance or an amount as a signed number only (owner, 22 Nov 2026): "−153 846", "3 000", "0". */
 function money(amount: number) {
