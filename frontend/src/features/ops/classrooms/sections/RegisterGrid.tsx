@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { cn } from "@/lib/cn";
-import { Button, Segmented, Select } from "@/features/console/ui";
+import { Button, DemoBadge, Segmented, Select } from "@/features/console/ui";
 import { monthShort, shortDay } from "@/features/ops/detail/groupFacts";
 import { P, holds } from "@/features/ops/permissions";
 import { useMe } from "@/hooks/useMe";
@@ -215,6 +215,7 @@ export function RegisterGrid({ roomId }: { roomId: number }) {
                     <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={cn("hover:underline", s.left && "text-ms-fg-3")}>
                       {s.name}
                     </Link>
+                    {s.is_demo || s.seat_status === "trial" ? <span className="ml-1.5 align-middle"><DemoBadge /></span> : null}
                     {s.left ? <span className="ml-1.5 text-[12px] font-normal text-ms-fg-3">left</span> : null}
                   </td>
                   {data.dates.map((d) => {
