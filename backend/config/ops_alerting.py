@@ -16,6 +16,11 @@ def _env(name: str) -> str:
 
 
 def _telegram_send(*, token: str, chat_id: str, text: str) -> None:
+    from staging.outbound import capture, captured
+
+    if captured():  # the test copy: written to the toolbox's Messages, never sent
+        capture("telegram", chat_id, text, meta={"method": "sendMessage", "bot": "ops_alerts"})
+        return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     data = urllib.parse.urlencode(
         {

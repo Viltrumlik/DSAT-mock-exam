@@ -52,6 +52,17 @@ def send_to_subscription(subscription, payload: dict) -> bool:
     their data, or uninstalled. That is a normal end of life, not a failure to retry: the row
     is stamped `failed_at` and pruned later, and the caller must not raise on it.
     """
+    from staging.outbound import capture, captured, person
+
+    if captured():  # the test copy: written to the toolbox's Messages, never sent
+        capture(
+            "push", person(subscription.user), payload.get("body", ""), subject=payload.get("title", ""),
+            meta={
+                "transport": "web", "user_id": subscription.user_id, "subscription_id": subscription.pk,
+                "url": payload.get("url", ""), "category": payload.get("category", ""),
+            },
+        )
+        return True
     if not is_configured():
         return False
 

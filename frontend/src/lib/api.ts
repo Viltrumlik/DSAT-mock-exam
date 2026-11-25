@@ -116,6 +116,9 @@ export const UPLOAD_REQUEST_TIMEOUT_MS = 300_000;
 const API_URL = '/api';
 const IS_PROD = process.env.NODE_ENV === 'production';
 
+/** The test copy's browser clock (backend `staging.views.clock_js`): loaded first in <head> there, never on prod. */
+export const STAGING_CLOCK_SCRIPT = `${API_URL}/staging/clock.js`;
+
 function cookieDomain(): string | undefined {
     if (typeof window === "undefined") return undefined;
     const host = window.location.hostname.toLowerCase();

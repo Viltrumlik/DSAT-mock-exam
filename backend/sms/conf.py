@@ -18,6 +18,10 @@ def credentials() -> dict:
 
 
 def is_configured() -> bool:
+    from staging.outbound import captured
+
+    if captured():  # the test copy sends through staging.capture_eskiz, which needs no credentials
+        return True
     creds = credentials()
     return bool(creds["email"] and creds["secret"])
 
