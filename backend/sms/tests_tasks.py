@@ -260,6 +260,10 @@ class CampaignTaskTests(TestCase):
             self.assertEqual(tasks.retry_campaign(campaign.pk), {"status": "DONE", "sent": 0})
 
 
+#: What ``balance_warnings.daily`` really returns after a run: the counts, with a ``skipped`` dict (never a string).
+RAN = {"skipped": {}, "sent": 2}
+
+
 @override_settings(**CONFIGURED)
 class BalanceWarningsTickTests(TestCase):
     """The beat fires at :10 every hour; the hour set in /ops/sms (10 unless changed) decides which one runs."""
@@ -268,7 +272,7 @@ class BalanceWarningsTickTests(TestCase):
         cache.clear()
 
     def tick(self, hour, day=25):
-        with mock.patch("sms.balance_warnings.daily", return_value={"sent": 2}) as daily:
+        with mock.patch("sms.balance_warnings.daily", return_value=RAN) as daily:
             result = tasks._balance_tick(local(hour, day=day))
         return result, daily
 
@@ -280,7 +284,7 @@ class BalanceWarningsTickTests(TestCase):
 
     def test_the_hour_runs_once_a_day(self):
         result, daily = self.tick(10)
-        self.assertEqual(result, {"sent": 2})
+        self.assertEqual(result, RAN)
         daily.assert_called_once()
         self.assertEqual(daily.call_args.args, (local(10, day=25),))
         result, daily = self.tick(10)
@@ -290,19 +294,19 @@ class BalanceWarningsTickTests(TestCase):
     def test_the_next_day_runs_again(self):
         self.tick(10, day=25)
         result, daily = self.tick(10, day=26)
-        self.assertEqual(result, {"sent": 2})
+        self.assertEqual(result, RAN)
         daily.assert_called_once()
 
     def test_a_changed_hour_is_honoured(self):
         configure(balance_hour=14)
         self.assertEqual(self.tick(10)[0], {"skipped": "not the hour"})
-        self.assertEqual(self.tick(14)[0], {"sent": 2})
+        self.assertEqual(self.tick(14)[0], RAN)
 
     def test_a_run_that_was_skipped_is_not_counted_as_the_days_run(self):
         with mock.patch("sms.balance_warnings.daily", return_value={"skipped": "already running"}):
             tasks._balance_tick(local(10, day=25))
         result, daily = self.tick(10)
-        self.assertEqual(result, {"sent": 2})
+        self.assertEqual(result, RAN)
         daily.assert_called_once()
 
     @override_settings(ESKIZ_EMAIL="", ESKIZ_SECRET_KEY="")
@@ -316,4 +320,49 @@ class BalanceWarningsTickTests(TestCase):
             self.assertEqual(tasks._balance_now(local(15)), {"sent": 1})
         daily.assert_called_once_with(local(15))
         result, daily = self.tick(10)
-        self.assertEqual(result, {"sent": 2})
+        self.assertEqual(result, RAN)
+
+
+@override_settings(
+    SMS_BALANCE_WARNINGS_ENABLED=True, BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False, BILLING_MODE="lesson",
+    **CONFIGURED,
+)
+class BalanceTickWithTheRealRunTests(TestCase):
+    """The real ``daily`` (its result always holds a ``skipped`` dict): a second tick in the hour must do nothing."""
+
+    def setUp(self):
+        cache.clear()
+        from datetime import date
+
+        from billing import ledger
+        from billing.models import Account, EntryKind, Seat, SeatState, Span, SpanRule
+        from users.models import User
+
+        configure(
+            balance_enabled=True, low_template_id=1, low_pattern="MASTER SAT: %w{1,4} hisobingizda %w{1,3} so'm qoldi.",
+            low_slots=["student", "balance"], frozen_template_id=2, frozen_pattern="MASTER SAT: %w{1,4} minus.",
+            frozen_slots=["student"],
+        )
+        user = User.objects.create_user(
+            None, password=None, username="ali", role="student", first_name="Ali", last_name="Testov",
+            parent_phone="998901112233",
+        )
+        account = Account.objects.create(name="Testov Ali", user=user)
+        seat = Seat.objects.create(
+            account=account, group_name="G1", lcup_group_id=1, price=500_000, days=[1, 3, 5], state=SeatState.ACTIVE
+        )
+        Span.objects.create(seat=seat, start=date(2026, 11, 2), rule=SpanRule.LESSON)
+        ledger.post(account, EntryKind.PAYMENT, 10_000, date(2026, 11, 2), "t:tick")
+
+    def test_a_second_tick_in_the_same_hour_runs_nothing(self):
+        from sms import balance_warnings
+
+        fake = FakeEskiz()
+        with mock.patch("sms.eskiz.default_client", return_value=fake), mock.patch(
+            "sms.balance_warnings.daily", wraps=balance_warnings.daily
+        ) as daily:
+            first = tasks._balance_tick(local(10, day=25))
+            second = tasks._balance_tick(local(10, day=25) + timedelta(minutes=1))
+        self.assertEqual(first["sent"], 1)
+        self.assertEqual(second, {"skipped": "already ran today"})
+        self.assertEqual((daily.call_count, len(fake.sent)), (1, 1))

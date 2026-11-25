@@ -40,9 +40,26 @@ const FROZEN = template({
   guessed_roles: ["student"],
 });
 
+/** A number slot holds neither a name nor the balance: the server would refuse it, so it is not offered. */
+const NUMBER = template({
+  eskiz_id: 91005,
+  pattern: "Qoldi %d so'm.",
+  original: "Qoldi (SUM) so'm.",
+  slots: [{ kind: "d", min: 1, max: 1 }],
+  guessed_roles: ["text"],
+});
+/** A balance slot of two words would cut "1 234 567" short: only the name fits it. */
+const NARROW = template({
+  eskiz_id: 91006,
+  pattern: "%w{1,4} qoldi %w{1,2}",
+  original: "(STUDENT) qoldi (SUM)",
+  slots: [{ kind: "w", min: 1, max: 4 }, { kind: "w", min: 1, max: 2 }],
+  guessed_roles: ["student", "text"],
+});
+
 vi.mock("@/features/ops/sms/smsHooks", () => ({
   useSmsSettings: () => ({ data: settings, isPending: false, isError: false, refetch: vi.fn() }),
-  useSmsTemplates: () => ({ data: { templates: [LOW, FROZEN], synced_at: null }, isPending: false, isError: false, refetch: vi.fn() }),
+  useSmsTemplates: () => ({ data: { templates: [LOW, FROZEN, NUMBER, NARROW], synced_at: null }, isPending: false, isError: false, refetch: vi.fn() }),
   useUpdateSmsSettings: () => ({ mutate: update, isPending: false }),
   useBalancePreview: (...args: unknown[]) => {
     previewCalls(...args);
@@ -158,7 +175,7 @@ describe("BalancePanel — settings", () => {
     const hours = Array.from(controlOf("Send at").querySelectorAll("option")).map((o) => o.textContent);
     expect([hours[0], hours[hours.length - 1], hours.length]).toEqual(["08:00", "20:00", 13]);
     const ids = Array.from(controlOf("Low balance").querySelectorAll("option")).map((o) => o.value);
-    expect(ids).toEqual(["", "91001", "91002"]);
+    expect(ids).toEqual(["", "91001", "91002", "91006"]); // 91005 has a number slot: not fillable
   });
 
   it("saves a picked template with its slots: the student the server guessed, the rest the balance", async () => {
@@ -167,6 +184,17 @@ describe("BalancePanel — settings", () => {
     expect(text()).toContain("MASTER SAT: Test Testov, hisobingizda 77 000 so'm qoldi.");
     await act(async () => button("Save")!.click());
     expect(update.mock.calls[0][0]).toEqual({ low_template_id: 91001, low_slots: ["student", "balance"] });
+  });
+
+  it("offers the balance only for a word slot of three words or more", async () => {
+    await render();
+    await setValue(controlOf("Low balance") as HTMLSelectElement, "91006");
+    const roles = (n: number) =>
+      Array.from(controlOf(`Slot ${n}`).querySelectorAll("option")).map((o) => o.value);
+    expect(roles(1)).toEqual(["student", "balance"]);
+    expect(roles(2)).toEqual(["student"]);
+    await act(async () => button("Save")!.click());
+    expect(update.mock.calls[0][0]).toEqual({ low_template_id: 91006, low_slots: ["student", "student"] });
   });
 
   it("saves only what changed", async () => {

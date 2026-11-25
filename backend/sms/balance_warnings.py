@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from django.core.cache import cache
 from django.db.models import Q
@@ -23,11 +23,12 @@ from django.utils import timezone
 
 from access import constants as C
 from billing import ledger
-from billing.models import Account, Seat, Span, SpanRule
+from billing.lessons import lesson_days
+from billing.models import Account, Span, SpanRule
 from lcup.phones import normalize_phone
 from users import audience as A
 
-from . import switchboard
+from . import forbidden, switchboard
 from . import templates as T
 from .delivery import deliver
 from .models import BalanceNotice, SmsMessage
@@ -66,6 +67,29 @@ def threshold(account, today: date) -> int:
     )
     seats = {span.seat_id: span.seat for span in spans}
     return LINE_LESSONS * sum(ledger.lesson_price(seat) for seat in seats.values() if seat.charge_price > 0)
+
+
+def prepaid_left(account, today: date) -> int:
+    """What a new student's first month still holds: no lesson is charged inside it (the fee paid them all), so the
+    balance sits at 0 while lessons run out. The lesson days of the window's spans from ``today`` (included) to the
+    window's end (excluded), at each seat's lesson price. 0 for anyone who has no first month, or past it."""
+    window = ledger.first_month_window(account)
+    if window is None:
+        return 0
+    _, end, chain = window
+    total = 0
+    for span in Span.objects.filter(pk__in=chain).select_related("seat"):
+        last = end - timedelta(days=1)
+        if span.end is not None:
+            last = min(last, span.end)
+        days = lesson_days(span.seat.days, max(today, span.start), last)
+        total += len(days) * ledger.lesson_price(span.seat)
+    return total
+
+
+def _cover(account, today: date) -> int:
+    """The balance plus the prepaid lessons still to come: what the low line is compared with."""
+    return ledger.balance(account) + prepaid_left(account, today)
 
 
 def phone_of(account) -> str:
@@ -121,7 +145,7 @@ def plan(today: date) -> Plan:
             notice = BalanceNotice.objects.filter(account=account).first()
             low_armed = notice.low_armed if notice else True
             frozen_armed = notice.frozen_armed if notice else True
-            wants_low = 0 <= balance < line and low_armed
+            wants_low = 0 <= balance and balance + prepaid_left(account, today) < line and low_armed
             wants_frozen = _debt_frozen(user) and frozen_armed
             if not (wants_low or wants_frozen):
                 continue
@@ -151,7 +175,7 @@ def rearm(today: date) -> int:
         try:
             notice, _ = BalanceNotice.objects.get_or_create(account=account)
             fields = []
-            if not notice.low_armed and ledger.balance(account) >= threshold(account, today):
+            if not notice.low_armed and _cover(account, today) >= threshold(account, today):
                 notice.low_armed = True
                 fields.append("low_armed")
             if not notice.frozen_armed and not _debt_frozen(account.user):
@@ -182,10 +206,16 @@ def send(client, now, *, today: date | None = None) -> dict:
     ids = _template_ids(row)
     for notice in [*planned.low, *planned.frozen]:
         try:
+            text, flagged = forbidden.scrub(
+                client, T.render(templates[notice.kind], notice.values), notice.account.name or notice.user.get_full_name()
+            )
+            if text is None:  # eskiz forbids it: not sent, and still armed
+                logger.warning("balance SMS for account %s: eskiz forbids the text (%s)", notice.account.pk, flagged)
+                counts["forbidden_text"] = counts.get("forbidden_text", 0) + 1
+                continue
             msg = deliver(
                 client, kind=notice.kind, run_on=today, dedupe_key=f"account:{notice.account.pk}", phone=notice.phone,
-                text=T.render(templates[notice.kind], notice.values), user=notice.user,
-                template_eskiz_id=ids[notice.kind],
+                text=text, user=notice.user, template_eskiz_id=ids[notice.kind],
             )
             if msg is None or msg.status != SmsMessage.STATUS_FAILED:
                 _disarm(notice, now, sent=msg is not None)

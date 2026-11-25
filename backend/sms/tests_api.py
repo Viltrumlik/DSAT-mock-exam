@@ -794,6 +794,13 @@ class BalanceApiTests(ApiFixture):
         self.assertEqual((response.status_code, response.json()["code"]), (400, "disabled"))
         self.queued["balance_warnings_now"].assert_not_called()
 
+    def test_send_now_is_refused_with_409_while_the_templates_are_not_picked(self):
+        self.patch("settings/", {"balance_enabled": True})
+        with override_settings(**BALANCE_ON):
+            response = self.post("balance/send-now/")
+        self.assertEqual((response.status_code, response.json()["code"]), (409, "templates"))
+        self.queued["balance_warnings_now"].assert_not_called()
+
     @override_settings(ESKIZ_EMAIL="", ESKIZ_SECRET_KEY="")
     def test_send_now_is_refused_without_eskiz(self):
         self.pick_templates()

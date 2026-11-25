@@ -292,3 +292,103 @@ class BalanceWarningsTests(TestCase):
         teacher = User.objects.create_user(None, password=None, username="boss", role="admin")
         seat_for(Account.objects.create(name="T", user=teacher, phone="998901000001"))
         self.assertEqual({n.account.pk for n in bw.plan(D1).low}, {self.account.pk})
+
+
+    def test_eskiz_forbidden_word_in_the_name_is_dropped_and_the_text_sent(self):
+        pay(self.account, 10_000)
+        fake = FakeEskiz(forbidden=["testov"])
+        _, counts = self.send(D1, fake)
+        self.assertEqual([text for _, text, _ in fake.sent], ["MASTER SAT: Ali, hisobingizda 10 000 so'm qoldi."])
+        self.assertEqual(counts["sent"], 1)
+
+    def test_a_forbidden_word_outside_the_name_is_not_sent_and_stays_armed(self):
+        pay(self.account, 10_000)
+        fake = FakeEskiz(forbidden=["hisobingizda"])
+        _, counts = self.send(D1, fake)
+        self.assertEqual((fake.sent, counts["forbidden_text"], SmsMessage.objects.count()), ([], 1, 0))
+        self.assertTrue(BalanceNotice.objects.get(account=self.account).low_armed)
+        fake, counts = self.send(D2)  # the word list changed: told then
+        self.assertEqual(len(fake.sent), 1)
+
+
+@override_settings(**ON)
+class FirstMonthTests(TestCase):
+    """A new student's first month is paid in full on day 1 and no lesson is charged inside it, so the balance sits
+    at 0 all month: the line counts the prepaid lessons still to come (owner ruling, 2026-11-25)."""
+
+    def setUp(self):
+        cache.clear()
+        configure(
+            balance_enabled=True, low_template_id=1, low_pattern=LOW_TEXT, low_slots=["student", "balance"],
+            frozen_template_id=2, frozen_pattern=FROZEN_TEXT, frozen_slots=["student"],
+        )
+        self.user = User.objects.create_user(
+            None, password=None, username="new", role="student", first_name="New", last_name="Testov",
+            parent_phone="998901112233",
+        )
+        self.account = Account.objects.create(name="Testov New", user=self.user)
+        self.seat = seat_for(self.account, span=False)
+        self.span = ledger.start_span(self.seat, date(2026, 11, 2), today=date(2026, 11, 2))
+        pay(self.account, 500_000, date(2026, 11, 2))  # exactly the first month: balance 0
+
+    def send(self, day):
+        fake = FakeEskiz()
+        return fake, bw.send(fake, at(day), today=day)
+
+    def test_prepaid_lessons_still_to_come_end_exclusive(self):
+        self.assertEqual(ledger.balance(self.account), 0)
+        # Mon/Wed/Fri 9 Nov .. 30 Nov = 10 lessons; the window ends on 2 Dec (exclusive).
+        self.assertEqual(bw.prepaid_left(self.account, date(2026, 11, 9)), 10 * 38_500)
+        self.assertEqual(bw.prepaid_left(self.account, date(2026, 11, 30)), 38_500)
+        self.assertEqual(bw.prepaid_left(self.account, date(2026, 12, 2)), 0)
+
+    # (a)
+    def test_mid_window_with_ten_lessons_left_is_not_low(self):
+        fake, _ = self.send(date(2026, 11, 9))
+        self.assertEqual(fake.sent, [])
+        self.assertTrue(BalanceNotice.objects.get(account=self.account).low_armed)
+
+    # (b)
+    def test_with_one_prepaid_lesson_left_it_is_low_once_and_shows_the_real_balance(self):
+        fake, _ = self.send(date(2026, 11, 30))
+        self.assertEqual([text for _, text, _ in fake.sent], ["MASTER SAT: Testov New, hisobingizda 0 so'm qoldi."])
+        fake, _ = self.send(date(2026, 12, 1))
+        self.assertEqual(fake.sent, [])
+
+    # (c)
+    def test_after_the_window_a_lesson_charge_puts_it_on_the_frozen_path(self):
+        ledger.bill_span(self.span, date(2026, 12, 7))
+        self.assertLess(ledger.balance(self.account), 0)
+        self.assertEqual(bw.prepaid_left(self.account, date(2026, 12, 7)), 0)
+        User.objects.filter(pk=self.user.pk).update(is_frozen=True, frozen_reason=A.FROZEN_LCUP_DEBT)
+        fake, _ = self.send(date(2026, 12, 7))
+        self.assertEqual([text for _, text, _ in fake.sent], ["MASTER SAT: Testov New, hisobingiz minusga tushdi."])
+        self.assertEqual(SmsMessage.objects.get().kind, SmsMessage.KIND_BALANCE_FROZEN)
+
+    def test_rearming_counts_the_prepaid_lessons_too(self):
+        BalanceNotice.objects.create(account=self.account, low_armed=False)
+        bw.rearm(date(2026, 11, 9))
+        self.assertTrue(BalanceNotice.objects.get(account=self.account).low_armed)
+        BalanceNotice.objects.filter(account=self.account).update(low_armed=False)
+        bw.rearm(date(2026, 11, 30))
+        self.assertFalse(BalanceNotice.objects.get(account=self.account).low_armed)
+
+    # (d)
+    def test_a_student_who_is_not_new_is_unaffected(self):
+        _, old = ProbeLearner.make("old")
+        self.assertEqual(bw.prepaid_left(old, date(2026, 11, 9)), 0)
+        fake = FakeEskiz()
+        bw.send(fake, at(date(2026, 11, 9)), today=date(2026, 11, 9))
+        self.assertEqual([p for p, _, _ in fake.sent], ["998901112299"])  # only the old one, at balance 0
+
+
+class ProbeLearner:
+    @staticmethod
+    def make(name):
+        user = User.objects.create_user(
+            None, password=None, username=name, role="student", first_name=name.title(), last_name="Testov",
+            parent_phone="998901112299",
+        )
+        account = Account.objects.create(name=f"Testov {name.title()}", user=user)
+        seat_for(account, group=9)
+        return user, account

@@ -2,7 +2,7 @@
 
 /**
  * The balance SMS: two automatic texts to a student's parent (else the student, else the account's phone) —
- * "balance low" when the balance is above zero but under two lessons' worth, once per dip, and "frozen for debt",
+ * "balance low" when the balance is at or above zero but under two lessons' worth, once per dip, and "frozen for debt",
  * once per freeze. Here are its knobs (on/off, the hour, the two templates and what fills their slots), today's
  * list (who would get what, written without sending) and "Send now".
  *
@@ -34,10 +34,21 @@ import {
 /** The hours the server accepts. */
 export const BALANCE_HOURS = Array.from({ length: 13 }, (_, i) => 8 + i);
 
-/** A balance SMS fills its slots with the student's name or the balance — nothing typed. A number slot cannot hold a name. */
+/** The server's rule: the balance is written in groups of digits, up to three words ("1 234 567"). */
+const BALANCE_WORDS = 3;
+
+/**
+ * A balance SMS fills its slots with the student's name or the balance — nothing typed. The balance goes only in a
+ * word slot of at least three words, a name only in a word slot; a number slot holds neither (no role: the template
+ * is not offered).
+ */
 export function balanceRolesFor(slot: TemplateSlot): SlotRole[] {
-  return slot.kind === "d" ? ["balance"] : ["student", "balance"];
+  if (slot.kind === "d") return [];
+  return slot.max >= BALANCE_WORDS ? ["student", "balance"] : ["student"];
 }
+
+/** Whether every slot of the template can be filled. */
+export const fillsBalanceSlots = (t: Pick<EskizTemplate, "slots">) => t.slots.every((s) => balanceRolesFor(s).length > 0);
 
 /** The slot the server guessed is the student stays; if it guessed none, the first word slot is; the rest are the balance. */
 export function startingBalanceRoles(t: Pick<EskizTemplate, "slots" | "guessed_roles">): SlotRole[] {
@@ -48,7 +59,7 @@ export function startingBalanceRoles(t: Pick<EskizTemplate, "slots" | "guessed_r
       named = true;
       return "student";
     }
-    return "balance";
+    return balanceRolesFor(slot).includes("balance") ? "balance" : "student";
   });
 }
 
@@ -149,7 +160,7 @@ function SettingsForm({ settings: s, usable }: { settings: SmsSettings; usable: 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <TemplateChoice
             label="Low balance"
-            hint="The balance is above zero but under two lessons' worth. Told once per dip."
+            hint="The balance is at or above zero but under two lessons' worth. Told once per dip."
             value={low}
             onChange={setLow}
             usable={usable}
@@ -300,7 +311,7 @@ function TodaysList({
 export function BalancePanel() {
   const settings = useSmsSettings();
   const templates = useSmsTemplates();
-  const usable = useMemo(() => (templates.data?.templates ?? []).filter((t) => t.usable), [templates.data]);
+  const usable = useMemo(() => (templates.data?.templates ?? []).filter((t) => t.usable && fillsBalanceSlots(t)), [templates.data]);
   const [pollUntil, setPollUntil] = useState(0);
   const onSent = () => setPollUntil(Date.now() + DEBT_POLL_FOR_MS);
   const onSettled = useCallback(() => setPollUntil(0), []);

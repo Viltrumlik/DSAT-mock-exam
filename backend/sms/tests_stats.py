@@ -101,6 +101,14 @@ class SummaryTests(TestCase):
             ],
         )
 
+    def test_the_balance_sms_count_in_the_automation_series(self):
+        sms(S.STATUS_DELIVERED, kind=S.KIND_DEBT_WARNING)
+        sms(S.STATUS_DELIVERED, kind=S.KIND_BALANCE_LOW)
+        sms(S.STATUS_DELIVERED, kind=S.KIND_BALANCE_FROZEN, parts=2)
+        (row,) = stats.summary(NOV1, NOV1)["cost_by_month"]
+        self.assertEqual((row["debt_warning"], row["automation"], row["total"]), (170, 170 + 340, 170 + 170 + 340))
+        self.assertEqual(row["debt_warning"] + row["campaign"] + row["automation"] + row["test"], row["total"])
+
 
 class DebtEffectTests(TestCase):
     def pay(self, lcup_id, on, kind="payment"):

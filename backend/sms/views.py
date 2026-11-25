@@ -1014,6 +1014,12 @@ class BalanceSendNowView(_AdminView):
             return _refused("disabled", f"The balance SMS cannot go out: {why}.")
         if not conf.is_configured():
             return _refused("not_configured", "eskiz is not configured on the server.")
+        row = switchboard.current()
+        if not (row.low_pattern.strip() and row.frozen_pattern.strip()):
+            return _refused(
+                "templates", "Pick both balance templates first: nothing is sent without an approved text.",
+                status=http.HTTP_409_CONFLICT,
+            )
         _on_commit(_queue_balance_now)
         return Response({"queued": True}, status=http.HTTP_202_ACCEPTED)
 

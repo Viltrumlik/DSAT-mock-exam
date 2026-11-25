@@ -116,7 +116,7 @@ def _balance_tick(now) -> dict:
     if not cache.add(key, "1", timeout=36 * 3600):
         return {"skipped": "already ran today"}
     result = _balance_run(now)
-    if "skipped" in result:  # nothing was sent: the next tick of the day may still run
+    if isinstance(result.get("skipped"), str):  # the whole run was skipped (not a run's own counts): try again
         cache.delete(key)
     return result
 
