@@ -1,7 +1,7 @@
 """The /ops Groups list in lc-up's shape (canvas board "Groups", owner 22 Nov 2026): what it adds to a class row of
 the changelist (``ops_classrooms.class_row``) and to its filters.
 
-Every figure is one we hold: the price and start date are the class's own; trial seats are the seats lc-up marks
+Every figure is one we hold: the price and start date are the class's own; trial seats (shown as "demo") are the seats lc-up marks
 "trial" (``ClassroomMembership.seat_status``); "lessons done" counts the registers marked since the course began
 (``start_date`` is lc-up's ``course_start_date``), and the course's length is lc-up's own ``lessons_count`` for the
 group's course, from the nightly archive. A class with no lc-up course, or a course with no length, has none —
@@ -118,7 +118,7 @@ def _room_choices(qs):
 
 
 def _show_filter(today):
-    """The chips after Math / English: groups whose course ends within the week, groups with someone on trial.
+    """The chips after Math / English: groups whose course ends within the week, groups with someone on a demo seat (the value stays ``trial``).
     "all" counts the list with every OTHER filter applied; asking for it filters nothing."""
     cache: dict[str, list[int]] = {}
 
@@ -144,7 +144,7 @@ def _show_filter(today):
         return [
             ("all", "All", qs.count()),
             ("ends", "Ends this week", qs.filter(to_q("ends")).count()),
-            ("trial", "Has trial students", qs.filter(to_q("trial")).count()),
+            ("trial", "Has demo students", qs.filter(to_q("trial")).count()),
         ]
 
     return ("Show", choices, to_q)
