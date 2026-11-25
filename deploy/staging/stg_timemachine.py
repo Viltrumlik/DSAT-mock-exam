@@ -160,7 +160,7 @@ def manage(args: list[str], offset_days: int, *, timeout: int = 900) -> str:
         "DJANGO_SETTINGS_MODULE=config.settings",
         f"LD_PRELOAD={FAKETIME_LIB}",
         f"FAKETIME=+{offset_days}d",
-        "FAKETIME_DONT_FAKE_MONOTONIC=1",
+        # The monotonic clock is shifted too: left real, libfaketime 0.9.10 makes time.sleep() fail with EINVAL.
         "NO_FAKE_STAT=1",
     ]
     backend = backend_dir()
