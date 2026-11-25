@@ -168,6 +168,8 @@ def classroom_core(room) -> dict:
         "telegram_group_url": room.telegram_group_url or "",
         "max_students": room.max_students,
         "monthly_price": room.monthly_price,
+        # Seats are billed per lesson (first month whole, then each lesson day): the Activate dialog says so.
+        "lesson_billing": _billed_per_lesson(),
         "seats_open": not seats_locked(),
         "schedule_summary": room.schedule_summary or "",
         "is_active": room.is_active,
@@ -180,6 +182,12 @@ def classroom_core(room) -> dict:
         "lcup": _lcup_block(room),
         "glance": _glance(room),
     }
+
+
+def _billed_per_lesson() -> bool:
+    from billing import conf
+
+    return conf.lesson_billing() and conf.ledger_is_ours()
 
 
 def _glance(room) -> dict:

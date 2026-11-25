@@ -54,8 +54,16 @@ async function settle() {
   }
 }
 
-function route({ roster = ROSTER as unknown, rooms = true }: { roster?: unknown; rooms?: boolean } = {}) {
+function route({
+  roster = ROSTER as unknown,
+  rooms = true,
+  perLesson = null,
+}: { roster?: unknown; rooms?: boolean; perLesson?: boolean | null } = {}) {
   get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+    if (url === "/classes/admin/classrooms/45/") {
+      if (perLesson === null) return Promise.reject(new Error("down"));
+      return Promise.resolve({ data: { ...ROOM, lesson_billing: perLesson } });
+    }
     if (url === "/classes/admin/classrooms/45/roster/") {
       return roster instanceof Error ? Promise.reject(roster) : Promise.resolve({ data: roster });
     }
@@ -271,6 +279,26 @@ describe("once lc-up is off", () => {
     expect(post).toHaveBeenCalledWith("/classes/admin/classrooms/45/seats/2/freeze/", { date: todayIso() });
     expect(dialog()).toBeNull();
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("Activate says the first month is charged whole, then each lesson, when billing is per lesson", async () => {
+    route({ perLesson: true });
+    await mount();
+    await click(button(rowOf("Ali Demo"), "Activate"));
+    await settle();
+    const text = dialog()!.textContent ?? "";
+    expect(text).toContain("the first month is charged in full");
+    expect(text).toContain("500 000 so'm");
+    expect(text).toContain("each lesson day is charged");
+    expect(text).not.toContain("lessons left this month");
+  });
+
+  it("Activate keeps the monthly wording when billing is monthly", async () => {
+    route({ perLesson: false });
+    await mount();
+    await click(button(rowOf("Ali Demo"), "Activate"));
+    await settle();
+    expect(dialog()!.textContent).toContain("they pay for the lessons left this month, and the whole month after that");
   });
 
   it("sends the date the admin chose", async () => {

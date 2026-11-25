@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Dialog, inputShell } from "@/features/console/ui";
 import { ConfirmDialog } from "@/features/ops/people/ConfirmDialog";
 import { formatPhone } from "@/features/ops/people/format";
-import { serverReason } from "../classroomsApi";
+import { serverReason, useClassroom } from "../classroomsApi";
 import {
   activeClassrooms,
   addSeat,
@@ -104,6 +104,12 @@ const WORDS: Record<SeatAction, { title: (name: string) => string; confirm: stri
 };
 
 /** A demo pays nothing, so these say so instead of speaking of paid lessons and balances. */
+/** Under per-lesson billing: the first month is charged whole from the day, then each lesson day. */
+function perLessonActivate(price: number | null | undefined): string {
+  const first = price ? `the group's monthly price (${price.toLocaleString("en-US").replace(/,/g, " ")} so'm)` : "the group's monthly price";
+  return `From this date the first month is charged in full: ${first}. After it, each lesson day is charged.`;
+}
+
 const DEMO_BODY: Partial<Record<SeatAction, string>> = {
   leave: "A demo costs nothing, so no money moves. Leaving their last group makes them a public account, frozen if they owe.",
   "fix-date": "A demo costs nothing, so no money moves. Only the date changes.",
@@ -136,6 +142,9 @@ export function SeatActionDialog({
   const said = WORDS[action];
   // A demo is removed, not "left": the page's own wording unless it gave one.
   const asked = words ?? (trial && action === "leave" ? { title: `Remove ${student.name} from this group?`, confirm: "Remove" } : undefined);
+  // Only Activate reads the group: its text depends on how the centre bills (the old monthly rule or per lesson).
+  const room = useClassroom(roomId, action === "activate");
+  const body = action === "activate" && room.data?.lesson_billing ? perLessonActivate(room.data.monthly_price) : said.body;
   const [date, setDate] = useState(day ?? todayIso());
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
@@ -169,7 +178,7 @@ export function SeatActionDialog({
       onConfirm={() => void confirm()}
       body={
         <>
-          <p>{(trial && DEMO_BODY[action]) || said.body}</p>
+          <p>{(trial && DEMO_BODY[action]) || body}</p>
           <Labelled label={dateLabel ?? said.date}>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={INPUT} />
           </Labelled>

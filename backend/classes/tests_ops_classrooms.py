@@ -368,6 +368,17 @@ class DemoSeatsAreNotStudentsTests(ClassroomFixture):
         with override_settings(BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
             self.assertEqual(owes(), 500000)  # the ledger's, after the cutover
 
+    def test_the_form_says_whether_seats_are_billed_per_lesson(self):
+        def flag():
+            return self.get(f"{URL}{self.room.pk}/").json()["lesson_billing"]
+
+        with override_settings(BILLING_MODE="month", BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertIs(flag(), False)
+        with override_settings(BILLING_MODE="lesson", BILLING_PAYMENTS_OPEN=False):
+            self.assertIs(flag(), False)  # the ledger is still lc-up's follower: nothing is billed here
+        with override_settings(BILLING_MODE="lesson", BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertIs(flag(), True)
+
     def test_a_demo_mark_is_not_a_student_marked_in_the_header(self):
         session = AttendanceSession.objects.create(classroom=self.room, date=WEDNESDAY)
         for name in ("a1", "t1"):  # a paying student and the demo are marked present; the frozen one is not
