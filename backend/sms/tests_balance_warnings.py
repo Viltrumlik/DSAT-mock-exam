@@ -382,6 +382,115 @@ class FirstMonthTests(TestCase):
         self.assertEqual([p for p, _, _ in fake.sent], ["998901112299"])  # only the old one, at balance 0
 
 
+class FixRoundTests(TestCase):
+    """Walkthrough + final-review fixes: a leaver is not told to top up; a second group's per-lesson charges are
+    warned about even while the first group is inside its first month; lesson changes shape the prepaid days."""
+
+    def setUp(self):
+        cache.clear()
+        configure(
+            balance_enabled=True, low_template_id=1, low_pattern=LOW_TEXT, low_slots=["student", "balance"],
+            frozen_template_id=2, frozen_pattern=FROZEN_TEXT, frozen_slots=["student"],
+        )
+
+    def learner(self, name):
+        user = User.objects.create_user(
+            None, password=None, username=name, role="student", first_name=name.title(), last_name="Testov",
+            parent_phone="998901112233",
+        )
+        return user, Account.objects.create(name=f"Testov {name.title()}", user=user)
+
+    def send(self, day):
+        fake = FakeEskiz()
+        return fake, bw.send(fake, at(day), today=day)
+
+    # 1
+    @override_settings(**ON)
+    def test_a_span_that_ends_today_gives_no_line_and_no_low_sms(self):
+        _, account = self.learner("leaver")
+        seat = seat_for(account)
+        Span.objects.filter(seat=seat).update(end=D1)
+        self.assertEqual(bw.threshold(account, D1), 0)
+        fake, _ = self.send(D1)
+        self.assertEqual(fake.sent, [])
+        Span.objects.filter(seat=seat).update(end=D2)
+        self.assertEqual(bw.threshold(account, D1), 77_000)
+
+    def two_groups(self):
+        """First group (500k) starts 2 Nov inside its first month; the second (400k) joins 5 Nov, per lesson."""
+        user, account = self.learner("aziz")
+        first = seat_for(account, group=1, span=False)
+        ledger.start_span(first, date(2026, 11, 2), today=date(2026, 11, 2))
+        pay(account, 500_000, date(2026, 11, 2))
+        second = seat_for(account, price=400_000, group=2, span=False)
+        Span.objects.create(seat=second, start=date(2026, 11, 5), rule=SpanRule.LESSON)
+        return user, account
+
+    # 2
+    @override_settings(**ON)
+    def test_two_groups_first_in_its_first_month_warns_before_the_balance_goes_below_zero(self):
+        _, account = self.two_groups()
+        pay(account, 40_000, date(2026, 11, 20))
+        self.assertEqual(ledger.balance(account), 40_000)
+        self.assertGreater(bw.prepaid_left(account, date(2026, 11, 20)), 2 * 31_000)  # old rule alone: not low
+        fake, _ = self.send(date(2026, 11, 20))
+        self.assertEqual([t for _, t, _ in fake.sent], ["MASTER SAT: Testov Aziz, hisobingizda 40 000 so'm qoldi."])
+
+    @override_settings(**ON)
+    def test_two_groups_with_enough_for_the_second_group_is_not_low(self):
+        _, account = self.two_groups()
+        pay(account, 62_000, date(2026, 11, 20))
+        fake, _ = self.send(date(2026, 11, 20))
+        self.assertEqual(fake.sent, [])
+
+    @override_settings(**ON)
+    def test_the_second_group_rule_rearms_only_when_neither_holds(self):
+        _, account = self.two_groups()
+        pay(account, 40_000, date(2026, 11, 20))
+        self.send(date(2026, 11, 20))
+        self.assertFalse(BalanceNotice.objects.get(account=account).low_armed)
+        pay(account, 100_000, date(2026, 11, 21))
+        bw.rearm(date(2026, 11, 21))
+        self.assertTrue(BalanceNotice.objects.get(account=account).low_armed)
+
+    @override_settings(**ON)
+    def test_a_one_group_student_in_the_first_month_is_unchanged(self):
+        user, account = self.learner("solo")
+        seat = seat_for(account, group=1, span=False)
+        ledger.start_span(seat, date(2026, 11, 2), today=date(2026, 11, 2))
+        pay(account, 500_000, date(2026, 11, 2))
+        self.assertEqual(bw.charged_threshold(account, date(2026, 11, 9)), 0)
+        fake, _ = self.send(date(2026, 11, 9))
+        self.assertEqual(fake.sent, [])  # ten prepaid lessons left, as before
+
+    @override_settings(**ON)
+    def test_both_groups_past_the_first_month_is_unchanged(self):
+        _, account = self.two_groups()
+        today = date(2026, 12, 7)
+        self.assertEqual(bw.charged_threshold(account, today), bw.threshold(account, today))
+        self.assertEqual(bw.prepaid_left(account, today), 0)
+
+    # 3
+    def test_counted_days_drops_off_days_and_adds_moved_in_days(self):
+        days = [date(2026, 11, 2), date(2026, 11, 4), date(2026, 11, 6)]
+        counted = bw.counted_days(
+            days, frozenset({date(2026, 11, 4)}),
+            {date(2026, 11, 6): date(2026, 11, 7), date(2026, 11, 1): date(2026, 11, 3)},
+            date(2026, 11, 2), date(2026, 11, 9),
+        )
+        self.assertEqual(counted, [date(2026, 11, 2), date(2026, 11, 3), date(2026, 11, 7)])
+
+    def test_counted_days_ignores_moves_landing_outside_the_window(self):
+        days = [date(2026, 11, 2)]
+        counted = bw.counted_days(days, frozenset(), {date(2026, 11, 2): date(2026, 12, 20)}, date(2026, 11, 2), date(2026, 11, 9))
+        self.assertEqual(counted, [])
+
+    @override_settings(**ON)
+    def test_without_the_lesson_changes_module_prepaid_left_is_unchanged(self):
+        _, account = self.two_groups()
+        self.assertEqual(bw.prepaid_left(account, date(2026, 11, 9)), 10 * 38_500)
+
+
 class ProbeLearner:
     @staticmethod
     def make(name):
