@@ -96,6 +96,11 @@ on 2026-11-05 the three archived classes that were connected still held 6, 1 and
 seats between them — so without rule 4 the next thing to happen to any of those students
 would have reached into a group nobody teaches in any more.
 
+One exception that is not one: a ticket minted before the class finished, opened afterwards
+by somebody it was not cut for, is still **spent** — that half is about the credential, not
+the room — but the person who walked in stays. The rejection is the only removal that does
+not go through `remove_member`, so rule 4 is written out a second time in `_reject_join`.
+
 If lc-up restores the group, `reopen_class` sets `is_active` back and the class is managed
 again from that moment. There is nothing to undo: the rule reads the class, not a flag of
 its own.
