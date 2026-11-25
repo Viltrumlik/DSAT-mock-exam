@@ -138,6 +138,20 @@ describe("the teacher dashboard — the classes", () => {
     expect(text()).toContain("14 students");
   });
 
+  it("says a cancelled or moved lesson on its card", async () => {
+    teacherToday.mockResolvedValue({
+      ...PAYLOAD,
+      classes: [
+        { ...PAYLOAD.classes[1], state: "upcoming", change: { kind: "cancel", reason: "Teacher ill", new_day: null, text: "Lesson cancelled: Teacher ill" } },
+        { ...PAYLOAD.classes[0], state: "upcoming", change: { kind: "move", reason: "Room taken", new_day: "2026-09-22", text: "Lesson moved to 22 Sep: Room taken" } },
+      ],
+    });
+    await mount();
+    expect(text()).toContain("Lesson cancelled: Teacher ill");
+    expect(text()).toContain("Lesson moved to 22 Sep: Room taken");
+    expect(text()).not.toContain("Lesson finished");
+  });
+
   it("opens the classroom from the class row", async () => {
     teacherToday.mockResolvedValue(PAYLOAD);
     await mount();

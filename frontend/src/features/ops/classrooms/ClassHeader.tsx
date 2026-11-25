@@ -30,6 +30,7 @@ export function studentsText(room: Pick<ClassroomCore, "students" | "demo">): st
 export function todayBadge(room: ClassroomCore): { text: string; tone: "positive" | "attention" } | null {
   const today = room.glance.today;
   if (!today) return null;
+  if (today.change) return { text: today.change.text, tone: "attention" };
   const when = today.lesson_time ? `Today ${today.lesson_time}` : "Today";
   const m = today.marked;
   if (!m) return { text: `${when} · not marked yet`, tone: "attention" };

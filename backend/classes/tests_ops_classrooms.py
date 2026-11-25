@@ -231,10 +231,30 @@ class ClassroomChangeFormTests(ClassroomFixture):
         from classes import lesson_changes
 
         lesson_changes.cancel(self.paired, WEDNESDAY, "Teacher ill", by=self.admin, today=WEDNESDAY)
-        self.assertIsNone(self.today(self.paired, WEDNESDAY))
+        self.assertEqual(self.today(self.paired, WEDNESDAY)["change"]["kind"], "cancel")  # said, not counted
         lesson_changes.move(self.unpaired, TUESDAY, WEDNESDAY, "Room taken", by=self.admin, today=WEDNESDAY)
-        self.assertIsNone(self.today(self.unpaired, TUESDAY))
+        away = self.today(self.unpaired, TUESDAY)
+        self.assertEqual((away["change"]["kind"], away["change"]["new_day"]), ("move", "2026-11-11"))
         self.assertEqual(self.today(self.unpaired, WEDNESDAY), {"lesson_time": "", "students": 1, "marked": None})
+
+    def test_a_cancelled_day_with_a_register_says_cancelled_not_marks(self):
+        """Walkthrough gap 15: the register had been opened, then the lesson was cancelled; the header still said
+        "Today 20:00-22:00 - 0 of 4 students marked"."""
+        from classes import lesson_changes
+
+        AttendanceSession.objects.create(classroom=self.paired, date=WEDNESDAY)
+        lesson_changes.cancel(self.paired, WEDNESDAY, "Teacher ill", by=self.admin, today=WEDNESDAY)
+        today = self.today(self.paired, WEDNESDAY)
+        self.assertIsNone(today["marked"])
+        self.assertEqual(today["change"]["kind"], "cancel")
+        self.assertEqual(today["change"]["text"], "Lesson cancelled: Teacher ill")
+
+    def test_a_centre_holiday_and_a_move_away_say_so_on_the_header(self):
+        from classes import lesson_changes
+
+        AttendanceSession.objects.create(classroom=self.paired, date=WEDNESDAY)
+        lesson_changes.cancel(None, WEDNESDAY, "New Year", by=self.admin, today=WEDNESDAY)
+        self.assertEqual(self.today(self.paired, WEDNESDAY)["change"]["text"], "Centre holiday: New Year")
 
     def test_an_unpaired_class_has_no_lcup_block(self):
         self.assertIsNone(self.get(self.url(self.unpaired.pk)).json()["lcup"])
