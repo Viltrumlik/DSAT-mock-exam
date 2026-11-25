@@ -65,6 +65,7 @@ class SummaryView(APIView):
         return Response({
             "rules": _rules(),
             "enabled": conf.shadow_enabled(),
+            "ledger_is_ours": conf.ledger_is_ours(),
             "opened_at": _iso(state.opened_at),
             "last_tick_at": _iso(state.last_tick_at),
             "accounts": accounts,

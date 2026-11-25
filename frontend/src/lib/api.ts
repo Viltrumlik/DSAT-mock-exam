@@ -1136,6 +1136,14 @@ export const classesApi = {
         const r = await api.post(`/classes/${classId}/assign-midterm/`, { mock_exam_id: mockExamId, ...(schedule || {}) });
         return r.data;
     },
+    /** Teachers and support teachers for "Add classroom"; opens with create_classroom, not the user directory. */
+    teacherChoices: async () => {
+        const r = await api.get<{
+            teachers: { id: number; name: string; email: string; subject: string | null }[];
+            support_teachers: { id: number; name: string; email: string; subject: string | null }[];
+        }>('/classes/teacher-choices/');
+        return r.data;
+    },
     // Admin governance
     assignTeacher: async (classId: number, userId: number) => {
         const r = await api.post(`/classes/${classId}/assign-teacher/`, { user_id: userId });
