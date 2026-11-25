@@ -11,7 +11,8 @@ from unittest import mock, skipIf, skipUnless
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import TestCase
+from django.db import connection
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from billing.models import BillingRun, BillingState, Entry, EntryKind, Span, SpanRule
@@ -46,11 +47,26 @@ def on_the_test_date():
 
 
 class OffTheCopyTests(TestCase):
-    def test_both_commands_refuse(self):
-        for name in ("staging_after_day", "staging_seed"):
+    def test_every_command_refuses(self):
+        for name in ("staging_check", "staging_after_day", "staging_seed"):
             with self.assertRaisesMessage(CommandError, "test copy"):
                 call_command(name, "--json", stdout=io.StringIO())
         self.assertFalse(EskizTemplate.objects.exists())
+
+
+class CheckTests(TestCase):
+    """The time machine runs ``staging_check`` before its manage.py steps: a refusal (a non-zero exit) stops it."""
+
+    def test_on_the_copy_it_names_the_database(self):
+        with copy_on():
+            lines, report = run("staging_check")
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(report, {"database": connection.settings_dict["NAME"], "toolbox": True})
+
+    def test_the_flag_with_another_database_is_refused_naming_both(self):
+        with override_settings(STAGING_TOOLBOX=True, STAGING_DB_NAME="mastersat_staging"):
+            with self.assertRaisesMessage(CommandError, f"{connection.settings_dict['NAME']!r}"):
+                call_command("staging_check", "--json", stdout=io.StringIO())
 
 
 @LESSON_MODE

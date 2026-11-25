@@ -42,6 +42,8 @@ DUMP = "/var/tmp/stg-seed.dump"
 
 DB = "mastersat_staging"
 NEW_DB = "mastersat_staging_new"
+#: The live database, set aside while a new one is renamed in (``swap_in``), dropped once it is.
+OLD_DB = "mastersat_staging_old"
 CP_PREFIX = "stg_cp_"
 ROLE = "mastersat_stg"
 PROD_DB = "mastersat_db"
@@ -91,7 +93,16 @@ def load_state() -> dict:
     try:
         with open(STATE) as fh:
             state = json.load(fh)
+        if not isinstance(state, dict):
+            raise ValueError("not a JSON object")
     except FileNotFoundError:
+        state = {}
+    except ValueError as exc:
+        # A state.json that cannot be read must not stop the time machine: it starts again from the defaults, and the
+        # bad file is kept beside it for a person to look at.
+        bad = f"{STATE}.bad-{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        os.replace(STATE, bad)
+        log(f"state.json could not be read ({exc}); kept as {bad}, starting from the defaults")
         state = {}
     state.setdefault("offset_days", 0)
     state.setdefault("checkpoints", [])
@@ -157,6 +168,13 @@ def manage(args: list[str], offset_days: int, *, timeout: int = 900) -> str:
                cwd=backend, timeout=timeout)
 
 
+def check_copy(offset_days: int) -> None:
+    """Every manage.py step reads the release's environment file, which names the database. ``staging_check`` exits
+    non-zero unless that is the copy's own (and STAGING_TOOLBOX is on), so a prod environment file copied here by
+    mistake stops the action at this step, before ``migrate`` or the cutover could write to another database."""
+    manage(["staging_check", "--json"], offset_days, timeout=120)
+
+
 def last_json(text: str) -> dict:
     """The JSON object a command printed: the whole output, else its last line that parses."""
     try:
@@ -176,7 +194,7 @@ def last_json(text: str) -> dict:
 
 def safe_name(name: str) -> str:
     """Only the copy's own databases are ever created or dropped here."""
-    if name in (DB, NEW_DB) or (name.startswith(CP_PREFIX) and name[len(CP_PREFIX):].isdigit()):
+    if name in (DB, NEW_DB, OLD_DB) or (name.startswith(CP_PREFIX) and name[len(CP_PREFIX):].isdigit()):
         return name
     raise RuntimeError(f"refusing to touch database {name!r}")
 
@@ -211,12 +229,35 @@ def copy_db(source: str, target: str) -> None:
             time.sleep(2)
 
 
+def swap_in(new: str) -> None:
+    """``new`` becomes mastersat_staging. The live one is renamed aside first and dropped only once the new one is in,
+    so a failure between the steps leaves a mastersat_staging: the old one put back, or the new one. (A crash between
+    the two renames is put right by ``recover`` when the time machine starts again.)"""
+    drop(OLD_DB)
+    if exists(DB):
+        disconnect(DB)
+        pg(f'ALTER DATABASE "{DB}" RENAME TO "{OLD_DB}"')
+    try:
+        pg(f'ALTER DATABASE "{safe_name(new)}" RENAME TO "{DB}"')
+    except Exception:
+        if exists(OLD_DB) and not exists(DB):
+            pg(f'ALTER DATABASE "{OLD_DB}" RENAME TO "{DB}"')
+        raise
+    drop(OLD_DB)
+
+
+def recover() -> None:
+    """No mastersat_staging but the one set aside: a crash came between ``swap_in``'s two renames. It goes back."""
+    if not exists(DB) and exists(OLD_DB):
+        pg(f'ALTER DATABASE "{OLD_DB}" RENAME TO "{DB}"')
+        log(f"{DB} was missing: put {OLD_DB} back")
+
+
 def put_in_place(source: str) -> None:
-    """mastersat_staging becomes a copy of ``source`` (a checkpoint). The old one goes only once the new one exists."""
+    """mastersat_staging becomes a copy of ``source`` (a checkpoint). The old one goes only once the new one is in."""
     drop(NEW_DB)
     copy_db(source, NEW_DB)
-    drop(DB)
-    pg(f'ALTER DATABASE "{NEW_DB}" RENAME TO "{DB}"')
+    swap_in(NEW_DB)
 
 
 # ── apps ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -276,6 +317,7 @@ def find(state: dict, cp_id: int) -> dict:
 def forward(state: dict, days: int) -> dict:
     if not 1 <= days <= MAX_DAYS:
         raise Refused(f"Move 1 to {MAX_DAYS} days at a time.")
+    check_copy(state["offset_days"])  # before its first manage.py step, and before anything is stopped or copied
     stop_apps()
     try:
         start_offset = state["offset_days"]
@@ -340,14 +382,14 @@ def refresh(state: dict) -> dict:
              "--no-privileges", f"--role={ROLE}", "-j", "4", "-d", NEW_DB, DUMP], timeout=3600)
         pg("ANALYZE", db=NEW_DB)
         os.remove(DUMP)
-        drop(DB)
-        pg(f'ALTER DATABASE "{NEW_DB}" RENAME TO "{DB}"')
+        swap_in(NEW_DB)
         for cp in list(state["checkpoints"]):
             drop(cp["db"])
         state["checkpoints"] = []
         state["offset_days"] = 0
         write_clock(0)
         save_state(state)
+        check_copy(0)  # the restore is in; migrate and the cutover's writes only once the env file names it
         manage(["migrate", "--no-input"], 0, timeout=1800)
         report = {"cutover": last_json(manage(["billing_cutover", "check"], 0)).get("finished")}
         if not report["cutover"]:
@@ -429,6 +471,7 @@ def prepare_dirs() -> None:
 
 def main() -> None:
     prepare_dirs()
+    recover()
     state = load_state()
     if state.get("busy"):
         # Stopped while working: say so, and make sure the copy is running.
