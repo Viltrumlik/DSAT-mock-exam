@@ -45,6 +45,15 @@ FREEZE_ACCESS_EXEMPT_EMAILS = frozenset(
     if e.strip()
 )
 
+# ─── The test copy (/var/www/satapp-staging) ──────────────────────────────────
+# The toolbox (/ops/toolbox, /api/staging/) and the capture of every outgoing SMS, Telegram message, e-mail and
+# push exist only where BOTH hold: STAGING_TOOLBOX is true AND the database in use is STAGING_DB_NAME
+# (``staging.guard.toolbox_on``). Prod sets neither, so it behaves exactly as before.
+STAGING_TOOLBOX = _env_bool('STAGING_TOOLBOX', default_when_unset=False)
+STAGING_DB_NAME = os.getenv('STAGING_DB_NAME', 'mastersat_staging')
+# Where the time machine (deploy/staging/stg_timemachine.py, root) and the toolbox meet: requests/, state.json, clock.
+STAGING_TM_DIR = os.getenv('STAGING_TM_DIR', '/var/www/satapp-staging/shared/timemachine')
+
 
 # access.services — fail loud in dev (override with env in CI/prod)
 LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT = _env_bool(
@@ -224,6 +233,8 @@ INSTALLED_APPS = [
     'billing.apps.BillingConfig',
     'sms.apps.SmsConfig',
     'daily_questions.apps.DailyQuestionsConfig',
+    # Always installed, so its two tables exist (empty) on prod; it acts only on the test copy (STAGING_* above).
+    'staging.apps.StagingConfig',
 ]
 
 MIDDLEWARE = [
