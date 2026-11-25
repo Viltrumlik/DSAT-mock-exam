@@ -13,14 +13,18 @@ from django.utils import timezone
 
 class LessonChange(models.Model):
     """A lesson day that does not happen as the timetable says (owner, 2026-11-25): called off, or moved to
-    another day. No classroom = every group with a lesson that day (a centre holiday). Never deleted: undone."""
+    another day. No classroom = every group with a lesson that day (a centre holiday). Never deleted: undone.
+
+    A class with changes on record, live or undone, cannot be deleted (PROTECT; the delete views answer 409
+    ``lesson_changes``): its seats keep their money when it goes, and without its changes the tick would charge the
+    cancelled days again. It can still be archived."""
 
     class Kind(models.TextChoices):
         CANCEL = "cancel", "Cancelled"
         MOVE = "move", "Moved"
 
     classroom = models.ForeignKey(
-        "classes.Classroom", null=True, blank=True, on_delete=models.CASCADE, related_name="lesson_changes"
+        "classes.Classroom", null=True, blank=True, on_delete=models.PROTECT, related_name="lesson_changes"
     )
     day = models.DateField()
     kind = models.CharField(max_length=10, choices=Kind.choices)

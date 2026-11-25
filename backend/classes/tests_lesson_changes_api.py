@@ -11,9 +11,10 @@ from rest_framework.test import APIClient
 from access import constants as C
 from access.models import Permission, UserPermission
 from billing import ledger
-from billing.models import Entry, EntryKind
+from billing.models import EndReason, Entry, EntryKind, SeatState
 from billing.tests_lesson_rule import LESSON_MODE, seat_for, student
 from billing.tests_seat_class import make_room
+from classes.models import Classroom, ClassroomMembership
 from classes.models_lesson_changes import LessonChange
 
 User = get_user_model()
@@ -36,12 +37,14 @@ class ApiCase(TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def call(self, method, path, body=None, *, user=None):
+    def call(self, method, path, body=None, *, user=None, host=HOST):
         api = APIClient()
         api.force_authenticate(user or self.admin)
         if method == "get":
-            return api.get(path, body or {}, HTTP_HOST=HOST)
-        return api.post(path, body or {}, format="json", HTTP_HOST=HOST)
+            return api.get(path, body or {}, HTTP_HOST=host)
+        if method == "delete":
+            return api.delete(path, HTTP_HOST=host)
+        return getattr(api, method)(path, body or {}, format="json", HTTP_HOST=host)
 
     def cancel(self, day="2026-12-07", reason="Teacher ill", **kw):
         return self.call("post", f"/api/classes/admin/classrooms/{self.room.pk}/lessons/cancel/", {"day": day, "reason": reason}, **kw)
@@ -104,7 +107,7 @@ class EndpointTests(ApiCase):
              "reason": "Teacher ill", "day": "2026-12-07", "new_day": None},
         )
         self.assertEqual((body["change"]["created_by"], body["change"]["undone_at"]), ("boss", None))
-        self.assertEqual(body["money"], {"voided": 0, "students": 0, "amount": 0, "unfrozen": 0, "frozen": 0})
+        self.assertEqual(body["money"], {"voided": 0, "students": 0, "amount": 0, "unfrozen": 0})
         self.assertEqual(change.created_by, self.admin)
 
     def test_move(self):
@@ -185,6 +188,51 @@ class MoneyTests(ApiCase):
         seat.save(update_fields=["classroom"])
         ledger.start_span(seat, date(2026, 12, 2), today=TODAY)
         money = self.cancel().json()["money"]
-        self.assertEqual(money, {"voided": 1, "students": 1, "amount": 38_500, "unfrozen": 0, "frozen": 0})
+        self.assertEqual(money, {"voided": 1, "students": 1, "amount": 38_500, "unfrozen": 0})
         self.assertEqual(self.undo(LessonChange.objects.get().pk).json()["money"]["voided"], 0)
         self.assertEqual(account.entries.filter(key__startswith="lesson:", voided_at__isnull=True).count(), 4)
+
+
+@LESSON_MODE
+class DeleteTests(ApiCase):
+    """A class with lesson changes on record, live or undone, is not deleted (``LessonChange.classroom`` is PROTECT):
+    they are its money's history, and without them its seats would be charged the cancelled days again. It can still be
+    archived."""
+
+    REFUSED = {"detail": "This class has cancelled or moved lessons on record; archive it instead.", "code": "lesson_changes"}
+
+    def test_deleting_is_refused_and_the_cancelled_day_is_never_charged_again(self):
+        _, account = student("ali")
+        Entry.objects.create(account=account, kind=EntryKind.OPENING, amount=0, day=date(2026, 11, 30), key="open:ali")
+        seat = seat_for(account)
+        seat.classroom = self.room
+        seat.save(update_fields=["classroom"])
+        span = ledger.start_span(seat, date(2026, 12, 2), today=TODAY)
+        self.assertEqual(self.cancel().status_code, 201)  # Monday 7, charged already: voided
+        ledger.end_span(span, TODAY, EndReason.LEAVE, today=TODAY)  # the class empties out
+        seat.state = SeatState.LEFT
+        seat.save(update_fields=["state"])
+        governance = self.call("delete", f"/api/classes/{self.room.pk}/governance-delete/")
+        self.assertEqual((governance.status_code, governance.json()), (409, self.REFUSED))
+        ClassroomMembership.objects.create(classroom=self.room, user=self.room.teacher, role=ClassroomMembership.ROLE_ADMIN)
+        owner = self.call("delete", f"/api/classes/{self.room.pk}/", user=self.room.teacher, host="testserver")
+        self.assertEqual((owner.status_code, owner.json()), (409, self.REFUSED))
+        self.assertTrue(Classroom.objects.filter(pk=self.room.pk).exists())
+        ledger.own_tick(date(2026, 12, 11))
+        monday = Entry.objects.filter(key=f"lesson:{span.pk}:2026-12-07")
+        self.assertEqual((monday.count(), monday.filter(voided_at__isnull=True).count()), (1, 0))
+
+    def test_an_undone_change_holds_it_too_and_archiving_still_works(self):
+        self.undo(self.cancel().json()["change"]["id"])
+        response = self.call("delete", f"/api/classes/{self.room.pk}/governance-delete/")
+        self.assertEqual((response.status_code, response.json()), (409, self.REFUSED))
+        archived = self.call("patch", f"/api/classes/{self.room.pk}/details/", {"is_active": False})
+        self.assertEqual(archived.status_code, 200, archived.content)
+        self.room.refresh_from_db()
+        self.assertFalse(self.room.is_active)
+
+    def test_a_class_without_changes_is_deleted_as_before(self):
+        other = make_room("Middle G2")
+        response = self.call("delete", f"/api/classes/{other.pk}/governance-delete/")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Classroom.objects.filter(pk=other.pk).exists())

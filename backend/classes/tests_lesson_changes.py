@@ -9,6 +9,7 @@ from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -225,6 +226,12 @@ class ConstraintTests(Case):
             self.create(classroom=self.room, kind="move", new_day=TUE)
         LessonChange.objects.filter(pk=first.pk).update(undone_at=first.created_at)
         self.create(classroom=self.room, kind="move", new_day=TUE)
+
+    def test_a_class_with_changes_on_record_cannot_be_deleted_even_undone_ones(self):
+        L.undo(self.cancel(MON), by=self.admin, today=TODAY)
+        with self.assertRaises(ProtectedError):
+            self.room.delete()
+        self.assertEqual(LessonChange.objects.filter(classroom=self.room).count(), 1)
 
 
 class DayChangesTests(Case):

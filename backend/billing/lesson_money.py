@@ -10,9 +10,10 @@ the change's own transaction.
 * An undo voids the moved lesson and lets ``bill_span`` write the day again: a new row, the voided one stays.
 * A new student's first month is flat (owner, 2026-11-22), so a change inside it finds nothing to void or write.
 
-Each ends with the debt-freeze check for every student it touched, as after a payment (``billing.views._after_money``:
-``ledger.apply_debt_freeze``, only when the ledger is ours and students pay per lesson): back to zero or above lifts a
-debt freeze at once, and below zero (an undo charging the day again) freezes.
+Each ends by lifting the debt freeze of every student it touched who is back to zero or above
+(``ledger.apply_debt_freeze(account, freeze=False)``, only when the ledger is ours and students pay per lesson). It never
+freezes: freezing stays the 15-minute tick's, with its guard against freezing more than ``ledger.MAX_FREEZES_PER_TICK``
+people at once, so undoing a centre holiday cannot freeze a crowd in one click (ruling of 2026-11-25).
 """
 
 from __future__ import annotations
@@ -66,25 +67,24 @@ def _void_live(key: str, reason: str, by) -> Entry | None:
 
 
 def _summary(spans, voided) -> dict:
-    """What moved: the rows voided, for how many students and how much came back, and the debt freezes lifted or
-    put on by the check after it."""
-    done = []
+    """What moved: the rows voided, for how many students and how much came back, and the debt freezes lifted. Only
+    lifted: a change never freezes anyone (the tick does)."""
+    unfrozen = 0
     if conf.lesson_billing() and conf.ledger_is_ours():
         accounts = {span.seat.account_id: span.seat.account for span in spans}
-        done = [ledger.apply_debt_freeze(account) for account in accounts.values()]
+        for account in accounts.values():
+            unfrozen += ledger.apply_debt_freeze(account, freeze=False) == "unfrozen"
     return {
         "voided": len(voided),
         "students": len({row.account_id for row in voided}),
         "amount": sum(-row.amount for row in voided),
-        "unfrozen": done.count("unfrozen"),
-        "frozen": done.count("frozen"),
+        "unfrozen": unfrozen,
     }
 
 
 def apply(change, *, today: date, by) -> dict:
     """The change's day is not charged: its lesson already written is voided with the reason. A move's lesson is
-    charged on its new day once that day has come. Returns ``{"voided", "students", "amount", "unfrozen",
-    "frozen"}``."""
+    charged on its new day once that day has come. Returns ``{"voided", "students", "amount", "unfrozen"}``."""
     words = (
         f"Lesson moved to {change.new_day}: {change.reason}" if change.new_day else f"Lesson cancelled: {change.reason}"
     )

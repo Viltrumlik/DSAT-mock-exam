@@ -111,7 +111,7 @@ describe("Timetable — lesson changes", () => {
   });
 
   it("sets a centre holiday on the shown day with a reason, then says what came back", async () => {
-    post.mockResolvedValue({ data: { change: { id: 9 }, money: { voided: 1, students: 1, amount: 38_500, unfrozen: 1, frozen: 0 } } });
+    post.mockResolvedValue({ data: { change: { id: 9 }, money: { voided: 1, students: 1, amount: 38_500, unfrozen: 1 } } });
     await mount();
     await click(byText(host, "Holiday…"));
     expect((dialog()!.querySelector('input[type="date"]') as HTMLInputElement).value).toBe("2026-11-18");
@@ -128,7 +128,7 @@ describe("Timetable — lesson changes", () => {
   });
 
   it("undoes a change from the table", async () => {
-    post.mockResolvedValue({ data: { change: { id: 7 }, money: { voided: 0, students: 0, amount: 0, unfrozen: 0, frozen: 0 } } });
+    post.mockResolvedValue({ data: { change: { id: 7 }, money: { voided: 0, students: 0, amount: 0, unfrozen: 0 } } });
     await mount();
     const holidayRow = host.querySelector('section[aria-label="Lesson changes"] tbody tr')!;
     await click(byText(holidayRow, "Undo"));

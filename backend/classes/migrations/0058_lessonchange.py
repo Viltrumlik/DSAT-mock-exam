@@ -24,7 +24,7 @@ class Migration(migrations.Migration):
                 ('reason', models.CharField(max_length=300)),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
                 ('undone_at', models.DateTimeField(blank=True, null=True)),
-                ('classroom', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='lesson_changes', to='classes.classroom')),
+                ('classroom', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='lesson_changes', to='classes.classroom')),
                 ('created_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
                 ('undone_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
             ],

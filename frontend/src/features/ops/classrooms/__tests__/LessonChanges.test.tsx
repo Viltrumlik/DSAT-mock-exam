@@ -41,7 +41,7 @@ const REGISTER: ClassroomRegister = {
   ],
 };
 
-const MONEY = { voided: 2, students: 2, amount: 77_000, unfrozen: 0, frozen: 0 };
+const MONEY = { voided: 2, students: 2, amount: 77_000, unfrozen: 0 };
 
 let host: HTMLElement;
 let root: Root;
@@ -165,7 +165,7 @@ describe("Register grid — lesson changes", () => {
   });
 
   it("says so when nothing had been charged", async () => {
-    post.mockResolvedValue({ data: { change: { id: 21 }, money: { voided: 0, students: 0, amount: 0, unfrozen: 0, frozen: 0 } } });
+    post.mockResolvedValue({ data: { change: { id: 21 }, money: { voided: 0, students: 0, amount: 0, unfrozen: 0 } } });
     await mount();
     await click(dayMenu("16 Dec"));
     await click(item("Cancel lesson…"));

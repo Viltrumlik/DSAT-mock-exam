@@ -28,6 +28,12 @@ from .seat_actions import weekdays_of
 DAYS_BACK = 31
 DAYS_AHEAD = 60
 REASON_MAX = 300
+#: The 409 a class delete answers when its lesson changes stop it (``LessonChange.classroom`` is PROTECT), beside
+#: ``students_in_class``: they are its money's history, so it is archived instead.
+DELETE_REFUSED = {
+    "detail": "This class has cancelled or moved lessons on record; archive it instead.",
+    "code": "lesson_changes",
+}
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 

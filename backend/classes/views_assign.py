@@ -291,7 +291,14 @@ class ClassroomGovernanceDeleteView(_AdminClassroomGovernanceView):
         refusal = closing_refusal(classroom)
         if refusal:
             return Response({"detail": refusal, "code": "students_in_class"}, status=http.HTTP_409_CONFLICT)
-        classroom.delete()
+        from django.db.models import ProtectedError
+
+        from .lesson_changes import DELETE_REFUSED
+
+        try:
+            classroom.delete()
+        except ProtectedError:  # its lesson changes, the only PROTECT pointing at a class: archive it instead
+            return Response(DELETE_REFUSED, status=http.HTTP_409_CONFLICT)
         return Response(status=http.HTTP_204_NO_CONTENT)
 
 
