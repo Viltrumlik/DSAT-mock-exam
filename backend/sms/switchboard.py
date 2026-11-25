@@ -38,17 +38,24 @@ def debt_enabled(row: SmsSettings | None = None) -> bool:
     return env_enabled() and (row or current()).debt_enabled
 
 
-def balance_enabled(row: SmsSettings | None = None) -> bool:
-    """The balance SMS (low / frozen): env, the panel, and the ledger being ours and billing per lesson —
-    without both of those there is no balance to speak of."""
+def balance_off_reason(row: SmsSettings | None = None) -> str:
+    """Why the balance SMS cannot go out; "" when every switch is on: env, the panel, the ledger being ours and
+    billing per lesson (without both of those there is no balance to speak of)."""
     from billing import conf as billing
 
-    return (
-        conf.balance_warnings_enabled()
-        and (row or current()).balance_enabled
-        and billing.ledger_is_ours()
-        and billing.lesson_billing()
-    )
+    if not conf.balance_warnings_enabled():
+        return "SMS_BALANCE_WARNINGS_ENABLED is off on the server"
+    if not (row or current()).balance_enabled:
+        return "the balance SMS is switched off in /ops/sms"
+    if not billing.ledger_is_ours():
+        return "the ledger is not ours yet"
+    if not billing.lesson_billing():
+        return "billing is not per lesson"
+    return ""
+
+
+def balance_enabled(row: SmsSettings | None = None) -> bool:
+    return not balance_off_reason(row)
 
 
 def balance_templates(row: SmsSettings | None = None) -> tuple[T.SmsTemplate, T.SmsTemplate]:
