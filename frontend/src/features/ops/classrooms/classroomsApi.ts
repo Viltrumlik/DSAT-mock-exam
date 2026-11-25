@@ -5,6 +5,7 @@ import api from "@/lib/api";
 import type { ChangeListData } from "@/features/ops/changelist/ChangeList";
 import type { ChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import type { PeopleSection } from "@/features/ops/changelist/peopleApi";
+import type { DayChange } from "./lessonChangesApi";
 import type { SeatStatus } from "./seatsApi";
 
 /**
@@ -91,6 +92,8 @@ export type ClassroomGlance = {
     lesson_time: string;
     students: number;
     marked: { present: number; late: number; absent: number; excused: number } | null;
+    /** Today's lesson called off, moved away or a centre holiday: `text` is the header's words ("Lesson cancelled: …"). */
+    change?: { kind: "cancel" | "move" | "holiday"; reason: string; new_day: string | null; text: string };
   } | null;
 };
 
@@ -173,7 +176,8 @@ export type ClassroomRegister = {
   months: string[];
   /** "YYYY-MM-DD" on the school's calendar. */
   today: string;
-  dates: { date: string; held: boolean }[];
+  /** `change`: the day was cancelled, moved or a centre holiday (absent on an older server). */
+  dates: { date: string; held: boolean; change?: DayChange | null }[];
   students: {
     id: number;
     name: string;

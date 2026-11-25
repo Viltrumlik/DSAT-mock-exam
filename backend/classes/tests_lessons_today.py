@@ -18,6 +18,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from access import constants as C
+from classes import lesson_changes
 from classes.attendance_window import marking_window
 from classes.lessons_today import lessons_today
 from classes.models import Classroom, ClassroomMembership
@@ -294,7 +295,7 @@ class CountsTests(LessonsFixture):
         room = self.room("G21 Math")
         self.mark(room, self.seat(room), "PRESENT")
         body = self.body()
-        self.assertEqual(set(body), {"date", "lessons", "counts"})
+        self.assertEqual(set(body), {"date", "lessons", "counts", "changes"})
         [row] = body["lessons"]
         self.assertEqual(set(row), {"classroom", "teacher", "starts_at", "ends_at", "phase", "register"})
         self.assertEqual(
@@ -358,7 +359,11 @@ class OtherDayTests(LessonsFixture):
         self.assertEqual(later["date"], "2026-11-11")
         self.assertEqual([(r["phase"], r["register"]["state"]) for r in later["lessons"]], [("upcoming", "not_yet")])
         self.assertEqual(later["counts"]["not_marked"], 0)
-        self.assertEqual(sunday, {"date": "2026-11-15", "lessons": [], "counts": {"lessons": 0, "now": 0, "not_marked": 0, "no_teacher": 0}})
+        self.assertEqual(
+            sunday,
+            {"date": "2026-11-15", "lessons": [], "counts": {"lessons": 0, "now": 0, "not_marked": 0, "no_teacher": 0},
+             "changes": []},
+        )
 
 
 @override_settings(**LCUP_ON)
@@ -380,8 +385,9 @@ class QueryCountTests(LessonsFixture):
     def test_a_fixed_number_of_queries_however_many_classes_meet(self):
         self.build(3)
         three = self.count(lambda: self.body())
-        # The classes, their seats, their registers, which of them lc-up runs, who lc-up holds frozen.
-        self.assertEqual(three, 5)
+        # The day's lesson changes, the classes, their seats, their registers, which of them lc-up runs, who lc-up
+        # holds frozen.
+        self.assertEqual(three, 6)
         self.build(9)
         with self.assertNumQueries(three):
             body = self.body()
@@ -466,3 +472,69 @@ class LcupAgreementTests(LessonsFixture):
         self.assertEqual(listed[rooms["paired"].pk]["register"]["closes_at"], iso(MONDAY, 17, 55))
         self.assertEqual(listed[rooms["unpaired"].pk]["register"]["closes_at"], iso(MONDAY, 18))
         self.assertEqual(body["counts"]["not_marked"], 1)  # "Paired": ended 16:00, open until 17:55, unmarked
+
+
+class LessonChangeTests(LessonsFixture):
+    """A lesson called off or moved, or a centre holiday (owner, 2026-11-25): a class off that day is not listed, a
+    lesson moved in is, and the day's changes come with the lessons for the timetable's table."""
+
+    def change(self, room, day, *, new_day=None, reason="Teacher ill"):
+        if new_day:
+            return lesson_changes.move(room, day, new_day, reason, by=self.admin, today=MONDAY)
+        return lesson_changes.cancel(room, day, reason, by=self.admin, today=MONDAY)
+
+    def test_a_class_off_that_day_is_left_out_and_a_lesson_moved_in_is_listed(self):
+        odd, even = self.room("Odd"), self.room("Even", days="EVEN")
+        self.change(odd, MONDAY)
+        self.change(even, TUESDAY, new_day=MONDAY, reason="Room taken")
+        self.assertEqual(self.ids(MONDAY), [even.pk])
+        self.assertEqual(self.ids(TUESDAY), [])
+
+    def test_a_lesson_moved_in_has_its_times_and_its_register(self):
+        even = self.room("Even", days="EVEN", time="14:00-16:00")
+        self.seat(even)
+        self.change(even, TUESDAY, new_day=MONDAY)
+        row = self.row(even, MONDAY, now=at(MONDAY, 15))
+        self.assertEqual((row["starts_at"], row["phase"], row["register"]["roster"]), (iso(MONDAY, 14), "now", 1))
+
+    def test_a_lesson_moved_to_a_sunday_is_listed_on_it(self):
+        odd = self.room("Odd")
+        sunday = SUNDAY + timedelta(days=7)
+        self.change(odd, MONDAY + timedelta(days=4), new_day=sunday)  # Friday 13 to Sunday 15
+        self.assertEqual(self.ids(sunday), [odd.pk])
+
+    def test_a_centre_holiday_leaves_every_class_out(self):
+        self.room("Odd")
+        holiday = lesson_changes.cancel(None, MONDAY, "Independence Day", by=self.admin, today=MONDAY)
+        body = self.body()
+        self.assertEqual((body["lessons"], body["counts"]["lessons"]), ([], 0))
+        self.assertEqual(
+            body["changes"],
+            [{"id": holiday.pk, "classroom_id": None, "classroom": None, "kind": "cancel", "reason": "Independence Day",
+              "day": "2026-11-09", "new_day": None}],
+        )
+
+    def test_the_days_changes_are_listed_holidays_first_then_by_class(self):
+        odd, even, other = self.room("Odd"), self.room("Even", days="EVEN"), self.room("Another odd")
+        cancel = self.change(odd, MONDAY)
+        moved_in = self.change(even, TUESDAY, new_day=MONDAY, reason="Room taken")
+        moved_away = self.change(other, MONDAY, new_day=MONDAY + timedelta(days=3))
+        lesson_changes.undo(self.change(self.room("Undone"), MONDAY), by=self.admin, today=MONDAY)
+        self.change(other, MONDAY + timedelta(days=4))
+        self.assertEqual(
+            self.body()["changes"],
+            [
+                {"id": moved_away.pk, "classroom_id": other.pk, "classroom": "Another odd", "kind": "move",
+                 "reason": "Teacher ill", "day": "2026-11-09", "new_day": "2026-11-12"},
+                {"id": moved_in.pk, "classroom_id": even.pk, "classroom": "Even", "kind": "move", "reason": "Room taken",
+                 "day": "2026-11-10", "new_day": "2026-11-09"},
+                {"id": cancel.pk, "classroom_id": odd.pk, "classroom": "Odd", "kind": "cancel", "reason": "Teacher ill",
+                 "day": "2026-11-09", "new_day": None},
+            ],
+        )
+
+    def test_the_view_says_so_too(self):
+        odd = self.room("Odd")
+        change = self.change(odd, MONDAY)
+        body = self.get(date="2026-11-09").json()
+        self.assertEqual((body["lessons"], [c["id"] for c in body["changes"]]), ([], [change.pk]))

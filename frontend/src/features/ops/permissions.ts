@@ -32,17 +32,18 @@ export const P = {
   manageStaff: "manage_staff",
   lcupTools: "lcup_tools",
   manageExpenses: "manage_expenses",
+  manageLessons: "manage_lessons",
   manageUsers: "manage_users",
   assignAccess: "assign_access",
 } as const;
 
 export type Permission = (typeof P)[keyof typeof P];
 
-/** The 18 CRM permissions. Holding any one of them makes a person part of the desk. */
+/** The 19 CRM permissions. Holding any one of them makes a person part of the desk. */
 export const CRM_PERMISSIONS: readonly Permission[] = [
   P.viewPeople, P.editPeople, P.viewMoney, P.takePayment, P.voidPayment, P.adjustBalance, P.setPrices,
   P.debtFreeze, P.enroll, P.manageSeats, P.manageGroups, P.sendSms, P.sendDebtSms, P.viewReports,
-  P.eventsShop, P.manageStaff, P.lcupTools, P.manageExpenses,
+  P.eventsShop, P.manageStaff, P.lcupTools, P.manageExpenses, P.manageLessons,
 ];
 
 function permissionsOf(me: MeLike): readonly string[] {

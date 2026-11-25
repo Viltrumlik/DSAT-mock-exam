@@ -1142,7 +1142,14 @@ class ClassroomViewSet(ModelViewSet):
         refusal = closing_refusal(classroom)
         if refusal:
             return Response({"detail": refusal, "code": "students_in_class"}, status=status.HTTP_409_CONFLICT)
-        return super().destroy(request, *args, **kwargs)
+        from django.db.models import ProtectedError
+
+        from .lesson_changes import DELETE_REFUSED
+
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:  # its lesson changes, the only PROTECT pointing at a class: archive it instead
+            return Response(DELETE_REFUSED, status=status.HTTP_409_CONFLICT)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
     def regenerate_code(self, request, pk=None):

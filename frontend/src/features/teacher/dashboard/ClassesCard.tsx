@@ -123,6 +123,7 @@ function ClassRow({ klass, todayIso }: { klass: TeacherClass; todayIso: string }
           {when && klass.state === "upcoming" && (
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--dz-mute)", whiteSpace: "nowrap" }}>{when}</span>
           )}
+          {klass.change && <Pill tone="warning">{klass.change}</Pill>}
           <Pill tone={pill.tone}>
             {klass.state === "off" ? offReason(Boolean(klass.lessonDaysLabel)) : pill.label}
           </Pill>

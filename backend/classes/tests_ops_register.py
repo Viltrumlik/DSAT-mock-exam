@@ -105,6 +105,43 @@ class RegisterPartTests(TestCase):
         body = self.register(month="2026-11").json()
         self.assertEqual([d["date"] for d in body["dates"]], ["2026-11-02", "2026-11-16"])
 
+    def test_a_changed_day_says_how_and_stays_a_column_to_undo_it(self):
+        from classes import lesson_changes as L
+
+        def change(*args):
+            return (L.move if len(args) == 4 else L.cancel)(*args, by=self.admin, today=TODAY)
+
+        cancelled = change(self.room, date(2026, 11, 20), "Teacher ill")
+        gone_by = change(self.room, date(2026, 11, 9), "Power cut")  # no register was held that day
+        moved = change(self.room, date(2026, 11, 23), date(2026, 11, 24), "Room taken")
+        holiday = change(None, date(2026, 11, 25), "Teachers' day")
+        change(None, date(2026, 11, 10), "Not our day")  # a Tuesday: this class never met on it
+        L.undo(change(self.room, date(2026, 11, 13), "Undone"), by=self.admin, today=TODAY)
+        dates = {d["date"]: (d["held"], d["change"]) for d in self.register(month="2026-11").json()["dates"]}
+        self.assertEqual(
+            list(dates),
+            ["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-20", "2026-11-23", "2026-11-24", "2026-11-25",
+             "2026-11-27", "2026-11-30"],
+        )
+        self.assertEqual(
+            dates["2026-11-20"], (False, {"id": cancelled.pk, "kind": "cancel", "reason": "Teacher ill", "holiday": False})
+        )
+        self.assertEqual(
+            dates["2026-11-09"], (False, {"id": gone_by.pk, "kind": "cancel", "reason": "Power cut", "holiday": False})
+        )
+        self.assertEqual(
+            dates["2026-11-23"],
+            (False, {"id": moved.pk, "kind": "move", "reason": "Room taken", "holiday": False, "new_day": "2026-11-24"}),
+        )
+        self.assertEqual(
+            dates["2026-11-24"],
+            (False, {"id": moved.pk, "kind": "move", "reason": "Room taken", "holiday": False, "from_day": "2026-11-23"}),
+        )
+        self.assertEqual(
+            dates["2026-11-25"], (False, {"id": holiday.pk, "kind": "cancel", "reason": "Teachers' day", "holiday": True})
+        )
+        self.assertEqual((dates["2026-11-02"], dates["2026-11-27"]), ((True, None), (False, None)))
+
     def test_the_desk_only(self):
         self.assertEqual(self.register(user=self.teacher).status_code, 403)
 

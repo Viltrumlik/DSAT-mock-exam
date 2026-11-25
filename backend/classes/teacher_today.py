@@ -52,6 +52,7 @@ from django.db.models import Count, Exists, OuterRef
 from django.utils import timezone
 
 from .capabilities import is_global_admin
+from .lesson_changes import day_effects
 from .lesson_schedule import has_begun, lesson_weekdays, next_lesson_start_after, parse_lesson_time
 from .models import Assignment, ClassroomMembership, Submission
 from .models_attendance import AttendanceRecord
@@ -249,7 +250,7 @@ def _lesson_length(classroom) -> timedelta:
     return timedelta(hours=hours)
 
 
-def _next_lesson_and_state(classroom, now, today, day_start):
+def _next_lesson_and_state(classroom, now, today, day_start, *, off_today=False, moved_in=False):
     """``(next_lesson_at | None, state)`` for one class.
 
     ``next_lesson_at`` is today's lesson while that lesson is still ahead or in progress, and
@@ -261,8 +262,21 @@ def _next_lesson_and_state(classroom, now, today, day_start):
     before midnight* answers "today's lesson if there is one, otherwise the next" in one call,
     and keeps the ``start_date`` floor (a class that has not begun resolves to its first
     lesson, not to a lesson in its past).
+
+    Lesson changes (``off_today``: called off, moved away or a centre holiday; ``moved_in``:
+    a lesson moved to today) override the weekday rule for today only: an off day is not a
+    lesson, so the class points at its next one; a moved-in lesson sits at the class's time.
     """
-    first = next_lesson_start_after(classroom, after=day_start - timedelta(microseconds=1))
+    if off_today:
+        nxt = next_lesson_start_after(classroom, after=day_start + timedelta(days=1) - timedelta(microseconds=1))
+        return (nxt, STATE_UPCOMING) if nxt else (None, STATE_OFF)
+    if moved_in:
+        start = parse_lesson_time(classroom.lesson_time)
+        if start is None:
+            return None, STATE_OFF
+        first = timezone.make_aware(datetime.combine(today, start), timezone.get_current_timezone())
+    else:
+        first = next_lesson_start_after(classroom, after=day_start - timedelta(microseconds=1))
     if first is None:
         # No weekdays, or a lesson_time nothing can read. The class is still listed — it is
         # a real class with real students — it just cannot be put on a clock.
@@ -777,8 +791,12 @@ def build_teacher_today(user, now=None) -> dict:
         students_by_class[m.classroom_id].append(m.user)
 
     # ── 4.1 Every class, with its schedule and where its lesson stands ───────
-    todays_ids = [c.id for c in classrooms if _meets_today(c, today)]
-    homework_by_class = _todays_homework(todays_ids, day_start, day_end)  # query 3
+    off_today, moved_in = day_effects([c.id for c in classrooms], today)  # query 3 (lesson changes)
+    todays_ids = [
+        c.id for c in classrooms
+        if (c.id in moved_in or _meets_today(c, today)) and c.id not in off_today
+    ]
+    homework_by_class = _todays_homework(todays_ids, day_start, day_end)  # query 4
     todays_student_ids = [u.id for cid in todays_ids for u in students_by_class.get(cid, [])]
     turned_in = _turned_in_by_assignment(  # queries 4 + 5
         [a.id for a in homework_by_class.values()], todays_student_ids
@@ -787,7 +805,14 @@ def build_teacher_today(user, now=None) -> dict:
     rows = []
     for classroom in classrooms:
         students = students_by_class.get(classroom.id, [])
-        next_lesson_at, state = _next_lesson_and_state(classroom, now, today, day_start)
+        # A change only marks a class that would have met today by its weekdays (a holiday is not news to a
+        # class that does not meet); a lesson moved in sits on a day the weekdays do not name.
+        meets_by_rule = _meets_today(classroom, today)
+        off = off_today.get(classroom.id) if meets_by_rule else None
+        moved_here = classroom.id in moved_in and classroom.id not in off_today
+        next_lesson_at, state = _next_lesson_and_state(
+            classroom, now, today, day_start, off_today=off is not None, moved_in=moved_here and not meets_by_rule
+        )
         row = {
             "classroom_id": classroom.id,
             "name": classroom.name,
@@ -800,6 +825,7 @@ def build_teacher_today(user, now=None) -> dict:
             "demo_count": demo_by_class.get(classroom.id, 0),
             "next_lesson_at": _local_iso(next_lesson_at),
             "state": state,
+            "change": off,
             "homework": None,
         }
         homework = homework_by_class.get(classroom.id)

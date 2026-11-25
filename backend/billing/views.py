@@ -39,6 +39,8 @@ def _rules() -> dict:
 def _row_label(entry) -> str:
     if entry.key.startswith(ledger.LESSON_KEY):
         return "Lesson"
+    if entry.key.startswith(ledger.MOVED_KEY):
+        return "Lesson (moved)"
     if entry.key.startswith(ledger.FIRST_KEY):
         return "First month"
     return entry.get_kind_display()

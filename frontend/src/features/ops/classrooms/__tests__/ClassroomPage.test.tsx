@@ -408,6 +408,15 @@ describe("the header", () => {
     expect(header().textContent).toContain("Today 14:00 · 2 of 2 students marked");
   });
 
+  it("says a cancelled lesson is cancelled, with the reason, instead of counting marks", async () => {
+    const change = { kind: "cancel" as const, reason: "Teacher ill", new_day: null, text: "Lesson cancelled: Teacher ill" };
+    route(core({ glance: { ...core().glance, today: { lesson_time: "20:00-22:00", students: 4, marked: null, change } } }));
+    await renderPage();
+    expect(header().textContent).toContain("Lesson cancelled: Teacher ill");
+    expect(header().textContent).not.toContain("marked");
+    expect(header().textContent).not.toContain("Today");
+  });
+
   it("marks the last lesson from the header for an admin, and not for a teacher", async () => {
     route(core());
     await renderPage();

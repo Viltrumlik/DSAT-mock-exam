@@ -109,6 +109,13 @@ from .views_ops_classrooms import (
     LessonsTodayView,
 )
 from .views_seats import SeatActionView, SeatAddView, SeatNewStudentView
+from .views_lesson_changes import (
+    HolidayView,
+    LessonCancelView,
+    LessonChangeListView,
+    LessonChangeUndoView,
+    LessonMoveView,
+)
 from .views_ops_archive import ArchiveGroupsView, ArchiveStudentsView
 from .views_teacher import TeacherTodayView
 from .views_media import AssignmentVideoUploadUrlView
@@ -157,6 +164,12 @@ urlpatterns = [
     path("admin/classrooms/", ClassroomChangeListView.as_view(), name="ops-classrooms"),
     # The ops Today board's "Lessons today": every active class that meets on a day, and its register.
     path("admin/lessons/today/", LessonsTodayView.as_view(), name="ops-lessons-today"),
+    # A lesson day cancelled or moved, a centre holiday, and undoing them (views_lesson_changes).
+    path("admin/lessons/holiday/", HolidayView.as_view(), name="ops-lesson-holiday"),
+    path("admin/lesson-changes/", LessonChangeListView.as_view(), name="ops-lesson-changes"),
+    path("admin/lesson-changes/<int:change_id>/undo/", LessonChangeUndoView.as_view(), name="ops-lesson-change-undo"),
+    path("admin/classrooms/<int:pk>/lessons/cancel/", LessonCancelView.as_view(), name="ops-classroom-lesson-cancel"),
+    path("admin/classrooms/<int:pk>/lessons/move/", LessonMoveView.as_view(), name="ops-classroom-lesson-move"),
     # The /ops Archive: students who left a group, and archived groups. Read-only.
     path("admin/archive/students/", ArchiveStudentsView.as_view(), name="ops-archive-students"),
     path("admin/archive/groups/", ArchiveGroupsView.as_view(), name="ops-archive-groups"),
