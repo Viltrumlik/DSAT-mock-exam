@@ -218,7 +218,7 @@ def _glance(room) -> dict:
             "handed_in": sum(len(done.get(u, set()) & published) for u in ids),
             "expected": len(ids) * len(published),
         },
-        "owing": LcupStudentLink.objects.filter(user_id__in=ids, balance__lt=0).count() if ids else 0,
+        "owing": sum(1 for b in _owed_balances(ids).values() if b is not None and b < 0) if ids else 0,
         "today": _today(room, ids),
     }
 

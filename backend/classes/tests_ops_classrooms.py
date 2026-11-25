@@ -379,6 +379,28 @@ class DemoSeatsAreNotStudentsTests(ClassroomFixture):
         with override_settings(BILLING_MODE="lesson", BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
             self.assertIs(flag(), True)
 
+    def test_the_header_owing_reads_the_same_source_as_the_roster_owes(self):
+        from billing import ledger
+        from billing.models import Account, EntryKind
+
+        a1 = User.objects.get(username="a1")
+        LcupStudentLink.objects.create(
+            lcup_student_id=78, name="A One", user=a1, status=LinkStatus.AUTO, balance=Decimal("-100000"),
+        )  # lc-up's frozen figure says A One owes; the ledger says paid up
+        ledger.post(Account.objects.create(user=a1), EntryKind.PAYMENT, 50000, date(2026, 11, 10), "owing-test")
+
+        def owing():
+            return self.get(f"{URL}{self.room.pk}/").json()["glance"]["owing"]
+
+        with override_settings(BILLING_PAYMENTS_OPEN=False, BILLING_SHADOW_ENABLED=False):
+            self.assertEqual(owing(), 1)
+        with override_settings(BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertEqual(owing(), 0)
+        f1 = User.objects.get(username="f1")
+        ledger.post(Account.objects.create(user=f1), EntryKind.CHARGE, -500000, date(2026, 11, 10), "owing-test-2")
+        with override_settings(BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertEqual(owing(), 1)  # a paying student who owes in the ledger only
+
     def test_a_demo_mark_is_not_a_student_marked_in_the_header(self):
         session = AttendanceSession.objects.create(classroom=self.room, date=WEDNESDAY)
         for name in ("a1", "t1"):  # a paying student and the demo are marked present; the frozen one is not
