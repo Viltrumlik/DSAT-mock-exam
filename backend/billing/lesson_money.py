@@ -83,7 +83,8 @@ def _summary(spans, voided) -> dict:
 
 def apply(change, *, today: date, by) -> dict:
     """The change's day is not charged: its lesson already written is voided with the reason. A move's lesson is
-    charged on its new day once that day has come. Returns ``{"voided", "students", "amount", "unfrozen", "frozen"}``."""
+    charged on its new day once that day has come. Returns ``{"voided", "students", "amount", "unfrozen",
+    "frozen"}``."""
     words = (
         f"Lesson moved to {change.new_day}: {change.reason}" if change.new_day else f"Lesson cancelled: {change.reason}"
     )
@@ -107,8 +108,9 @@ def revert(change, *, today: date, by) -> dict:
         spans = _spans(change)
         voided = []
         if change.new_day is not None:
+            words = f"Move undone: {change.reason}"
             for span in spans:
-                row = _void_live(f"{ledger.MOVED_KEY}{span.pk}:{change.day.isoformat()}", f"Move undone: {change.reason}", by)
+                row = _void_live(f"{ledger.MOVED_KEY}{span.pk}:{change.day.isoformat()}", words, by)
                 if row is not None:
                     voided.append(row)
         for span in spans:

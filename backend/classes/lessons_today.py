@@ -92,6 +92,12 @@ def meeting_classrooms(day: date, changes: list | None = None) -> list[Classroom
     )
 
 
+def _change_order(change) -> tuple:
+    """A centre holiday first, then by class name."""
+    name = change.classroom.name if change.classroom_id else ""
+    return change.classroom_id is not None, name.casefold(), change.pk
+
+
 def _change_row(change) -> dict:
     return {
         "id": change.pk,
@@ -250,11 +256,5 @@ def lessons_today(day: date, *, now: datetime | None = None) -> dict:
             "no_teacher": sum(1 for row in lessons if row["teacher"] is None),
         },
         # The day's lesson changes, for the timetable's table that undoes them: a centre holiday first, then by class.
-        "changes": [
-            _change_row(change)
-            for change in sorted(
-                changes,
-                key=lambda c: (c.classroom_id is not None, (c.classroom.name if c.classroom_id else "").casefold(), c.pk),
-            )
-        ],
+        "changes": [_change_row(change) for change in sorted(changes, key=_change_order)],
     }

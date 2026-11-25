@@ -122,7 +122,9 @@ def _create(**fields) -> LessonChange:
 
 
 def _with_money(change: LessonChange, *, today: date, by) -> LessonChange:
-    from billing import lesson_money  # here, not at the top: billing reads this module while it bills
+    # Here, not at the top: billing imports this module too (``ledger._bill_lessons``), so neither loads the other
+    # while it is itself being loaded.
+    from billing import lesson_money
 
     change.money = lesson_money.apply(change, today=today, by=by)
     return change
@@ -140,7 +142,9 @@ def cancel(room, day: date, reason, *, by, today: date) -> LessonChange:
         moved_in = _live().filter(kind=LessonChange.Kind.MOVE, new_day=day).select_related("classroom").first()
         if moved_in is not None:
             # A lesson moved to a holiday would still be charged: the new day of a move is never a holiday.
-            raise ChangeRefused(f"A lesson of {moved_in.classroom.name} was moved to {short(day)}. Undo that move first.")
+            raise ChangeRefused(
+                f"A lesson of {moved_in.classroom.name} was moved to {short(day)}. Undo that move first."
+            )
     else:
         _check_class_day(room, day)
         if _holiday_on(day):

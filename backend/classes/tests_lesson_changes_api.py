@@ -147,7 +147,9 @@ class EndpointTests(ApiCase):
         self.assertEqual((body["from"], body["to"], len(body["changes"])), ("2026-11-08", "2027-02-07", 1))
 
     def test_unknown_things_are_not_found(self):
-        self.assertEqual(self.call("post", "/api/classes/admin/classrooms/999999/lessons/cancel/", {"day": "2026-12-07", "reason": "r"}).status_code, 404)
+        body = {"day": "2026-12-07", "reason": "r"}
+        missing = self.call("post", "/api/classes/admin/classrooms/999999/lessons/cancel/", body)
+        self.assertEqual(missing.status_code, 404)
         self.assertEqual(self.undo(999999).status_code, 404)
 
 
@@ -161,7 +163,8 @@ class RefusalTests(ApiCase):
         self.assertEqual(self.cancel(reason="  ").json(), {"detail": "A lesson change needs a reason."})
         for bad in ("", "2026-02-30", "8 Dec"):
             with self.subTest(day=bad):
-                self.assertEqual((self.cancel(bad).status_code, self.cancel(bad).json()), (400, {"detail": "That is not a date."}))
+                response = self.cancel(bad)
+                self.assertEqual((response.status_code, response.json()), (400, {"detail": "That is not a date."}))
         self.assertEqual(self.move(new_day="soon").json(), {"detail": "That is not a date."})
         self.assertEqual(self.listed(**{"from": "yesterday"}).status_code, 400)
         self.assertEqual(self.listed(classroom="x").status_code, 400)
