@@ -68,6 +68,7 @@ class StudentsBoardTests(TestCase):
 
     def test_a_group_cell_carries_the_course_room_teacher_seat_and_start(self):
         rows = {r["id"]: r for r in self.get()["results"]}
+        rows.update({r["id"]: r for r in self.get(show="trial")["results"]})  # laylo: demo only, under the Demo chip
         self.assertEqual(
             rows[self.aziz.pk]["groups"],
             [{
@@ -90,16 +91,17 @@ class StudentsBoardTests(TestCase):
     def test_the_chips_count_and_filter(self):
         body = self.get()
         self.assertEqual(
-            self.facet(body, "show"), {"all": 4, "owes": 1, "trial": 1, "frozen": 1, "nogroup": 1}
+            self.facet(body, "show"), {"all": 3, "owes": 1, "trial": 1, "frozen": 1, "nogroup": 1}
         )
         self.assertEqual(self.ids(self.get(show="owes")), [self.aziz.pk])
         self.assertEqual(self.ids(self.get(show="trial")), [self.laylo.pk])
         self.assertEqual(self.ids(self.get(show="frozen")), [self.olim.pk])
         self.assertEqual(self.ids(self.get(show="nogroup")), [self.nobody.pk])
         # "All" filters nothing.
-        self.assertEqual(len(self.get(show="all")["results"]), 4)
-        # The chips count with the other filters applied.
-        self.assertEqual(self.facet(self.get(group=str(self.junior.pk)), "show")["all"], 2)
+        self.assertEqual(len(self.get(show="all")["results"]), 3)  # laylo holds only a demo seat: under the Demo chip
+        # The chips count with the other filters applied; the Demo chip still counts the demo-only person.
+        body = self.get(group=str(self.junior.pk))
+        self.assertEqual((self.facet(body, "show")["all"], self.facet(body, "show")["trial"]), (1, 1))
 
     def test_a_seat_in_an_archived_class_is_no_group(self):
         Classroom.objects.filter(pk=self.middle.pk).update(is_active=False)
@@ -110,10 +112,10 @@ class StudentsBoardTests(TestCase):
         course = next(f for f in body["filters"] if f["key"] == "course")
         self.assertEqual(
             [(o["value"], o["label"], o["count"]) for o in course["options"]],
-            [("junior:MATH", "Junior Math", 2), ("middle:ENGLISH", "Middle English", 1)],
+            [("junior:MATH", "Junior Math", 1), ("middle:ENGLISH", "Middle English", 1)],
         )
-        self.assertEqual(self.ids(self.get(course="junior:MATH")), sorted([self.aziz.pk, self.laylo.pk]))
-        self.assertEqual(len(self.get(course="nonsense")["results"]), 4)  # ignored
+        self.assertEqual(self.ids(self.get(course="junior:MATH")), [self.aziz.pk])
+        self.assertEqual(len(self.get(course="nonsense")["results"]), 3)  # ignored
 
     def test_phone_and_parent_phone_filters_match_the_digits_typed(self):
         self.assertEqual(self.ids(self.get(phone="93 518")), [self.aziz.pk])
@@ -121,4 +123,59 @@ class StudentsBoardTests(TestCase):
         self.assertEqual(self.ids(self.get(parent_phone="300-11-72")), [self.aziz.pk])
         self.assertEqual(self.ids(self.get(parent_phone="000000")), [])
         # Typed letters alone filter nothing.
-        self.assertEqual(len(self.get(phone="abc")["results"]), 4)
+        self.assertEqual(len(self.get(phone="abc")["results"]), 3)
+
+
+@override_settings(ALLOWED_HOSTS=["testserver", HOST])
+class DemoOnlyPeopleTests(TestCase):
+    """A person whose only live seat is a demo (trial) one is not in the default list: they sit under the
+    Demo chip, and a search still finds them."""
+
+    def setUp(self):
+        self.admin = make("boss", C.ROLE_ADMIN)
+        self.room = Classroom.objects.create(name="G1 Math", subject="MATH", level="junior", created_by=self.admin)
+        self.other = Classroom.objects.create(name="G2 Math", subject="MATH", level="junior", created_by=self.admin)
+        self.paying = make("paying", first_name="Pay", last_name="Ing")
+        self.demo = make("demoonly", first_name="Dema", last_name="Only")
+        self.mixed = make("mixed", first_name="Mix", last_name="Ed")
+        for room, user, seat in (
+            (self.room, self.paying, SEAT.SEAT_ACTIVE),
+            (self.room, self.demo, SEAT.SEAT_TRIAL),
+            (self.room, self.mixed, SEAT.SEAT_TRIAL),
+            (self.other, self.mixed, SEAT.SEAT_FROZEN),
+        ):
+            ClassroomMembership.objects.create(classroom=room, user=user, role=SEAT.ROLE_STUDENT, seat_status=seat)
+
+    get = StudentsBoardTests.get
+    ids = StudentsBoardTests.ids
+    facet = StudentsBoardTests.facet
+
+    def test_the_default_list_and_its_total_leave_out_a_demo_only_person(self):
+        body = self.get()
+        self.assertEqual(self.ids(body), sorted([self.paying.pk, self.mixed.pk]))
+        self.assertEqual((body["count"], self.facet(body, "show")["all"]), (2, 2))
+
+    def test_the_demo_chip_counts_and_lists_everyone_holding_a_demo_seat(self):
+        self.assertEqual(self.facet(self.get(), "show")["trial"], 2)
+        shown = self.get(show="trial")
+        self.assertEqual(self.ids(shown), sorted([self.demo.pk, self.mixed.pk]))
+        self.assertEqual({r["id"]: r["is_demo_only"] for r in shown["results"]}, {self.demo.pk: True, self.mixed.pk: False})
+
+    def test_the_demo_chip_count_follows_the_other_filters(self):
+        body = self.get(group=str(self.room.pk))
+        self.assertEqual((self.facet(body, "show")["trial"], self.facet(body, "show")["all"]), (2, 2))
+        body = self.get(q="nobody-matches")
+        self.assertEqual(self.facet(body, "show")["trial"], 0)
+
+    def test_a_search_finds_a_demo_only_person_with_the_flag(self):
+        body = self.get(q="dema")
+        self.assertEqual(self.ids(body), [self.demo.pk])
+        self.assertTrue(body["results"][0]["is_demo_only"])
+
+    def test_the_chip_is_labelled_demo(self):
+        show = next(f for f in self.get()["filters"] if f["key"] == "show")
+        self.assertEqual({o["value"]: o["label"] for o in show["options"]}["trial"], "Demo")
+
+    def test_a_paying_row_is_not_demo_only(self):
+        rows = {r["id"]: r for r in self.get()["results"]}
+        self.assertFalse(rows[self.paying.pk]["is_demo_only"])

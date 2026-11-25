@@ -28,8 +28,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from access import constants as acc_const
-from access.permissions import require
-from access.services import authorize, covers_domain_subject, normalized_role
+from access.permissions import HasManageClassrooms, require
+from access.services import authorize, covers_domain_subject, is_global_scope_staff, normalized_role
 from access.engine.classroom_service import ClassroomAccessService
 from access.resources import RT_MIDTERM
 from exams.models import MockExam
@@ -525,3 +525,39 @@ class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
         if terms != (classroom.monthly_price, classroom.lesson_days):
             class_terms_changed(classroom)
         return Response(ClassroomSerializer(classroom, context={"request": request}).data)
+
+
+class _IsDeskStaff(IsAuthenticated):
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and is_global_scope_staff(request.user)
+
+
+class TeacherChoicesView(APIView):
+    """Who the "Add classroom" form offers as the teacher and as support teachers.
+
+    The form used to read the whole user directory (``/api/users/``), which needs ``manage_users`` or
+    ``assign_access``; an administrator the owner had changed got an empty list and the class's teacher
+    became its creator. This list opens with what creating a class needs (``create_classroom``, desk staff
+    only, the same as the create endpoint) and carries nothing but who can teach."""
+
+    permission_classes = [_IsDeskStaff, HasManageClassrooms]
+
+    def get(self, request):
+        def rows(role):
+            people = User.objects.filter(role=role, is_active=True).order_by("first_name", "last_name", "email")
+            return [
+                {
+                    "id": person.pk,
+                    "name": " ".join(filter(None, [person.first_name, person.last_name])).strip()
+                    or person.email
+                    or person.username
+                    or f"#{person.pk}",
+                    "email": person.email or "",
+                    "subject": person.subject,
+                }
+                for person in people
+            ]
+
+        return Response(
+            {"teachers": rows(acc_const.ROLE_TEACHER), "support_teachers": rows(acc_const.ROLE_SUPPORT_TEACHER)}
+        )

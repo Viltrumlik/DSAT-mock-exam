@@ -6,9 +6,9 @@ import { P } from "@/features/ops/permissions";
  * tab without importing the page (and every panel with it).
  */
 
-export type SmsTab = "overview" | "journal" | "campaigns" | "debt" | "templates";
+export type SmsTab = "overview" | "journal" | "campaigns" | "debt" | "balance" | "templates";
 
-export const SMS_TAB_IDS: readonly SmsTab[] = ["overview", "journal", "campaigns", "debt", "templates"];
+export const SMS_TAB_IDS: readonly SmsTab[] = ["overview", "journal", "campaigns", "debt", "balance", "templates"];
 
 /** The tabs' names — on the page and in the console panel's tree under SMS (Shell v0.4). */
 export const SMS_TAB_LABEL: Record<SmsTab, string> = {
@@ -16,11 +16,12 @@ export const SMS_TAB_LABEL: Record<SmsTab, string> = {
   journal: "Journal",
   campaigns: "Campaigns",
   debt: "Debt warnings",
+  balance: "Balance",
   templates: "Templates",
 };
 
 /**
- * What each tab needs: the overview and journal open to anyone who sends; the debt warnings are `send_debt_sms`'s.
+ * What each tab needs: the overview and journal open to anyone who sends; the debt warnings are `send_debt_sms`'s; the balance SMS (its settings and "Send now") is `send_sms`'s.
  * The page shows only the tabs a person may open; so does the panel's tree.
  */
 export const SMS_TAB_NEEDS: Record<SmsTab, readonly string[]> = {
@@ -28,6 +29,7 @@ export const SMS_TAB_NEEDS: Record<SmsTab, readonly string[]> = {
   journal: [P.sendSms, P.sendDebtSms],
   campaigns: [P.sendSms],
   debt: [P.sendDebtSms],
+  balance: [P.sendSms],
   templates: [P.sendSms],
 };
 

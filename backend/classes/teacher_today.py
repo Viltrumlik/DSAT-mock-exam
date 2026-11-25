@@ -782,7 +782,12 @@ def build_teacher_today(user, now=None) -> dict:
         .select_related("user")
         .order_by("user__last_name", "user__first_name", "user_id")
     )
+    demo_by_class: dict[int, int] = defaultdict(int)
     for m in memberships:
+        # A demo (trial) seat is no student: counted apart, and not in the homework figures.
+        if m.seat_status == ClassroomMembership.SEAT_TRIAL:
+            demo_by_class[m.classroom_id] += 1
+            continue
         students_by_class[m.classroom_id].append(m.user)
 
     # ── 4.1 Every class, with its schedule and where its lesson stands ───────
@@ -817,6 +822,7 @@ def build_teacher_today(user, now=None) -> dict:
             "lesson_days_label": _lesson_days_label(classroom),
             "lesson_time": _lesson_time_label(classroom),
             "student_count": len(students),
+            "demo_count": demo_by_class.get(classroom.id, 0),
             "next_lesson_at": _local_iso(next_lesson_at),
             "state": state,
             "change": off,

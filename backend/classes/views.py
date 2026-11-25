@@ -344,7 +344,9 @@ def annotate_member_counts(qs):
             filter=Q(
                 memberships__role=ClassroomMembership.ROLE_STUDENT,
                 memberships__status=ClassroomMembership.STATUS_ACTIVE,
-            ),
+            )
+            # A demo (trial) seat holds a chair but is not a student: counted apart.
+            & ~Q(memberships__seat_status=ClassroomMembership.SEAT_TRIAL),
             distinct=True,
         ),
     )

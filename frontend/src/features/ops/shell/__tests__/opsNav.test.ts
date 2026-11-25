@@ -54,7 +54,7 @@ describe("OPS_CATEGORIES", () => {
     expect(map(daily)).toEqual([[null, ["Students", "Groups", "Timetable", "Finance", "Archive"]]]);
     expect(daily.groups[0].items.filter((i) => i.hidden).map((i) => i.href)).toEqual(["/ops/timetable"]);
     expect(map(teaching)).toEqual([[null, ["Journals", "Midterm results", "Mock sittings", "Exam dates", "Branches"]]]);
-    expect(map(centre)).toEqual([[null, ["Trials", "SMS", "Telegram posts", "Support hours", "Reward shop", "lc-up link"]]]);
+    expect(map(centre)).toEqual([[null, ["Demo", "SMS", "Telegram posts", "Support hours", "Reward shop", "lc-up link"]]]);
     expect(map(content)).toEqual([[null, ["Events", "Surveys", "Stories"]]]);
     expect(map(system)).toEqual([[null, ["Public users", "Staff", "Access", "Mobile app", "Broadcast"]]]);
   });
@@ -114,9 +114,9 @@ describe("OPS_CATEGORIES", () => {
     // lc-up's Moliya opens on Qarzdorlar: Debtors is Finance's first tab.
     expect(tabsFor(SUPER_ADMIN, "/ops/finance")?.[0]).toBe("Debtors");
     expect(tabsFor(SUPER_ADMIN, "/ops/finance")).toEqual(expect.arrayContaining(["Overview", "Debtors", "Payments", "Ledger"]));
-    expect(tabsFor(SUPER_ADMIN, "/ops/sms")).toEqual(["Overview", "Journal", "Campaigns", "Debt warnings", "Templates"]);
+    expect(tabsFor(SUPER_ADMIN, "/ops/sms")).toEqual(["Overview", "Journal", "Campaigns", "Debt warnings", "Balance", "Templates"]);
     expect(tabsFor(SUPER_ADMIN, "/ops/lcup")).toEqual(["Status", "Groups", "Students", "Teachers", "Accounts", "Attendance", "Archive"]);
-    expect(tabsFor(SUPER_ADMIN, "/ops/trials")).toEqual(["Trial students", "Not on class list"]);
+    expect(tabsFor(SUPER_ADMIN, "/ops/trials")).toEqual(["Demo students", "Not on class list"]);
   });
 
   it("no longer lists the old single Users page", () => {
@@ -218,7 +218,7 @@ describe("visibleNav / visibleCategories", () => {
   });
 
   it("goes to a section's first page the person may open", () => {
-    // An accountant's Centre starts at SMS: Trials is not theirs.
+    // An accountant's Centre starts at SMS: Demo is not theirs.
     const centre = visibleCategories(OPS_CATEGORIES, ACCOUNTANT).find((c) => c.id === "centre")!;
     expect(firstHref(centre)).toBe("/ops/sms");
     expect(firstHref(OPS_CATEGORIES[3])).toBe("/ops/trials");

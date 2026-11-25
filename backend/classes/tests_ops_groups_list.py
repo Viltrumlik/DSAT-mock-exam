@@ -1,5 +1,5 @@
 """The Groups list in lc-up's shape (classes/ops_groups_list.py): price, start, trial seats and lessons done against
-the course's length on a row; the Course, Room and Price filters; the "Ends this week" and "Has trial students"
+the course's length on a row; the Course, Room and Price filters; the "Ends this week" and "Has demo students"
 chips."""
 
 from datetime import date, timedelta
@@ -88,7 +88,7 @@ class GroupsBoardTests(TestCase):
     def test_a_row_carries_price_start_trial_and_teacher_names(self):
         row = self.rows()[self.foundation.pk]
         self.assertEqual(
-            (row["monthly_price"], row["start_date"], row["students"], row["trial"]), (500000, "2026-11-06", 2, 1)
+            (row["monthly_price"], row["start_date"], row["students"], row["trial"]), (500000, "2026-11-06", 1, 1)
         )
         self.assertEqual((row["teacher_first_name"], row["teacher_last_name"]), ("Bekzod", "Toshmatov"))
         self.assertEqual(row["lesson_hours"], 2)
@@ -116,6 +116,8 @@ class GroupsBoardTests(TestCase):
             self.mark(self.foundation, start + timedelta(days=i))
         body = self.get()
         self.assertEqual(self.facet(body, "show"), {"all": 3, "ends": 1, "trial": 1})
+        show = next(f for f in body["filters"] if f["key"] == "show")
+        self.assertIn("Has demo students", [o["label"] for o in show["options"]])
         self.assertEqual(list(self.rows(show="ends")), [self.foundation.pk])
         self.assertEqual(list(self.rows(show="trial")), [self.foundation.pk])
         self.assertEqual(len(self.rows(show="all")), 3)

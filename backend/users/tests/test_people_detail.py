@@ -52,6 +52,13 @@ class PersonCoreTests(TestCase):
         self.assertTrue(body["lcup_created"])
         self.assertIsNone(body["staff"])
 
+    def test_a_person_whose_only_live_seat_is_a_demo_is_marked_demo_only(self):
+        self.assertFalse(self.get(self.aziz.pk).json()["is_demo_only"])
+        ClassroomMembership.objects.filter(user=self.aziz, classroom=self.paired).update(seat_status="trial")
+        self.assertTrue(self.get(self.aziz.pk).json()["is_demo_only"])
+        ClassroomMembership.objects.create(classroom=self.own, user=self.aziz, role="STUDENT")
+        self.assertFalse(self.get(self.aziz.pk).json()["is_demo_only"])  # a paying seat as well
+
     def test_the_lcup_part_says_whether_the_debt_freeze_runs(self):
         with self.settings(LCUP_DEBT_FREEZE_ENABLED=False):
             self.assertFalse(self.get(self.aziz.pk).json()["lcup"]["freeze_on"])

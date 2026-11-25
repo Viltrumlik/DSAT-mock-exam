@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { CalendarPlus, CheckCircle2, Lock, TrendingUp, TrendingDown, Minus, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { DemoBadge } from "@/features/console/ui";
 import { Card, CardHeader, Button, Input, Pill, EmptyState, LoadingState, ErrorState, StatCard, Select } from "../ui";
 import type { PillTone } from "../ui";
 import { capabilitiesFor } from "../capabilities";
@@ -243,6 +244,11 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
     if (records.length) await mark.mutateAsync(records);
   }
 
+  // Demo rows come last (the server sorts them so; this keeps an older server's roster in the same order).
+  const isDemo = (r: RosterRow) => r.is_demo ?? r.lcup_trial != null;
+  const rosterRows = [...data.roster].sort((a, b) => Number(isDemo(a)) - Number(isDemo(b)));
+  const firstDemo = rosterRows.findIndex(isDemo);
+
   return (
     <Card>
       <CardHeader
@@ -293,11 +299,18 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
       </div>
 
       <div className="mt-4 divide-y divide-border">
-        {data.roster.map((r: RosterRow) => {
+        {rosterRows.map((r: RosterRow) => {
           // Paused in lc-up: on the register, but lc-up takes no mark for them, so none is offered.
           const locked = !writable || !!r.frozen_in_lcup;
           return (
-            <div key={r.student_id} className="py-2.5">
+            <Fragment key={r.student_id}>
+              {/* A demo (trial) seat is no student yet: its rows sit under a "Demo" heading, after the roster. */}
+              {r === rosterRows[firstDemo] ? (
+                <div role="group" aria-label="Demo" className="pb-1 pt-5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Demo ({rosterRows.length - firstDemo})
+                </div>
+              ) : null}
+            <div className="py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="min-w-0 truncate text-sm text-foreground">{r.name}</span>
@@ -317,17 +330,18 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
                   {r.lcup_trial ? (
                     r.lcup_trial.free_used ? (
                       <span
-                        title="They have had the free trial lesson. Send them to the admin to be activated in lc-up."
+                        title="They have had the free demo lesson. Send them to the admin to be activated."
                         className="max-w-full rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
                       >
-                        Free trial used — send to the admin
+                        Free lesson used — send to the admin
                       </span>
                     ) : (
                       <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                        {r.lcup_trial.lessons_before === 0 ? "Trial · 1st lesson" : `Trial · lesson ${r.lcup_trial.lessons_before + 1}`}
+                        {r.lcup_trial.lessons_before === 0 ? "Demo · 1st lesson (free)" : `Demo · lesson ${r.lcup_trial.lessons_before + 1}`}
                       </span>
                     )
                   ) : null}
+                  {r.is_demo && !r.lcup_trial ? <DemoBadge className="shrink-0" /> : null}
                 </span>
                 <div className="flex shrink-0 gap-1">
                   {STATUSES.map((st) => {
@@ -363,10 +377,11 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
               )}
               {r.lcup_trial?.free_used && (local[r.student_id] === "PRESENT" || local[r.student_id] === "LATE") && (
                 <p role="status" className="mt-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-                  {r.name} has already had the free trial lesson — send them to the admin to be activated in lc-up.
+                  {r.name} has already had the free demo lesson — send them to the admin to be activated.
                 </p>
               )}
             </div>
+            </Fragment>
           );
         })}
         {data.roster.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No students enrolled yet.</p>}

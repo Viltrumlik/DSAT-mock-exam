@@ -60,3 +60,21 @@ class PopulationTests(TestCase):
         self.assertEqual(resp.status_code, 200, resp.content)
         self.debtor.refresh_from_db()
         self.assertEqual((self.debtor.is_frozen, self.debtor.frozen_reason), (False, ""))
+
+
+class PopulationDemoTests(TestCase):
+    def test_a_demo_only_student_is_counted_as_demo_not_as_centre(self):
+        from classes.models import Classroom, ClassroomMembership
+
+        admin = User.objects.create_user("a@example.com", password="x", username="adm", role="super_admin")
+        room = Classroom.objects.create(name="G1", subject="MATH", created_by=admin)
+        paying = User.objects.create_user(None, password=None, username="paying", role=C.ROLE_STUDENT)
+        demo = User.objects.create_user(None, password=None, username="demo", role=C.ROLE_STUDENT)
+        for user, seat in ((paying, "active"), (demo, "trial")):
+            ClassroomMembership.objects.create(
+                classroom=room, user=user, role=ClassroomMembership.ROLE_STUDENT, seat_status=seat
+            )
+        api = APIClient()
+        api.force_authenticate(admin)
+        body = api.get("/api/users/admin/population/").json()
+        self.assertEqual((body["centre"], body["demo"]), (1, 1))

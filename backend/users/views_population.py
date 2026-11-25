@@ -13,6 +13,7 @@ from access.permissions import Requires
 
 from . import audience as A
 from .models import RoleChange, User
+from .people_detail import demo_only_q
 
 
 class PopulationView(APIView):
@@ -24,7 +25,9 @@ class PopulationView(APIView):
         now = timezone.now()
         learners = User.objects.filter(is_active=True, role__in=C.LEARNER_ROLES)
         body = learners.aggregate(
-            centre=Count("id", filter=Q(role=C.ROLE_STUDENT, is_frozen=False)),
+            # A person whose only live seat is a demo one is a demo, not a centre student.
+            centre=Count("id", filter=Q(role=C.ROLE_STUDENT, is_frozen=False) & ~demo_only_q()),
+            demo=Count("id", filter=Q(role=C.ROLE_STUDENT) & demo_only_q()),
             public=Count("id", filter=Q(role=C.ROLE_PUBLIC_STUDENT, is_frozen=False)),
             frozen_debt=Count("id", filter=Q(is_frozen=True, frozen_reason=A.FROZEN_LCUP_DEBT)),
             frozen_admin=Count("id", filter=Q(is_frozen=True) & ~Q(frozen_reason=A.FROZEN_LCUP_DEBT)),

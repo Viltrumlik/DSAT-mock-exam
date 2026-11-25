@@ -3,8 +3,8 @@
 /**
  * /ops/sms — everything the eskiz SMS account does, for super admins and admins (plan
  * 2026-10-18-sms-ops-panel.md): the balance and the account's health, a journal of every SMS,
- * campaigns to a student, a class or the debtors, the automatic debt warning's knobs, and the
- * eskiz templates. One page with five tabs; the open tab lives in `?tab=` so a link, a reload and
+ * campaigns to a student, a class or the debtors, the automatic debt warning's knobs, the low-balance
+ * and frozen SMS to parents, and the eskiz templates. One page with six tabs; the open tab lives in `?tab=` so a link, a reload and
  * Back land on it, and the Overview is the bare address.
  *
  * Every SMS costs money and cannot be unsent, so every send in here asks first with the count
@@ -13,13 +13,14 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BellRing, FileText, Gauge, ScrollText, Send } from "lucide-react";
+import { BellRing, FileText, Gauge, ScrollText, Send, Wallet } from "lucide-react";
 
 import { Tabs } from "@/features/console/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { activeTab, panelId, tabId, type Tab } from "@/features/ops/detail/tabs";
 import { useCan } from "@/features/ops/useCan";
 import { BalanceBanner } from "./BalanceBanner";
+import { BalancePanel } from "./BalancePanel";
 import { CampaignsPanel } from "./CampaignsPanel";
 import { DebtPanel } from "./DebtPanel";
 import { JournalPanel } from "./JournalPanel";
@@ -33,6 +34,7 @@ const TABS: Tab<SmsTab>[] = [
   { key: "journal", label: SMS_TAB_LABEL.journal, icon: ScrollText },
   { key: "campaigns", label: SMS_TAB_LABEL.campaigns, icon: Send },
   { key: "debt", label: SMS_TAB_LABEL.debt, icon: BellRing },
+  { key: "balance", label: SMS_TAB_LABEL.balance, icon: Wallet },
   { key: "templates", label: SMS_TAB_LABEL.templates, icon: FileText },
 ];
 const NEEDS = SMS_TAB_NEEDS;
@@ -62,7 +64,7 @@ function SmsPageInner() {
       <OpsPageHeader
         section="SMS"
         title="SMS"
-        description="The eskiz account: balance, every SMS sent, campaigns, the automatic debt warning and the approved templates."
+        description="The eskiz account: balance, every SMS sent, campaigns, the automatic debt warning, the low-balance and frozen SMS and the approved templates."
       />
       {forecast ? <BalanceBanner forecast={forecast} /> : null}
       <Tabs<SmsTab>
@@ -79,6 +81,7 @@ function SmsPageInner() {
         {tab === "journal" ? <JournalPanel /> : null}
         {tab === "campaigns" ? <CampaignsPanel /> : null}
         {tab === "debt" ? <DebtPanel /> : null}
+        {tab === "balance" ? <BalancePanel /> : null}
         {tab === "templates" ? <TemplatesPanel /> : null}
       </div>
     </div>

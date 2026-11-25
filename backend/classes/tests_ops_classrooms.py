@@ -338,3 +338,126 @@ class ClassroomChangeFormTests(ClassroomFixture):
         self.assertEqual(self.get(self.url(999999, "roster")).status_code, 404)
         self.assertEqual(self.get(self.url(self.paired.pk), user=self.teacher).status_code, 403)
         self.assertEqual(self.get(self.url(self.paired.pk, "roster"), user=self.teacher).status_code, 403)
+
+
+class DemoSeatsAreNotStudentsTests(ClassroomFixture):
+    """A demo (trial) seat holds a chair but is not a student: it is counted apart, as ``demo``."""
+
+    def setUp(self):
+        super().setUp()
+        self.room = Classroom.objects.create(
+            name="G9 Demo", subject="MATH", lesson_days="ODD", created_by=self.teacher, teacher=self.teacher,
+            max_students=3,
+        )
+        for name, seat in (("a1", "active"), ("f1", "frozen"), ("t1", "trial")):
+            ClassroomMembership.objects.create(
+                classroom=self.room, user=make(name), role=STUDENT, seat_status=seat
+            )
+
+    def test_the_list_row_counts_active_and_frozen_as_students_and_keeps_the_demo_in_trial(self):
+        row = {r["id"]: r for r in self.get().json()["results"]}[self.room.pk]
+        self.assertEqual((row["students"], row["trial"]), (2, 1))
+
+    def test_ordering_by_students_leaves_the_demo_out(self):
+        body = self.get(o="-students").json()
+        self.assertEqual({r["id"]: r["students"] for r in body["results"]}[self.room.pk], 2)
+        counts = [r["students"] for r in body["results"]]
+        self.assertEqual(counts, sorted(counts, reverse=True))
+
+    def test_the_change_form_counts_two_students_and_one_demo(self):
+        body = self.get(f"{URL}{self.room.pk}/").json()
+        self.assertEqual((body["students"], body["demo"]), (2, 1))
+
+    def test_the_roster_still_lists_the_demo_seat_so_the_page_can_block_it_apart(self):
+        body = self.get(f"{URL}{self.room.pk}/roster/").json()
+        self.assertEqual(sorted(s["seat_status"] for s in body["students"]), ["active", "frozen", "trial"])
+
+    def test_todays_header_counts_the_students_not_the_demo(self):
+        with mock.patch("classes.ops_classrooms.timezone.localdate", return_value=WEDNESDAY):
+            today = self.get(f"{URL}{self.room.pk}/").json()["glance"]["today"]
+        self.assertEqual(today["students"], 2)
+
+    def test_owes_reads_lcups_balance_until_the_ledger_is_ours_then_the_ledgers(self):
+        from billing import ledger
+        from billing.models import Account, EntryKind
+
+        a1 = User.objects.get(username="a1")
+        LcupStudentLink.objects.create(
+            lcup_student_id=77, name="A One", user=a1, status=LinkStatus.AUTO, balance=Decimal("-100000"),
+        )
+        account = Account.objects.create(user=a1)
+        ledger.post(account, EntryKind.CHARGE, -500000, date(2026, 11, 10), "owes-test")
+
+        def owes():
+            rows = {s["id"]: s for s in self.get(f"{URL}{self.room.pk}/roster/").json()["students"]}
+            return rows[a1.pk]["owes"]
+
+        with override_settings(BILLING_PAYMENTS_OPEN=False, BILLING_SHADOW_ENABLED=False):
+            self.assertEqual(owes(), 100000)  # lc-up's, as today
+        with override_settings(BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertEqual(owes(), 500000)  # the ledger's, after the cutover
+
+    def test_the_form_says_whether_seats_are_billed_per_lesson(self):
+        def flag():
+            return self.get(f"{URL}{self.room.pk}/").json()["lesson_billing"]
+
+        with override_settings(BILLING_MODE="month", BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertIs(flag(), False)
+        with override_settings(BILLING_MODE="lesson", BILLING_PAYMENTS_OPEN=False):
+            self.assertIs(flag(), False)  # the ledger is still lc-up's follower: nothing is billed here
+        with override_settings(BILLING_MODE="lesson", BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertIs(flag(), True)
+
+    def test_the_header_owing_reads_the_same_source_as_the_roster_owes(self):
+        from billing import ledger
+        from billing.models import Account, EntryKind
+
+        a1 = User.objects.get(username="a1")
+        LcupStudentLink.objects.create(
+            lcup_student_id=78, name="A One", user=a1, status=LinkStatus.AUTO, balance=Decimal("-100000"),
+        )  # lc-up's frozen figure says A One owes; the ledger says paid up
+        ledger.post(Account.objects.create(user=a1), EntryKind.PAYMENT, 50000, date(2026, 11, 10), "owing-test")
+
+        def owing():
+            return self.get(f"{URL}{self.room.pk}/").json()["glance"]["owing"]
+
+        with override_settings(BILLING_PAYMENTS_OPEN=False, BILLING_SHADOW_ENABLED=False):
+            self.assertEqual(owing(), 1)
+        with override_settings(BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertEqual(owing(), 0)
+        f1 = User.objects.get(username="f1")
+        ledger.post(Account.objects.create(user=f1), EntryKind.CHARGE, -500000, date(2026, 11, 10), "owing-test-2")
+        with override_settings(BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertEqual(owing(), 1)  # a paying student who owes in the ledger only
+
+    def test_a_demo_mark_is_not_a_student_marked_in_the_header(self):
+        session = AttendanceSession.objects.create(classroom=self.room, date=WEDNESDAY)
+        for name in ("a1", "t1"):  # a paying student and the demo are marked present; the frozen one is not
+            AttendanceRecord.objects.create(session=session, student=User.objects.get(username=name), status="PRESENT")
+        with mock.patch("classes.ops_classrooms.timezone.localdate", return_value=WEDNESDAY):
+            today = self.get(f"{URL}{self.room.pk}/").json()["glance"]["today"]
+        self.assertEqual(today["students"], 2)
+        self.assertEqual(sum(today["marked"].values()), 1)
+
+    def test_homework_figures_leave_the_demo_out(self):
+        hw = Assignment.objects.create(
+            classroom=self.room, created_by=self.teacher, title="HW", category=Assignment.CATEGORY_HOMEWORK,
+            status=Assignment.STATUS_PUBLISHED, due_at=timezone.now(),
+        )
+        Submission.objects.create(assignment=hw, student=User.objects.get(username="a1"), status=Submission.STATUS_SUBMITTED)
+        homework = self.get(f"{URL}{self.room.pk}/").json()["glance"]["homework"]
+        self.assertEqual((homework["expected"], homework["handed_in"]), (2, 1))
+
+    def test_the_register_grid_sorts_the_demo_last_and_says_so(self):
+        rows = self.get(f"{URL}{self.room.pk}/register/").json()["students"]
+        self.assertEqual([r["seat_status"] for r in rows][-1], "trial")
+        self.assertEqual([r["is_demo"] for r in rows], [False, False, True])
+
+    def test_a_demo_seat_carries_the_lessons_it_came_to_and_no_other_seat_does(self):
+        demo = ClassroomMembership.objects.get(classroom=self.room, seat_status="trial").user
+        for day, status in ((WEDNESDAY, "PRESENT"), (TUESDAY, "LATE"), (date(2026, 11, 9), "ABSENT")):
+            session = AttendanceSession.objects.create(classroom=self.room, date=day)
+            AttendanceRecord.objects.create(session=session, student=demo, status=status)
+        rows = {s["seat_status"]: s for s in self.get(f"{URL}{self.room.pk}/roster/").json()["students"]}
+        self.assertEqual(rows["trial"]["demo_lessons"], 2)
+        self.assertIsNone(rows["active"]["demo_lessons"])

@@ -24,7 +24,6 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { Alert, Button, Field, Select, Switch } from "./consoleKit";
 import {
-  SAMPLE,
   dateTime,
   dayLabel,
   fillPattern,
@@ -32,6 +31,7 @@ import {
   money,
   plural,
   roleLabel,
+  sampleValues,
   skipLabel,
   slotLabel,
   slotsOf,
@@ -69,7 +69,8 @@ export function startingDebtRoles(t: Pick<EskizTemplate, "slots" | "guessed_role
 
 const sameRoles = (a: SlotRole[], b: SlotRole[]) => a.length === b.length && a.every((r, i) => r === b[i]);
 
-type Choice = { id: number; roles: SlotRole[] };
+/** `id` is null while nothing is picked (the balance SMS starts with no template). */
+export type Choice = { id: number | null; roles: SlotRole[] };
 
 /** "Days 1–4" and "Day 5" for a freeze on day 6. */
 function dayLabels(freezeDay: number): { before: string; last: string } {
@@ -81,13 +82,16 @@ function dayLabels(freezeDay: number): { before: string; last: string } {
   };
 }
 
-function TemplateChoice({
+/** One template's picker: the template, what fills each slot, and a sample. A debt warning's by default. */
+export function TemplateChoice({
   label,
   hint,
   value,
   onChange,
   usable,
   savedPattern,
+  rolesFor = debtRolesFor,
+  startingRoles = startingDebtRoles,
 }: {
   label: string;
   hint: string;
@@ -96,24 +100,29 @@ function TemplateChoice({
   usable: EskizTemplate[];
   /** The pattern the setting holds, for a template the list does not carry (not synced yet). */
   savedPattern: string;
+  /** The roles a slot may take. */
+  rolesFor?: (slot: TemplateSlot) => SlotRole[];
+  /** The roles a freshly picked template starts with. */
+  startingRoles?: (t: Pick<EskizTemplate, "slots" | "guessed_roles">) => SlotRole[];
 }) {
   const uid = useId();
   const chosen = usable.find((t) => t.eskiz_id === value.id) ?? null;
   const pattern = chosen?.pattern ?? savedPattern;
   const slots = chosen?.slots ?? slotsOf(pattern);
-  const sample = fillPattern(pattern, value.roles.map((r) => (r === "debt" ? SAMPLE.debt : SAMPLE.student)));
+  const sample = fillPattern(pattern, sampleValues(value.roles, []));
   const parts = smsParts(sample);
 
   const pick = (id: number) => {
     const t = usable.find((x) => x.eskiz_id === id);
-    if (t) onChange({ id, roles: startingDebtRoles(t) });
+    if (t) onChange({ id, roles: startingRoles(t) });
   };
 
   return (
     <div className="space-y-2 rounded-[16px] border border-ms-border p-4">
       <Field label={label} htmlFor={`${uid}-template`} hint={hint}>
-        <Select id={`${uid}-template`} selectSize="sm" value={String(value.id)} onChange={(e) => pick(Number(e.target.value))}>
-          {chosen ? null : <option value={value.id}>{`#${value.id} · not in the template list — refresh it`}</option>}
+        <Select id={`${uid}-template`} selectSize="sm" value={value.id === null ? "" : String(value.id)} onChange={(e) => pick(Number(e.target.value))}>
+          {value.id === null ? <option value="">Pick an approved template</option> : null}
+          {chosen || value.id === null ? null : <option value={value.id}>{`#${value.id} · not in the template list — refresh it`}</option>}
           {usable.map((t) => (
             <option key={t.eskiz_id} value={t.eskiz_id}>
               {templateOption(t)}
@@ -129,7 +138,7 @@ function TemplateChoice({
             value={value.roles[i] ?? "student"}
             onChange={(e) => onChange({ ...value, roles: value.roles.map((r, j) => (j === i ? (e.target.value as SlotRole) : r)) })}
           >
-            {debtRolesFor(slot).map((r) => (
+            {rolesFor(slot).map((r) => (
               <option key={r} value={r}>
                 {roleLabel(r)}
               </option>
@@ -164,11 +173,11 @@ function SettingsForm({ settings: s, usable }: { settings: SmsSettings; usable: 
     const patch: SmsSettingsPatch = {};
     if (enabled !== s.debt_enabled) patch.debt_enabled = enabled;
     if (hour !== s.debt_hour) patch.debt_hour = hour;
-    if (warning.id !== s.warning_template_id || !sameRoles(warning.roles, s.warning_slots)) {
+    if (warning.id !== null && (warning.id !== s.warning_template_id || !sameRoles(warning.roles, s.warning_slots))) {
       patch.warning_template_id = warning.id;
       patch.warning_slots = warning.roles;
     }
-    if (lastDay.id !== s.last_day_template_id || !sameRoles(lastDay.roles, s.last_day_slots)) {
+    if (lastDay.id !== null && (lastDay.id !== s.last_day_template_id || !sameRoles(lastDay.roles, s.last_day_slots))) {
       patch.last_day_template_id = lastDay.id;
       patch.last_day_slots = lastDay.roles;
     }

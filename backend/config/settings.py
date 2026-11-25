@@ -45,6 +45,15 @@ FREEZE_ACCESS_EXEMPT_EMAILS = frozenset(
     if e.strip()
 )
 
+# ─── The test copy (/var/www/satapp-staging) ──────────────────────────────────
+# The toolbox (/ops/toolbox, /api/staging/) and the capture of every outgoing SMS, Telegram message, e-mail and
+# push exist only where BOTH hold: STAGING_TOOLBOX is true AND the database in use is STAGING_DB_NAME
+# (``staging.guard.toolbox_on``). Prod sets neither, so it behaves exactly as before.
+STAGING_TOOLBOX = _env_bool('STAGING_TOOLBOX', default_when_unset=False)
+STAGING_DB_NAME = os.getenv('STAGING_DB_NAME', 'mastersat_staging')
+# Where the time machine (deploy/staging/stg_timemachine.py, root) and the toolbox meet: requests/, state.json, clock.
+STAGING_TM_DIR = os.getenv('STAGING_TM_DIR', '/var/www/satapp-staging/shared/timemachine')
+
 
 # access.services — fail loud in dev (override with env in CI/prod)
 LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT = _env_bool(
@@ -129,6 +138,18 @@ OPS_SITE_URL = os.getenv('OPS_SITE_URL', 'https://admin.mastersat.uz')
 # end up opening an SMTP connection to a host with no MTA on every request. Sending is
 # opt-in and stays off until the Mailgun domain is verified.
 EMAIL_SENDING_ENABLED = _env_bool('EMAIL_SENDING_ENABLED', default_when_unset=False)
+
+
+def _email_settings_for(staging_toolbox: bool, backend: str, sending: bool) -> tuple[str, bool]:
+    """The test copy captures every e-mail, as it does every SMS, Telegram message and push: the capture backend, and
+    sending on so each mail reaches it. ``staging.mail`` still captures only on the copy's own database and sends
+    nothing anywhere else. Off the copy, as configured above."""
+    if staging_toolbox:
+        return 'staging.mail.CaptureEmailBackend', True
+    return backend, sending
+
+
+EMAIL_BACKEND, EMAIL_SENDING_ENABLED = _email_settings_for(STAGING_TOOLBOX, EMAIL_BACKEND, EMAIL_SENDING_ENABLED)
 
 # Email address claim: when someone proves control of an address that another account
 # holds UNVERIFIED, the address moves to them and the other account is left with NULL.
@@ -224,6 +245,8 @@ INSTALLED_APPS = [
     'billing.apps.BillingConfig',
     'sms.apps.SmsConfig',
     'daily_questions.apps.DailyQuestionsConfig',
+    # Always installed, so its two tables exist (empty) on prod; it acts only on the test copy (STAGING_* above).
+    'staging.apps.StagingConfig',
 ]
 
 MIDDLEWARE = [
@@ -367,6 +390,9 @@ ESKIZ_EMAIL = os.getenv("ESKIZ_EMAIL", "").strip()
 ESKIZ_SECRET_KEY = os.getenv("ESKIZ_SECRET_KEY", "")
 ESKIZ_FROM = os.getenv("ESKIZ_FROM", "4546").strip()
 SMS_DEBT_WARNINGS_ENABLED = os.getenv("SMS_DEBT_WARNINGS_ENABLED", "False").lower() == "true"
+# "Balance low" and "frozen for debt" SMS to the parent (backend/sms.balance_warnings). Off by default; the panel's
+# switch (/ops/sms → Balance) is a second one, and both need the ledger to be ours and billing per lesson.
+SMS_BALANCE_WARNINGS_ENABLED = os.getenv('SMS_BALANCE_WARNINGS_ENABLED', 'False').lower() == 'true'
 # What /ops/sms counts an estimate at: so'm per SMS part (measured 2026-10-18). The panel's costs only.
 SMS_PRICE_PER_PART = int(os.getenv("SMS_PRICE_PER_PART", "170") or 170)
 
@@ -752,6 +778,13 @@ CELERY_BEAT_SCHEDULE = {
     "sms-debt-warnings-tick": {
         "task": "sms.tasks.debt_warnings_tick",
         "schedule": crontab(minute=0),
+    },
+    # "Balance low" and "frozen" SMS to the parent (backend/sms.balance_warnings): every hour at :10, and the
+    # code decides - at the hour set in /ops/sms -> Balance (10:00 by default) it runs once. Returns at once
+    # while SMS_BALANCE_WARNINGS_ENABLED or the panel's switch is off, the ledger is not ours or billing is monthly.
+    "sms-balance-warnings-tick": {
+        "task": "sms.tasks.balance_warnings_tick",
+        "schedule": crontab(minute=10),
     },
     # eskiz's template list into /ops/sms, so one moderated overnight can be picked in the morning.
     "sms-sync-templates": {

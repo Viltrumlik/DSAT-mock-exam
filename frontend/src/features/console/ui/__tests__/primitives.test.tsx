@@ -8,7 +8,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Badge, BulkBar, Button, Checkbox, EmptyState, ErrorState, FilterChip, Pagination, buttonClass } from "..";
+import { Badge, BulkBar, Button, Checkbox, DemoBadge, EmptyState, ErrorState, FilterChip, Pagination, buttonClass } from "..";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -60,6 +60,24 @@ describe("Badge", () => {
     expect(frozen.className).toContain("bg-ms-frozen-soft");
     expect(frozen.querySelector("svg")).not.toBeNull();
     expect(active.querySelector("span.rounded-full")).not.toBeNull();
+  });
+});
+
+describe("DemoBadge", () => {
+  it("is a filled DEMO pill in the demo tone, a word and never colour alone", () => {
+    render(<DemoBadge />);
+    const badge = host.querySelector(":scope > span")!;
+    expect(badge.textContent).toBe("DEMO");
+    expect(badge.className).toContain("bg-ms-attention-fg");
+    expect(badge.className).toContain("text-white");
+    // Dark: the light amber with black text, so the word keeps its contrast on both themes.
+    expect(badge.className).toContain("dark:bg-ms-attention");
+    expect(badge.className).toContain("dark:text-black");
+  });
+
+  it("is the Badge's `demo` tone, for a caller that wants its own words", () => {
+    render(<Badge tone="demo">Demo (2)</Badge>);
+    expect(host.querySelector(":scope > span")!.className).toContain("bg-ms-attention-fg");
   });
 });
 

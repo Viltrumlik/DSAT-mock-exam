@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ClassroomCore } from "../classroomsApi";
 
-const classes = { create: vi.fn(), governanceUpdate: vi.fn() };
+const classes = {
+  create: vi.fn(),
+  governanceUpdate: vi.fn(),
+  teacherChoices: async () => ({ teachers: [], support_teachers: [] }),
+};
 const toast = vi.fn();
 
 vi.mock("@/lib/api", () => ({

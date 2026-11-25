@@ -169,6 +169,12 @@ class SubdomainAPIGuardMiddleware:
         if path.startswith("/api/question-reports/"):
             return self.get_response(request)
 
+        # The test copy's browser clock (every page of every console loads it) and its one-time "Sign in as" links
+        # (opened on the student, teacher or admin host, before anyone is signed in there). Both answer 404 anywhere
+        # but the copy (staging.guard.toolbox_on); the link's view refuses the wrong console itself.
+        if path == "/api/staging/clock.js" or path.startswith("/api/staging/sign-in/"):
+            return self.get_response(request)
+
         # Role-level gate (before endpoint allowlists).
         # - testers (test_admin) may use admin console for users/bulk-assign
         # - testers MAY use questions console subdomain
@@ -284,6 +290,9 @@ class SubdomainAPIGuardMiddleware:
             # SMS panel (/ops/sms): the balance, the journal, campaigns, the debt warning's settings and
             # eskiz's templates. Admin-only in the view; there is no student surface.
             if path.startswith("/api/sms/"):
+                return self.get_response(request)
+            # The test copy's toolbox (/ops/toolbox): 404 anywhere but the copy, owner and admins only in the view.
+            if path.startswith("/api/staging/"):
                 return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):

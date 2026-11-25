@@ -62,6 +62,18 @@ class LedgerIsTheMasterTests(TestCase):
         self.assertEqual((s["paid"], s["total_debt"], s["debtors"], s["by_method"]), (300_000, 200_000, 1, {"Naqd pul": 300_000}))
         self.assertEqual(s["freeze"]["rule"], "lesson")
 
+    def test_a_demo_seat_is_not_a_student_in_the_groups_figure(self):
+        from classes.models import Classroom
+
+        room = Classroom.objects.create(name="Junior G1", subject="MATH", created_by=self.user, is_active=True)
+        for name, state in (("a", SeatState.ACTIVE), ("f", SeatState.FROZEN), ("t", SeatState.TRIAL)):
+            Seat.objects.create(
+                account=Account.objects.create(name=name), classroom=room, group_name="Junior G1", price=500_000,
+                days=[1, 3, 5], state=state,
+            )
+        group = next(g for g in finance.summary("2026-12")["by_group"] if g["group"] == "Junior G1")
+        self.assertEqual(group["students"], 2)
+
     def test_the_students_list_owes_filter_reads_the_ledger(self):
         other = User.objects.create_user(None, password=None, username="paid", role="student")
         Account.objects.create(name="Paid", user=other)

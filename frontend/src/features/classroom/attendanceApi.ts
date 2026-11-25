@@ -64,6 +64,8 @@ export interface RosterRow {
   /** On trial in lc-up (owner, 2026-10-20): lessons come to here before this one, and whether the
    *  free trial is behind them — then the teacher sends them to the admin. Null when not on trial. */
   lcup_trial?: LcupTrialMark | null;
+  /** A demo (trial) seat, with or without lc-up: the register draws these in a block of their own, last. */
+  is_demo?: boolean;
 }
 
 export interface LcupTrialMark {

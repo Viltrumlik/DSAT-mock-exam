@@ -18,9 +18,17 @@ def credentials() -> dict:
 
 
 def is_configured() -> bool:
+    from staging.outbound import captured
+
+    if captured():  # the test copy sends through staging.capture_eskiz, which needs no credentials
+        return True
     creds = credentials()
     return bool(creds["email"] and creds["secret"])
 
 
 def debt_warnings_enabled() -> bool:
     return bool(getattr(settings, "SMS_DEBT_WARNINGS_ENABLED", False))
+
+
+def balance_warnings_enabled() -> bool:
+    return bool(getattr(settings, "SMS_BALANCE_WARNINGS_ENABLED", False))

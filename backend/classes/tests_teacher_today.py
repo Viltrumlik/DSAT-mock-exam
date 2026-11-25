@@ -352,6 +352,15 @@ class ClassScheduleFieldsTests(TeacherTodayFixture):
         self.student(classroom, status=ClassroomMembership.STATUS_REMOVED)
         self.assertEqual(self.row(classroom)["student_count"], 2)
 
+    def test_a_demo_seat_is_counted_apart_from_the_students(self):
+        classroom = self.make_classroom()
+        self.join(classroom, self.teacher)
+        self.student(classroom)
+        self.student(classroom, seat_status=ClassroomMembership.SEAT_FROZEN)
+        self.student(classroom, seat_status=ClassroomMembership.SEAT_TRIAL)
+        row = self.row(classroom)
+        self.assertEqual((row["student_count"], row["demo_count"]), (2, 1))
+
     def test_a_class_not_meeting_today_still_carries_its_whole_schedule(self):
         classroom = self.make_classroom(
             name="Even", days=Classroom.DAYS_EVEN, lesson_time="16:00", room_number="7"
@@ -1194,7 +1203,7 @@ class EndpointTests(TeacherTodayFixture):
         self.assertEqual(
             set(payload["classes"][0]),
             {"classroom_id", "name", "subject", "room", "lesson_days", "lesson_days_label",
-             "lesson_time", "student_count", "next_lesson_at", "state", "change", "homework"},
+             "lesson_time", "student_count", "demo_count", "next_lesson_at", "state", "change", "homework"},
         )
         self.assertEqual(
             set(payload["classes"][0]["homework"]),

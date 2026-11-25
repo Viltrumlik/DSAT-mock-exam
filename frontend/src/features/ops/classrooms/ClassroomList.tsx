@@ -33,8 +33,8 @@ import { CreateClassroomModal } from "./CreateClassroomModal";
 
 /**
  * /ops/classrooms — lc-up calls them groups — in lc-up's list shape (canvas board "Groups", owner 22 Nov 2026): the
- * title with the count; Timetable and New group; the chips All / Math / English / Ends this week / Has trial
- * students; a filter card; the ruled table — #, the group with its size, trial seats and price, the time, the course
+ * title with the count; Timetable and New group; the chips All / Math / English / Ends this week / Has demo
+ * students; a filter card; the ruled table — #, the group with its size, demo seats and price, the time, the course
  * and room, the days, lessons done against the course's length, the start, a ⋮ menu. A row opens the group's page.
  * `?new=1` opens New group (the top bar's quick action). Data: `GET /classes/admin/classrooms/`
  * (classes/views_ops_classrooms.py, classes/ops_groups_list.py).
@@ -57,7 +57,7 @@ export type GroupRow = ClassroomRow & {
   monthly_price?: number | null;
   /** "YYYY-MM-DD": the course's first day (lc-up's `course_start_date`). */
   start_date?: string | null;
-  /** Active seats lc-up marks "trial". */
+  /** Active seats marked "trial" (shown as demo): not in `students`. */
   trial?: number;
   /** Registers marked since the start against the course's lessons; null when the course's length is unknown. */
   lessons?: { done: number; total: number } | null;
@@ -188,7 +188,7 @@ function ClassroomListInner() {
     ...(
       [
         ["ends", "Ends this week", "var(--ms-attention)"],
-        ["trial", "Has trial students", "var(--ms-info)"],
+        ["trial", "Has demo students", "var(--ms-attention)"],
       ] as const
     ).map(([value, label, dot]) => ({
       key: value,
@@ -244,11 +244,13 @@ function ClassroomListInner() {
                 {r.students}
               </Badge>
             </span>
-            <span title="On a trial lesson">
-              <Badge tone={r.trial ? "info" : "line"} className="tabular-nums">
-                {r.trial ?? 0}
-              </Badge>
-            </span>
+            {r.trial ? (
+              <span title="On a demo lesson, not counted as students">
+                <Badge tone="attention" className="tabular-nums">
+                  +{r.trial} demo
+                </Badge>
+              </span>
+            ) : null}
             {r.is_active ? null : <Badge tone="neutral">Archived</Badge>}
           </span>
           {r.monthly_price !== null && r.monthly_price !== undefined ? (

@@ -33,6 +33,8 @@ PERSONAL_VALUES = frozenset({"student", "first_name", "last_name"})
 
 #: What fills a slot, chosen per slot in /ops/sms: the student's lc-up name, their debt, or one typed text.
 ROLE_STUDENT, ROLE_DEBT, ROLE_TEXT = "student", "debt", "text"
+#: The balance SMS's own value (the account's balance, in words of digits: "77 000").
+ROLE_BALANCE = "balance"
 ROLES = (ROLE_STUDENT, ROLE_DEBT, ROLE_TEXT)
 
 #: GSM-7 is 160 characters in one SMS, 153 a part once split; one non-ASCII character makes it UCS-2.

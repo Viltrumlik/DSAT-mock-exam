@@ -62,6 +62,20 @@ def _live_seats(user_ids):
     ).select_related("classroom__teacher")
 
 
+def is_demo_only(seats) -> bool:
+    """Someone whose live seats are demo (trial) ones only: at least one, and no active or frozen seat."""
+    states = {s.seat_status for s in seats}
+    return ClassroomMembership.SEAT_TRIAL in states and not states - {ClassroomMembership.SEAT_TRIAL}
+
+
+def demo_only_q() -> Q:
+    """``is_demo_only`` as a filter on users: a live demo seat, and no live active or frozen one."""
+    live = ClassroomMembership.objects.filter(role=STUDENT, status=ACTIVE, classroom__is_active=True)
+    paying = live.filter(seat_status__in=(ClassroomMembership.SEAT_ACTIVE, ClassroomMembership.SEAT_FROZEN))
+    demo = live.filter(seat_status=ClassroomMembership.SEAT_TRIAL)
+    return Q(pk__in=demo.values("user_id")) & ~Q(pk__in=paying.values("user_id"))
+
+
 def _groups(user) -> list[dict]:
     from lcup.guards import lcup_managed_ids
 
@@ -343,6 +357,8 @@ def person_core(user, request=None) -> dict:
             "target_math": user.target_math,
         },
         "groups": _groups(user) if learner else [],
+        # Only demo seats: not a student yet, so the page badges them DEMO and offers Activate on the group card.
+        "is_demo_only": bool(learner and User.objects.filter(pk=user.pk).filter(demo_only_q()).exists()),
         "past_groups": _past_groups(user) if learner else [],
         "open_classes": _open_classes(user) if learner else [],
         # lc-up's money (balance, monthly cost, payments): ``view_money``'s alone.

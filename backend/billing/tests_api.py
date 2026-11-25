@@ -70,6 +70,13 @@ class SummaryTests(ApiCase, TestCase):
         self.assertIsNotNone(body["opened_at"])
         self.assertEqual((body["accounts"], body["former"]), (2, 1))
 
+    def test_it_says_whether_the_ledger_is_the_centres_own_record(self):
+        self.assertIs(self.get("/api/billing/summary/").json()["ledger_is_ours"], False)
+        with override_settings(BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=False):
+            self.assertIs(self.get("/api/billing/summary/").json()["ledger_is_ours"], True)
+        with override_settings(BILLING_PAYMENTS_OPEN=True, BILLING_SHADOW_ENABLED=True):
+            self.assertIs(self.get("/api/billing/summary/").json()["ledger_is_ours"], False)
+
     def test_before_the_opening_it_says_so(self):
         BillingState.objects.update(opened_at=None)
         self.assertIsNone(self.get("/api/billing/summary/").json()["opened_at"])

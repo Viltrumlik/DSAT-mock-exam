@@ -33,6 +33,7 @@ from rest_framework.views import APIView
 
 from access import constants as C
 from access.permissions import Requires, require
+from billing import conf as billing_conf
 from classes.models import Branch, Classroom, ClassroomMembership
 from core.csv_download import csv_download_response
 from lcup.conf import debt_freeze_day, debt_freeze_enabled
@@ -40,7 +41,7 @@ from lcup.phones import normalize_phone
 from users.changelist import apply_search, facets, paginate, to_int
 from users.models import User
 
-from . import campaigns, conf
+from . import balance_warnings, campaigns, conf
 from . import debt_warnings as warnings
 from . import eskiz, eskiz_templates, forecast, resend, stats, switchboard
 from . import templates as T
@@ -113,7 +114,12 @@ def _on_commit(fn) -> None:
 # ── rows ──────────────────────────────────────────────────────────────────
 
 
-_SOURCE_LABELS = {SmsMessage.KIND_DEBT_WARNING: "Debt warning", SmsMessage.KIND_TEST: "Test"}
+_SOURCE_LABELS = {
+    SmsMessage.KIND_DEBT_WARNING: "Debt warning",
+    SmsMessage.KIND_TEST: "Test",
+    SmsMessage.KIND_BALANCE_LOW: "Balance low",
+    SmsMessage.KIND_BALANCE_FROZEN: "Frozen for debt",
+}
 
 
 def _source(msg, campaign_labels) -> dict:
@@ -302,6 +308,16 @@ def settings_row(row: SmsSettings) -> dict:
         "env_enabled": switchboard.env_enabled(),
         "freeze_enabled": debt_freeze_enabled(),
         "freeze_day": debt_freeze_day(),
+        "balance_enabled": row.balance_enabled,
+        "balance_hour": row.balance_hour,
+        "low_template_id": row.low_template_id,
+        "low_pattern": row.low_pattern,
+        "low_slots": row.low_slots,
+        "frozen_template_id": row.frozen_template_id,
+        "frozen_pattern": row.frozen_pattern,
+        "frozen_slots": row.frozen_slots,
+        "balance_env_enabled": conf.balance_warnings_enabled(),
+        "balance_billing_ready": billing_conf.ledger_is_ours() and billing_conf.lesson_billing(),
     }
 
 
@@ -785,20 +801,34 @@ class SettingsRefused(Exception):
         self.message = message
 
 
-def _debt_slots(pattern, raw) -> list[str]:
+#: Which values each template may fill, in the order a refusal names them.
+_DEBT_ROLES = (T.ROLE_STUDENT, T.ROLE_DEBT)
+_BALANCE_ROLES = (T.ROLE_STUDENT, T.ROLE_BALANCE)
+#: "76 999" is two words, "1 234 567" three: fewer would cut the amount short.
+_BALANCE_WORDS = 3
+
+
+def _debt_slots(pattern, raw, roles=_DEBT_ROLES) -> list[str]:
     slots = T.slots(pattern)
-    if not isinstance(raw, list) or len(raw) != len(slots) or any(r not in switchboard.DEBT_ROLES for r in raw):
+    if not isinstance(raw, list) or len(raw) != len(slots) or any(r not in roles for r in raw):
         raise SettingsRefused(
-            "slots", f"Choose student or debt for each of the template's {len(slots)} slots: a warning types nothing in."
+            "slots",
+            f"Choose {' or '.join(roles)} for each of the template's {len(slots)} slots: a warning types nothing in.",
         )
     for number, (role, slot) in enumerate(zip(raw, slots), 1):
         if role == T.ROLE_STUDENT and slot["kind"] == "d":
             raise SettingsRefused("slots", f"Slot {number} takes a number: it cannot hold a name.")
+        if role == T.ROLE_BALANCE and (slot["kind"] == "d" or slot["max"] < _BALANCE_WORDS):
+            raise SettingsRefused(
+                "slots", f"Slot {number} cannot hold the balance: it is written in groups of digits, up to {_BALANCE_WORDS} words."
+            )
     return list(raw)
 
 
 def _apply_template(row, prefix, data) -> list[str]:
-    """``warning`` / ``last_day``: the template id and slots sent (or kept), checked, onto ``row``."""
+    """``warning`` / ``last_day`` (the debt warning) or ``low`` / ``frozen`` (the balance SMS): the template id and
+    slots sent (or kept), checked, onto ``row``."""
+    roles = _BALANCE_ROLES if prefix in ("low", "frozen") else _DEBT_ROLES
     id_key, slots_key = f"{prefix}_template_id", f"{prefix}_slots"
     if id_key not in data and slots_key not in data:
         return []
@@ -815,7 +845,7 @@ def _apply_template(row, prefix, data) -> list[str]:
         setattr(row, id_key, template.eskiz_id)
         setattr(row, f"{prefix}_pattern", template.pattern)
     pattern = getattr(row, f"{prefix}_pattern")
-    setattr(row, slots_key, _debt_slots(pattern, data.get(slots_key, getattr(row, slots_key))))
+    setattr(row, slots_key, _debt_slots(pattern, data.get(slots_key, getattr(row, slots_key)), roles))
     return [id_key, f"{prefix}_pattern", slots_key]
 
 
@@ -844,8 +874,21 @@ class SettingsView(_JournalView):
                     raise SettingsRefused("hour", "The hour is a whole number from 8 to 20.")
                 row.debt_hour = hour
                 changed.append("debt_hour")
+            if "balance_enabled" in data:
+                if not isinstance(data["balance_enabled"], bool):
+                    raise SettingsRefused("enabled", "balance_enabled is true or false.")
+                row.balance_enabled = data["balance_enabled"]
+                changed.append("balance_enabled")
+            if "balance_hour" in data:
+                hour = data["balance_hour"]
+                if isinstance(hour, bool) or not isinstance(hour, int) or not 8 <= hour <= 20:
+                    raise SettingsRefused("hour", "The hour is a whole number from 8 to 20.")
+                row.balance_hour = hour
+                changed.append("balance_hour")
             changed += _apply_template(row, "warning", data)
             changed += _apply_template(row, "last_day", data)
+            changed += _apply_template(row, "low", data)
+            changed += _apply_template(row, "frozen", data)
         except SettingsRefused as exc:
             return _refused(exc.code, exc.message)
         if changed:
@@ -910,6 +953,74 @@ class DebtSendNowView(_DebtView):
         if not conf.is_configured():
             return _refused("not_configured", "eskiz is not configured on the server.")
         _on_commit(_queue_send_now)
+        return Response({"queued": True}, status=http.HTTP_202_ACCEPTED)
+
+
+# ── the balance SMS ───────────────────────────────────────────────────────
+
+
+def _balance_rows(notices, template) -> list[dict]:
+    rows = []
+    for notice in notices:
+        try:
+            text = T.render(template, notice.values)
+        except T.TemplateError:
+            text = ""
+        rows.append({
+            "name": notice.account.name,
+            "phone": notice.phone,
+            "balance": int(notice.values["balance"].replace(" ", "")),
+            "text": text,
+            "parts": T.parts(text) if text else 0,
+        })
+    return rows
+
+
+class BalancePreviewView(_JournalView):
+    """Today's list — who would get "balance low" or "frozen" if the run went now. Writes nothing."""
+
+    def get(self, request):
+        row = switchboard.current()
+        planned = balance_warnings.plan(_today())
+        try:
+            low, frozen = switchboard.balance_templates(row)
+        except T.TemplateError:
+            low = frozen = T.SmsTemplate("balance", "", ())
+        low_rows, frozen_rows = _balance_rows(planned.low, low), _balance_rows(planned.frozen, frozen)
+        if blocked := switchboard.balance_off_reason(row):
+            pass
+        elif not (row.low_pattern.strip() and row.frozen_pattern.strip()):
+            blocked = "both balance templates must be picked in /ops/sms first"
+        return Response({
+            "day": _today().isoformat(),
+            "blocked": blocked,
+            "skipped": dict(planned.skipped),
+            "count": len(low_rows) + len(frozen_rows),
+            "cost": sum(r["parts"] for r in [*low_rows, *frozen_rows]) * switchboard.price_per_part(),
+            "low": low_rows,
+            "frozen": frozen_rows,
+        })
+
+
+def _queue_balance_now():
+    from . import tasks
+
+    tasks.balance_warnings_now.delay()
+
+
+class BalanceSendNowView(_AdminView):
+    def post(self, request):
+        if why := switchboard.balance_off_reason():
+            return _refused("disabled", f"The balance SMS cannot go out: {why}.")
+        if not conf.is_configured():
+            return _refused("not_configured", "eskiz is not configured on the server.")
+        row = switchboard.current()
+        if not (row.low_pattern.strip() and row.frozen_pattern.strip()):
+            return _refused(
+                "templates", "Pick both balance templates first: nothing is sent without an approved text.",
+                status=http.HTTP_409_CONFLICT,
+            )
+        _on_commit(_queue_balance_now)
         return Response({"queued": True}, status=http.HTTP_202_ACCEPTED)
 
 
