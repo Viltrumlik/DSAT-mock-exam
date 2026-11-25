@@ -147,7 +147,10 @@ function StudentsListInner() {
       render: (r) => r.name || r.username || `User ${r.id}`,
       renderLinked: (r, link) => (
         <span className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate">{link(r.name || r.username || `User ${r.id}`)}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate">{link(r.name || r.username || `User ${r.id}`)}</span>
+            {r.is_demo_only ? <DemoBadge className="shrink-0" /> : null}
+          </span>
           {/* lc-up's second line: whom to call (owner, 22 Nov 2026: "Ha, chiqsin"). */}
           {r.parent_phone ? (
             <span data-parent-phone className="mt-[3px] truncate text-[13px] text-ms-fg-3 tabular-nums">

@@ -57,7 +57,7 @@ export type GroupRow = ClassroomRow & {
   monthly_price?: number | null;
   /** "YYYY-MM-DD": the course's first day (lc-up's `course_start_date`). */
   start_date?: string | null;
-  /** Active seats lc-up marks "trial". */
+  /** Active seats marked "trial" (shown as demo): not in `students`. */
   trial?: number;
   /** Registers marked since the start against the course's lessons; null when the course's length is unknown. */
   lessons?: { done: number; total: number } | null;
@@ -244,11 +244,13 @@ function ClassroomListInner() {
                 {r.students}
               </Badge>
             </span>
-            <span title="On a demo lesson">
-              <Badge tone={r.trial ? "info" : "line"} className="tabular-nums">
-                {r.trial ?? 0}
-              </Badge>
-            </span>
+            {r.trial ? (
+              <span title="On a demo lesson, not counted as students">
+                <Badge tone="attention" className="tabular-nums">
+                  +{r.trial} demo
+                </Badge>
+              </span>
+            ) : null}
             {r.is_active ? null : <Badge tone="neutral">Archived</Badge>}
           </span>
           {r.monthly_price !== null && r.monthly_price !== undefined ? (

@@ -61,6 +61,8 @@ export interface StudentRow extends PeopleRowBase {
   groups: StudentGroupCell[];
   /** `balance` is lc-up's, in whole UZS; negative is a debt. */
   lcup: { linked: boolean; balance: number | null };
+  /** Only demo (trial) seats: not a student yet, so the list badges them DEMO (absent on an older server). */
+  is_demo_only?: boolean;
   /** The parent's phone for the row's second line ("" when none is kept); null or absent for a viewer without
    *  `view_people`, or an older server. */
   parent_phone?: string | null;

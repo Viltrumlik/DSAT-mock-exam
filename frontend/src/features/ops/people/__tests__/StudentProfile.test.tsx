@@ -440,6 +440,16 @@ describe("the left card", () => {
     expect(card().textContent).toContain("Never signed in");
   });
 
+  it("marks someone whose only seats are demo ones with DEMO in the header, and no one else", async () => {
+    route(core());
+    await renderPage();
+    expect(card().textContent).not.toContain("DEMO");
+    remount();
+    route(core({ is_demo_only: true }));
+    await renderPage();
+    expect(card().textContent).toContain("DEMO");
+  });
+
   it("lists the phone, the parent, the group as its course tag, and last seen", async () => {
     route(core());
     await renderPage();

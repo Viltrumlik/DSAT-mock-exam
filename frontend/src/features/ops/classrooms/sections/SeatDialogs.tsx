@@ -134,6 +134,8 @@ export function SeatActionDialog({
   onDone: () => void;
 }) {
   const said = WORDS[action];
+  // A demo is removed, not "left": the page's own wording unless it gave one.
+  const asked = words ?? (trial && action === "leave" ? { title: `Remove ${student.name} from this group?`, confirm: "Remove" } : undefined);
   const [date, setDate] = useState(day ?? todayIso());
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
@@ -159,8 +161,8 @@ export function SeatActionDialog({
 
   return (
     <ConfirmDialog
-      title={words?.title ?? said.title(student.name)}
-      confirmLabel={words?.confirm ?? said.confirm}
+      title={asked?.title ?? said.title(student.name)}
+      confirmLabel={asked?.confirm ?? said.confirm}
       danger={said.danger}
       busy={busy}
       onCancel={() => (busy ? undefined : onClose())}

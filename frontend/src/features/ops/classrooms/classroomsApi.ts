@@ -20,7 +20,7 @@ export type ClassroomRow = {
   subject: string;
   level: string;
   teacher: { id: number; name: string } | null;
-  /** Active student seats. */
+  /** Active student seats, demo ones left out. */
   students: number;
   /** "ODD" | "EVEN" | "". */
   lesson_days: string;
@@ -62,7 +62,10 @@ export type ClassroomCore = {
   created_at: string | null;
   teacher: { id: number; name: string } | null;
   tas: { id: number; name: string }[];
+  /** Active student seats, the demo (trial) ones left out: they are counted apart, as `demo`. */
   students: number;
+  /** Demo seats: they hold a chair but are not students (absent on an older server). */
+  demo?: number;
   /** Null when the class has no lc-up group at all. `locked_fields` are lc-up's while it is managed. */
   lcup: { managed: boolean; group_name: string; status: string; locked_fields: string[] } | null;
   /** The header's figures on the Overview (`ops_classrooms._glance`), each the same reading as its tab. */
@@ -109,6 +112,8 @@ export type ClassroomRoster = {
     owes: number | null;
     attendance_rate: number | null;
     homework_rate: number | null;
+    /** A demo seat's lessons come to here (present or late); null for any other seat. */
+    demo_lessons?: number | null;
   }[];
   /** Whose seat ended here on a known day, latest first. */
   left: { id: number; name: string; section: PeopleSection; seat_left_on: string }[];

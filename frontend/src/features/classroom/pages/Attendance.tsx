@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { CalendarPlus, CheckCircle2, Lock, TrendingUp, TrendingDown, Minus, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { DemoBadge } from "@/features/console/ui";
 import { Card, CardHeader, Button, Input, Pill, EmptyState, LoadingState, ErrorState, StatCard, Select } from "../ui";
 import type { PillTone } from "../ui";
 import { capabilitiesFor } from "../capabilities";
@@ -231,6 +232,11 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
     if (records.length) await mark.mutateAsync(records);
   }
 
+  // Demo rows come last (the server sorts them so; this keeps an older server's roster in the same order).
+  const isDemo = (r: RosterRow) => r.is_demo ?? r.lcup_trial != null;
+  const rosterRows = [...data.roster].sort((a, b) => Number(isDemo(a)) - Number(isDemo(b)));
+  const firstDemo = rosterRows.findIndex(isDemo);
+
   return (
     <Card>
       <CardHeader
@@ -281,11 +287,18 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
       </div>
 
       <div className="mt-4 divide-y divide-border">
-        {data.roster.map((r: RosterRow) => {
+        {rosterRows.map((r: RosterRow) => {
           // Paused in lc-up: on the register, but lc-up takes no mark for them, so none is offered.
           const locked = !writable || !!r.frozen_in_lcup;
           return (
-            <div key={r.student_id} className="py-2.5">
+            <Fragment key={r.student_id}>
+              {/* A demo (trial) seat is no student yet: its rows sit under a "Demo" heading, after the roster. */}
+              {r === rosterRows[firstDemo] ? (
+                <div role="group" aria-label="Demo" className="pb-1 pt-5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Demo ({rosterRows.length - firstDemo})
+                </div>
+              ) : null}
+            <div className="py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="min-w-0 truncate text-sm text-foreground">{r.name}</span>
@@ -316,6 +329,7 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
                       </span>
                     )
                   ) : null}
+                  {r.is_demo && !r.lcup_trial ? <DemoBadge className="shrink-0" /> : null}
                 </span>
                 <div className="flex shrink-0 gap-1">
                   {STATUSES.map((st) => {
@@ -355,6 +369,7 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
                 </p>
               )}
             </div>
+            </Fragment>
           );
         })}
         {data.roster.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No students enrolled yet.</p>}

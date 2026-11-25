@@ -109,6 +109,37 @@ describe("Attendance register — lc-up trial students", () => {
     expect(host.textContent).not.toContain("lc-up");
   });
 
+  it("puts demo rows under a Demo heading, after the roster, the first lesson read as free", async () => {
+    await mount({
+      roster: [
+        { ...row({ lessons_before: 0, free_used: false }), student_id: 2, name: "Zed Demo", is_demo: true },
+        { ...row(null), student_id: 1, name: "Ali Paying", is_demo: false },
+      ],
+    });
+    const heading = host.querySelector('[aria-label="Demo"]') as HTMLElement;
+    expect(heading.textContent).toBe("Demo (1)");
+    const text = host.textContent!;
+    expect(text.indexOf("Ali Paying")).toBeLessThan(text.indexOf("Demo (1)"));
+    expect(text.indexOf("Demo (1)")).toBeLessThan(text.indexOf("Zed Demo"));
+    expect(text).toContain("Demo · 1st lesson (free)");
+  });
+
+  it("badges a demo row DEMO when no lc-up trial block comes with it (a class lc-up does not run)", async () => {
+    await mount({ roster: [{ ...row(null), is_demo: true }] });
+    expect(host.querySelector('[aria-label="Demo"]')).not.toBeNull();
+    expect(host.textContent).toContain("DEMO");
+  });
+
+  it("still finds a demo row when only lc-up's trial block says so (an older server)", async () => {
+    await mount({ roster: [row({ lessons_before: 0, free_used: false })] });
+    expect(host.querySelector('[aria-label="Demo"]')?.textContent).toBe("Demo (1)");
+  });
+
+  it("has no Demo heading when nobody is a demo", async () => {
+    await mount({ roster: [row(null)] });
+    expect(host.querySelector('[aria-label="Demo"]')).toBeNull();
+  });
+
   it("names the lc-up members the register cannot show", async () => {
     await mount({ roster: [row(null)], not_on_list: [{ name: "Jasur Toshmatov" }, { name: "Bek Rahimov" }] });
     expect(host.textContent).toContain(
