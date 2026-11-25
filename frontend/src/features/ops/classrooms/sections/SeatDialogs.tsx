@@ -86,7 +86,7 @@ const WORDS: Record<SeatAction, { title: (name: string) => string; confirm: stri
     title: (name) => `Move ${name} to another group?`,
     confirm: "Move",
     date: "Moving on",
-    body: "They leave this group and join the other on this date. A trial stays a trial.",
+    body: "They leave this group and join the other on this date. A demo stays a demo.",
   },
   leave: {
     title: (name) => `${name} leaves this group?`,
@@ -103,10 +103,10 @@ const WORDS: Record<SeatAction, { title: (name: string) => string; confirm: stri
   },
 };
 
-/** A trial pays nothing, so these say so instead of speaking of paid lessons and balances. */
-const TRIAL_BODY: Partial<Record<SeatAction, string>> = {
-  leave: "A trial costs nothing, so no money moves. Leaving their last group makes them a public account, frozen if they owe.",
-  "fix-date": "A trial costs nothing, so no money moves. Only the date changes.",
+/** A demo pays nothing, so these say so instead of speaking of paid lessons and balances. */
+const DEMO_BODY: Partial<Record<SeatAction, string>> = {
+  leave: "A demo costs nothing, so no money moves. Leaving their last group makes them a public account, frozen if they owe.",
+  "fix-date": "A demo costs nothing, so no money moves. Only the date changes.",
 };
 
 export function SeatActionDialog({
@@ -123,7 +123,7 @@ export function SeatActionDialog({
   roomId: number;
   student: { id: number; name: string };
   action: SeatAction;
-  /** The seat is a trial. */
+  /** The seat is a demo (a trial seat). */
   trial?: boolean;
   /** Where the date starts: today, unless the date being fixed is known. */
   day?: string | null;
@@ -167,7 +167,7 @@ export function SeatActionDialog({
       onConfirm={() => void confirm()}
       body={
         <>
-          <p>{(trial && TRIAL_BODY[action]) || said.body}</p>
+          <p>{(trial && DEMO_BODY[action]) || said.body}</p>
           <Labelled label={dateLabel ?? said.date}>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={INPUT} />
           </Labelled>
@@ -242,8 +242,8 @@ export function AddSeatDialog({
         <>
           <Labelled label="Seat">
             <select value={status} onChange={(e) => setStatus(e.target.value as "trial" | "active")} className={INPUT}>
-              <option value="trial">Trial: no money yet</option>
-              <option value="active">Active: pays from the date</option>
+              <option value="trial">Demo: no money yet</option>
+              <option value="active">Paying: from this day</option>
             </select>
           </Labelled>
           <Labelled label="Start date">
@@ -373,8 +373,8 @@ export function NewStudentDialog({
         <div className="grid grid-cols-2 gap-3">
           <FormField id="new-student-status" label="Seat">
             <select id="new-student-status" value={form.status} onChange={set("status")} className={INPUT}>
-              <option value="trial">Trial: no money yet</option>
-              <option value="active">Active: pays from the date</option>
+              <option value="trial">Demo: no money yet</option>
+              <option value="active">Paying: from this day</option>
             </select>
           </FormField>
           <FormField id="new-student-date" label="Start date">

@@ -296,7 +296,7 @@ describe("Choice", () => {
         value="trial"
         onChange={(v) => picked.push(v)}
         options={[
-          { value: "trial", label: "Trial", description: "No money yet" },
+          { value: "trial", label: "Demo", description: "No money yet" },
           { value: "active", label: "Active", description: "Pays from the date" },
           { value: "left", label: "Left", disabledReason: "Only lc-up can mark a student as left" },
         ]}

@@ -28,11 +28,11 @@ type Dot = "active" | "owes" | "trial" | "frozen";
 const DOT: Record<Dot, { label: string; colour: string }> = {
   active: { label: "Active", colour: "bg-ms-positive" },
   owes: { label: "Owes", colour: "bg-ms-critical" },
-  trial: { label: "Trial", colour: "bg-ms-info" },
+  trial: { label: "Demo", colour: "bg-ms-attention" },
   frozen: { label: "Frozen", colour: "bg-ms-frozen" },
 };
 
-/** A frozen or trial seat says so first; a debt next; anyone else is active. */
+/** A frozen or demo seat says so first; a debt next; anyone else is active. */
 export function dotOf(row: Pick<Row, "seat_status" | "owes">): Dot {
   if (row.seat_status === "frozen") return "frozen";
   if (row.seat_status === "trial") return "trial";

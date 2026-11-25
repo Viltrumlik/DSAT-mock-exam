@@ -116,7 +116,7 @@ describe("the sidebar", () => {
       "Mock sittings",
       "Exam dates",
       "Branches",
-      "Trials",
+      "Demo",
       "SMS",
       "Telegram posts",
       "Support hours",
@@ -199,7 +199,7 @@ describe("counts, only on verdicts", () => {
     await settle();
     expect(item("/ops")!.querySelector("[data-nav-count]")?.textContent).toBe("1");
     expect(item("/ops/finance")!.querySelector("[data-nav-count]")?.textContent).toBe("3");
-    // Trials waiting is a "Needs you" item, not a count of its own.
+    // Demo students waiting is a "Needs you" item, not a count of its own.
     expect(item("/ops/trials")!.querySelector("[data-nav-count]")).toBeNull();
     expect(item("/ops/students")!.querySelector("[data-nav-count]")).toBeNull();
   });

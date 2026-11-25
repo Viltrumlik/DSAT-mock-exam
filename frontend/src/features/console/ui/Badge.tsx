@@ -4,7 +4,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { cn } from "@/lib/cn";
 
 /** The six verdicts, plus neutral and an outline for a fact that is no verdict (design handoff v0.3, rule 3). */
-export type BadgeTone = "positive" | "attention" | "critical" | "info" | "frozen" | "neutral" | "line";
+export type BadgeTone = "positive" | "attention" | "critical" | "info" | "frozen" | "neutral" | "line" | "demo";
 
 const TONE: Record<BadgeTone, string> = {
   // A hairline in the verdict's own hue keeps the pill readable on a tinted cell (v0.7 "calm vivid").
@@ -15,6 +15,10 @@ const TONE: Record<BadgeTone, string> = {
   frozen: "bg-ms-frozen-soft text-ms-frozen-fg shadow-[inset_0_0_0_1px_var(--ms-frozen-line)]",
   neutral: "bg-ms-neutral-soft text-ms-neutral-fg shadow-[inset_0_0_0_1px_var(--ms-neutral-line)]",
   line: "bg-transparent text-ms-fg-2 shadow-[inset_0_0_0_1px_var(--ms-border-strong)]",
+  // A demo student is no verdict but must be seen at once: a FILLED amber, the one filled pill in the console.
+  // Light: white on the deep amber (--ms-attention-fg, 5.0:1; white on --ms-attention is only 3.2:1).
+  // Dark: black on the light amber (--ms-attention, about 11:1).
+  demo: "bg-ms-attention-fg text-white dark:bg-ms-attention dark:text-black",
 };
 
 /** A verdict as a pill: always an icon (or a dot) AND a word, never colour alone. */
@@ -48,5 +52,14 @@ export function Badge({
       {dot ? <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-current" /> : icon ? <Icon name={icon} size="sm" className={cn("size-3.5 shrink-0", iconClassName)} /> : null}
       {children}
     </span>
+  );
+}
+
+/** The mark of a demo (trial) seat: DEMO, filled amber, in a list row, a header or a register. */
+export function DemoBadge({ className }: { className?: string }) {
+  return (
+    <Badge tone="demo" className={cn("uppercase tracking-[0.04em]", className)}>
+      DEMO
+    </Badge>
   );
 }

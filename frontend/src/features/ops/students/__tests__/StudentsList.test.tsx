@@ -66,7 +66,7 @@ const PAGE: PeoplePage<StudentRow> = {
       options: [
         { value: "all", label: "All", count: 2 },
         { value: "owes", label: "Owe money", count: 1 },
-        { value: "trial", label: "Trial", count: 1 },
+        { value: "trial", label: "Demo", count: 1 },
         { value: "frozen", label: "Frozen", count: 0 },
         { value: "nogroup", label: "No group", count: 1 },
       ],
@@ -152,7 +152,8 @@ describe("the Students list", () => {
       ["middle", "Middle G4 · English"],
     ]);
     expect(aziz.textContent).toContain("Room 304");
-    expect(aziz.textContent).toContain("Trial");
+    expect(aziz.textContent).toContain("DEMO");
+    expect(aziz.textContent).not.toContain("Trial");
     expect(aziz.textContent).toContain("Bekzod Toshmatov Junior Math");
     const balance = aziz.querySelector("td[data-verdict]");
     expect(balance?.getAttribute("data-verdict")).toBe("critical");
@@ -188,7 +189,7 @@ describe("the Students list", () => {
     await renderList("", { ...TEACHER_ME, permissions: ["view_people"] });
     expect(heads()).not.toContain("Balance, so’m");
     const chips = [...host.querySelectorAll('[role="group"][aria-label="Show"] a')].map((a) => a.textContent);
-    expect(chips).toEqual(["All2", "Trial1", "Frozen0", "No group1"]);
+    expect(chips).toEqual(["All2", "Demo1", "Frozen0", "No group1"]);
   });
 
   it("puts a chip and the typed filters in the address", async () => {

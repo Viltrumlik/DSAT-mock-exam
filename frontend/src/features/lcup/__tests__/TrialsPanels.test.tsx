@@ -73,13 +73,13 @@ async function mount(node: ReactNode, data: object = FOLLOWUPS) {
 }
 
 describe("/ops/trials panels", () => {
-  it("lists trial students in the server's order with their state", async () => {
+  it("lists demo students in the server's order with their state", async () => {
     await mount(<TrialStudentsPanel />);
     const rows = Array.from(host.querySelectorAll("tbody tr")).map((tr) => tr.textContent ?? "");
     expect(rows).toHaveLength(3);
     expect(rows[0]).toContain("Sardor Nazarov");
-    expect(rows[0]).toContain("Came after the free lesson");
-    expect(rows[1]).toContain("Came to trial (2026-10-16)");
+    expect(rows[0]).toContain("Free lesson used");
+    expect(rows[1]).toContain("Came to demo (2026-10-16)");
     expect(rows[2]).toContain("Not come yet");
     expect(host.querySelector<HTMLAnchorElement>('a[href="/ops/students/41"]')?.textContent).toBe("Sardor Nazarov");
   });
@@ -125,7 +125,7 @@ describe("/ops/trials panels", () => {
     it("says a removed trial moves no money", async () => {
       await mount(<TrialStudentsPanel />, OPEN);
       await act(async () => button(row("Sardor Nazarov"), "Remove").click());
-      expect(dialog().textContent).toContain("A trial costs nothing");
+      expect(dialog().textContent).toContain("A demo costs nothing");
       expect(dialog().textContent).not.toContain("balance");
     });
 
@@ -140,13 +140,13 @@ describe("/ops/trials panels", () => {
 
     it("words the empty list without lc-up", async () => {
       await mount(<TrialStudentsPanel />, { ...OPEN, trials: [] });
-      expect(host.textContent).toContain("No one is on trial right now.");
+      expect(host.textContent).toContain("No one is on a demo right now.");
     });
   });
 
   it("says so when nobody is on trial", async () => {
     await mount(<TrialStudentsPanel />, { ...FOLLOWUPS, trials: [] });
-    expect(host.textContent).toContain("No one is on trial in lc-up right now.");
+    expect(host.textContent).toContain("No one is on a demo in lc-up right now.");
   });
 
   it("lists members missing from a class list with why, and points review cases at lc-up", async () => {

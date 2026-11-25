@@ -305,14 +305,14 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
                   {r.lcup_trial ? (
                     r.lcup_trial.free_used ? (
                       <span
-                        title="They have had the free trial lesson. Send them to the admin to be activated in lc-up."
+                        title="They have had the free demo lesson. Send them to the admin to be activated."
                         className="max-w-full rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
                       >
-                        Free trial used — send to the admin
+                        Free lesson used — send to the admin
                       </span>
                     ) : (
                       <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                        {r.lcup_trial.lessons_before === 0 ? "Trial · 1st lesson" : `Trial · lesson ${r.lcup_trial.lessons_before + 1}`}
+                        {r.lcup_trial.lessons_before === 0 ? "Demo · 1st lesson (free)" : `Demo · lesson ${r.lcup_trial.lessons_before + 1}`}
                       </span>
                     )
                   ) : null}
@@ -351,7 +351,7 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
               )}
               {r.lcup_trial?.free_used && (local[r.student_id] === "PRESENT" || local[r.student_id] === "LATE") && (
                 <p role="status" className="mt-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-                  {r.name} has already had the free trial lesson — send them to the admin to be activated in lc-up.
+                  {r.name} has already had the free demo lesson — send them to the admin to be activated.
                 </p>
               )}
             </div>

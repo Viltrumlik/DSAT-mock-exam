@@ -24,22 +24,22 @@ function TrialsPage() {
   return (
     <div className="flex flex-col gap-4">
       <header className="animate-ms-fade-in flex flex-col gap-1">
-        <h1 className="text-ms-title text-ms-fg">Trials</h1>
+        <h1 className="text-ms-title text-ms-fg">Demo</h1>
         <p className="max-w-3xl text-[14px] text-ms-fg-2">
           {q.data?.seats_open ? (
             <>
-              Students on trial. The free trial is {free} lesson{free === 1 ? "" : "s"}. Activate or remove them here.
+              Students on a demo lesson. The free demo is {free} lesson{free === 1 ? "" : "s"}. Activate or remove them here.
             </>
           ) : (
             <>
-              Students on trial in lc-up, and lc-up members their class list does not show. The free trial is {free} lesson
+              Students on a demo in lc-up, and lc-up members their class list does not show. The free demo is {free} lesson
               {free === 1 ? "" : "s"}. Activate or link a student in lc-up — they leave this page within 15 minutes.
             </>
           )}
         </p>
       </header>
       <Tabs<TrialsTab>
-        label="Trials sections"
+        label="Demo sections"
         idPrefix="trials"
         value={tab}
         onChange={setTab}

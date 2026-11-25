@@ -8,7 +8,7 @@ import api, { classesApi } from "@/lib/api";
 // The row menu stays the portalled DropdownMenu: the roster table scrolls sideways, and the console Menu
 // (absolute, not portalled yet) would be cut off inside it.
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
-import { Avatar, TextInput, buttonClass } from "@/features/console/ui";
+import { Avatar, DemoBadge, TextInput, buttonClass } from "@/features/console/ui";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
 import { formatUzs } from "@/features/finance/financeApi";
@@ -290,7 +290,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                             >
                               {s.name || s.username}
                             </Link>
-                            {s.seat_status === "trial" ? <span className="shrink-0"><Pill tone="info">Trial</Pill></span> : null}
+                            {s.seat_status === "trial" ? <span className="shrink-0"><DemoBadge /></span> : null}
                             {s.seat_status === "frozen" ? <span className="shrink-0"><Pill tone="frozen">Frozen</Pill></span> : null}
                           </span>
                           {s.owes ? (

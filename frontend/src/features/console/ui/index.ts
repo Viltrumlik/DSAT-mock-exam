@@ -1,6 +1,6 @@
 /** The console's own controls (design handoff v0.3). `components/ui` stays the student app's. */
 export { Avatar, AvatarStack, AVATAR_TONE, initialsOf, toneOf, type AvatarSize, type AvatarTone } from "./Avatar";
-export { Badge, type BadgeTone } from "./Badge";
+export { Badge, DemoBadge, type BadgeTone } from "./Badge";
 export { BulkBar, bulkButtonClass } from "./BulkBar";
 export { Button, buttonClass, type ButtonProps, type ButtonSize, type ButtonState, type ButtonVariant } from "./Button";
 export { Checkbox } from "./Checkbox";

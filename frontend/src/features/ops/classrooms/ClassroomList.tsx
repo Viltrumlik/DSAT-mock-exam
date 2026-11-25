@@ -33,8 +33,8 @@ import { CreateClassroomModal } from "./CreateClassroomModal";
 
 /**
  * /ops/classrooms — lc-up calls them groups — in lc-up's list shape (canvas board "Groups", owner 22 Nov 2026): the
- * title with the count; Timetable and New group; the chips All / Math / English / Ends this week / Has trial
- * students; a filter card; the ruled table — #, the group with its size, trial seats and price, the time, the course
+ * title with the count; Timetable and New group; the chips All / Math / English / Ends this week / Has demo
+ * students; a filter card; the ruled table — #, the group with its size, demo seats and price, the time, the course
  * and room, the days, lessons done against the course's length, the start, a ⋮ menu. A row opens the group's page.
  * `?new=1` opens New group (the top bar's quick action). Data: `GET /classes/admin/classrooms/`
  * (classes/views_ops_classrooms.py, classes/ops_groups_list.py).
@@ -188,7 +188,7 @@ function ClassroomListInner() {
     ...(
       [
         ["ends", "Ends this week", "var(--ms-attention)"],
-        ["trial", "Has trial students", "var(--ms-info)"],
+        ["trial", "Has demo students", "var(--ms-attention)"],
       ] as const
     ).map(([value, label, dot]) => ({
       key: value,
@@ -244,7 +244,7 @@ function ClassroomListInner() {
                 {r.students}
               </Badge>
             </span>
-            <span title="On a trial lesson">
+            <span title="On a demo lesson">
               <Badge tone={r.trial ? "info" : "line"} className="tabular-nums">
                 {r.trial ?? 0}
               </Badge>

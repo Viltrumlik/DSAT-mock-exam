@@ -69,7 +69,7 @@ const PAGE: ClassroomPage = {
       options: [
         { value: "all", label: "All", count: 2 },
         { value: "ends", label: "Ends this week", count: 1 },
-        { value: "trial", label: "Has trial students", count: 1 },
+        { value: "trial", label: "Has demo students", count: 1 },
       ],
       selected: null,
     },
@@ -164,7 +164,7 @@ describe("the Groups list", () => {
   it("offers the chips with the server's counts and puts the one picked in the address", async () => {
     await renderList("subject=MATH");
     const chips = [...host.querySelectorAll('[role="group"][aria-label="Show"] a')];
-    expect(chips.map((a) => a.textContent)).toEqual(["All2", "Math1", "English1", "Ends this week1", "Has trial students1"]);
+    expect(chips.map((a) => a.textContent)).toEqual(["All2", "Math1", "English1", "Ends this week1", "Has demo students1"]);
     expect(chips[1].getAttribute("aria-current")).toBe("true");
     act(() => (chips[3] as HTMLAnchorElement).click());
     const href = String(state.replace.mock.calls.at(-1)?.[0]);
