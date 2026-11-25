@@ -24,8 +24,11 @@ export type LessonChange = {
   new_day: string | null;
 };
 
-/** What the change did to the money (`billing.lesson_money`): lessons voided, for how many students, so'm given back. */
-export type LessonMoney = { voided: number; students: number; amount: number; unfrozen: number };
+/**
+ * What the change did to the money (`billing.lesson_money`): lessons voided, for how many students, so'm given back,
+ * and the debt freezes the check after it lifted or put on.
+ */
+export type LessonMoney = { voided: number; students: number; amount: number; unfrozen: number; frozen: number };
 
 export type LessonChangeResult = { change: LessonChange; money: LessonMoney };
 

@@ -76,7 +76,7 @@ class CancelTests(Case):
         self.assertEqual((row.void_reason, row.voided_by, row.amount), ("Lesson cancelled: Teacher ill", self.admin, -PRICE))
         self.assertIsNotNone(row.voided_at)
         self.assertEqual(ledger.balance(account), before + PRICE)
-        self.assertEqual(change.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0})
+        self.assertEqual(change.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0, "frozen": 0})
         ledger.own_tick(FRI)  # the tick does not charge it again
         self.assertEqual(Entry.objects.filter(key=key("lesson:", span, MON)).count(), 1)
 
@@ -89,6 +89,15 @@ class CancelTests(Case):
         user.refresh_from_db()
         self.assertEqual((ledger.balance(account), user.is_frozen, user.frozen_reason), (0, False, ""))
         self.assertEqual(change.money["unfrozen"], 1)
+
+    @LEDGER_OURS
+    def test_3c_an_undo_that_leaves_them_below_zero_freezes_them_as_a_payment_taken_back_does(self):
+        user, account, _ = self.old_student(start=MON, today=MON)
+        change = self.cancel(MON, today=MON)
+        self.assertEqual((ledger.balance(account), change.money["frozen"]), (0, 0))
+        undone = L.undo(change, by=self.admin, today=MON)
+        user.refresh_from_db()
+        self.assertEqual((ledger.balance(account), user.is_frozen, undone.money["frozen"]), (-PRICE, True, 1))
 
     def test_3b_while_lc_up_keeps_the_ledger_no_freeze_is_touched(self):
         user, account, _ = self.old_student(start=MON, today=MON)
@@ -123,7 +132,7 @@ class MoveTests(Case):
             (TUE, -PRICE, "2026-12", span.seat_id, "Lesson 2026-12-07 moved to 2026-12-08", None),
         )
         self.assertEqual(ledger.balance(account), before)
-        self.assertEqual(change.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0})
+        self.assertEqual(change.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0, "frozen": 0})
         ledger.own_tick(THU)
         self.assertEqual(Entry.objects.filter(key__in=[key("lesson:", span, MON), key("moved:", span, MON)]).count(), 2)
         self.assertEqual(ledger.balance(account), before)
@@ -185,7 +194,7 @@ class UndoTests(Case):
         monday = Entry.objects.filter(key=key("lesson:", span, MON)).order_by("id")
         self.assertEqual([row.voided_at is None for row in monday], [False, True])
         self.assertEqual(ledger.balance(account), before)
-        self.assertEqual(undone.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0})
+        self.assertEqual(undone.money, {"voided": 1, "students": 1, "amount": PRICE, "unfrozen": 0, "frozen": 0})
 
 
 class HolidayTests(Case):
@@ -243,7 +252,7 @@ class FirstMonthTests(Case):
         ledger.start_span(seat, NOV_30, today=WED)  # 500,000 for 30 Nov - 29 Dec
         rows = list(account.entries.values_list("key", "amount", "voided_at"))
         change = self.cancel(MON)
-        self.assertEqual(change.money, {"voided": 0, "students": 0, "amount": 0, "unfrozen": 0})
+        self.assertEqual(change.money, {"voided": 0, "students": 0, "amount": 0, "unfrozen": 0, "frozen": 0})
         ledger.own_tick(FRI)
         L.undo(change, by=self.admin, today=FRI)
         ledger.own_tick(FRI)
