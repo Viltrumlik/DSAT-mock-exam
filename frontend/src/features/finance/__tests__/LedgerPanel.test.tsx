@@ -288,4 +288,21 @@ describe("LedgerPanel on a device outside Tashkent", () => {
     expect(document.body.textContent).toContain("9 Nov 2026, 16:00");
     expect(document.body.textContent).toContain("10 Nov 2026, 01:30");
   });
+
+  it("writes the lesson price and the first month as numbers in the account header", async () => {
+    const lesson = {
+      ...ACCOUNT,
+      rules: {
+        mode: "lesson", lessons_per_month: 13, min_topup: 160000, lesson_price: 38500, least_payment: 500000,
+        first_month_fee: 500000, first_month_until: "2026-12-31",
+      },
+    };
+    await mount(<LedgerPanel />, { "/billing/summary/": SUMMARY, "/billing/accounts/3/": lesson });
+    await click("Big Difference");
+    const text = document.body.textContent ?? "";
+    expect(text).not.toContain("[object Object]");
+    expect(text).toContain("38 500 so’m a lesson");
+    expect(text).toContain("first month 500 000 so’m");
+    expect(text).toContain("top-up at least 500 000");
+  });
 });
