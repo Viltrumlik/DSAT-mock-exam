@@ -415,6 +415,11 @@ public struct SupportBooking: Decodable, Sendable, Equatable, Identifiable {
     /// The classmate who brought this student in; nil when they booked it themselves.
     public let invitedById: Int?
     public let invitedBy: String?
+    /// Whether the hour has room for one more student — false once it holds two (2026-10-21).
+    /// Lets "Add a member" stay off a full session instead of opening a picker that can only
+    /// say "nobody". A server that does not send it leaves the button, as before; the server
+    /// still refuses a third invitation.
+    public let canAddMember: Bool
     /// Why the seat came back. Shown to the teacher, who held the hour.
     public let cancelReason: String
     public let cancelledAt: String?
@@ -438,6 +443,7 @@ public struct SupportBooking: Decodable, Sendable, Equatable, Identifiable {
         student: String = "",
         invitedById: Int? = nil,
         invitedBy: String? = nil,
+        canAddMember: Bool = true,
         cancelReason: String = "",
         cancelledAt: String? = nil,
         rating: Int? = nil,
@@ -458,6 +464,7 @@ public struct SupportBooking: Decodable, Sendable, Equatable, Identifiable {
         self.student = student
         self.invitedById = invitedById
         self.invitedBy = invitedBy
+        self.canAddMember = canAddMember
         self.cancelReason = cancelReason
         self.cancelledAt = cancelledAt
         self.rating = rating
@@ -476,6 +483,7 @@ public struct SupportBooking: Decodable, Sendable, Equatable, Identifiable {
         case studentId = "student_id"
         case invitedById = "invited_by_id"
         case invitedBy = "invited_by"
+        case canAddMember = "can_add_member"
         case cancelReason = "cancel_reason"
         case cancelledAt = "cancelled_at"
         case ratingComment = "rating_comment"
@@ -500,6 +508,7 @@ public struct SupportBooking: Decodable, Sendable, Equatable, Identifiable {
         invitedById = try? c.decodeIfPresent(Int.self, forKey: .invitedById)
         let inviter = (try? c.decodeIfPresent(String.self, forKey: .invitedBy))
         invitedBy = (inviter?.isEmpty ?? true) ? nil : inviter
+        canAddMember = (try? c.decodeIfPresent(Bool.self, forKey: .canAddMember)) ?? true
         cancelReason = (try? c.decodeIfPresent(String.self, forKey: .cancelReason)) ?? ""
         cancelledAt = try? c.decodeIfPresent(String.self, forKey: .cancelledAt)
         let rating = (try? c.decodeIfPresent(Int.self, forKey: .rating))
