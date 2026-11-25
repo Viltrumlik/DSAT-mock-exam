@@ -5,6 +5,8 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import QueryProvider from "@/components/QueryProvider";
 import { ToastProvider } from "@/components/ToastProvider";
+import { StagingTestDate } from "@/components/StagingTestDate";
+import { STAGING_CLOCK_SCRIPT } from "@/lib/api";
 
 /*
  * The faces are committed under ./fonts instead of coming from next/font/google, which downloads
@@ -110,6 +112,8 @@ const geistMono = localFont({
 
 /** Set only when building the test copy beside prod (shared/frontend.env.production there); empty on prod. */
 const STAGING_LABEL = (process.env.NEXT_PUBLIC_STAGING_LABEL || "").trim();
+/** The test copy's toolbox and time machine: "1" only in the copy's build. */
+const STAGING_TOOLBOX = process.env.NEXT_PUBLIC_STAGING_TOOLBOX === "1";
 
 export const metadata: Metadata = {
   title: "MasterSAT",
@@ -141,6 +145,12 @@ export default function RootLayout({
       className={`${geistSans.variable} ${plusJakarta.variable} ${baloo.variable} ${geistMono.variable}`}
     >
       <head>
+        {/* The test copy only: moves `Date` to the time machine's test date. Plain (no async/defer) and first, so it
+            runs before any other script reads the time. */}
+        {STAGING_TOOLBOX ? (
+          // eslint-disable-next-line @next/next/no-sync-scripts -- it must block: the page's own scripts read the clock
+          <script src={STAGING_CLOCK_SCRIPT} />
+        ) : null}
         {/* Runs before any chunk: when a page from an older release asks for a /_next/static
             file the new release no longer has, React never starts, so no error boundary can
             catch it. Reload once (same guard as lib/staleBuild.ts) to fetch the current page. */}
@@ -166,6 +176,7 @@ export default function RootLayout({
             }}
           >
             {STAGING_LABEL}
+            {STAGING_TOOLBOX ? <StagingTestDate /> : null}
           </div>
         ) : null}
       </body>

@@ -19,6 +19,14 @@ def report_bot_token() -> str:
 
 def _telegram_call(token: str, method: str, params: dict) -> Optional[dict]:
     """POST to a Bot API method. Never raises; returns the parsed ``result`` or None."""
+    from staging.outbound import capture, captured
+
+    if captured():  # the test copy: written to the toolbox's Messages, never sent
+        from staging.capture_telegram import fake_message_id
+
+        meta = {"method": method, "bot": "question_reports"}
+        capture("telegram", str(params.get("chat_id") or ""), str(params.get("text") or method), meta=meta)
+        return {"message_id": fake_message_id()} if method == "sendMessage" else {}
     if not token:
         return None
     try:

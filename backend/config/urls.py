@@ -72,4 +72,6 @@ urlpatterns = [
     path('api/lcup/', include('lcup.urls')),
     path('api/billing/', include('billing.urls')),
     path('api/sms/', include('sms.urls')),
+    # The test copy's toolbox: every view answers 404 anywhere else (staging.guard.toolbox_on).
+    path('api/staging/', include('staging.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

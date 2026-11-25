@@ -316,4 +316,10 @@ class EskizClient:
 
 
 def default_client() -> EskizClient:
+    from staging.outbound import captured
+
+    if captured():  # the test copy: every SMS goes to the toolbox's Messages, never to eskiz
+        from staging.capture_eskiz import CaptureEskiz
+
+        return CaptureEskiz()
     return EskizClient(**conf.credentials())

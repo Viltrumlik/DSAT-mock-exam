@@ -49,12 +49,19 @@ export type OpsNavItem = {
   superAdminOnly?: boolean;
   /** Shown only to a viewer holding one of these permissions: the ones the page's API checks. */
   requires?: readonly string[];
+  /**
+   * Shown only to these roles, and to the owner (`isOpsSuperAdmin`): for a page whose API checks the role, not a
+   * permission (the test copy's Toolbox: super_admin, admin or a superuser), so a per-person tick cannot differ.
+   */
+  roles?: readonly string[];
   /** The owner keeps this off the desk's console: hidden from desk viewers (`isDeskViewer`). */
   notForDesk?: boolean;
   /** A page reached from another (Timetable from Groups and the top bar): routed and guarded, not listed. */
   hidden?: boolean;
   /** One of the daily lc-up jobs: drawn a little taller in the sidebar. */
   main?: boolean;
+  /** A small word the sidebar draws after the label ("TEST" on the test copy's Toolbox). */
+  badge?: string;
   /** A verdict waiting behind this page — the shell fetches it and the sidebar draws it beside the label. */
   countKey?: OpsNavCountKey;
   /** The page's own tabs, in its own words; the first is the one it opens on. */
@@ -232,6 +239,20 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
           { href: "/ops/mobile", label: "Mobile app", icon: "ms-appversion", tone: HUE.cyan, superAdminOnly: true },
           // A broadcast cannot be recalled — super admins only, like the endpoint.
           { href: "/ops/broadcast", label: "Broadcast", icon: "ms-broadcast", tone: HUE.purple, superAdminOnly: true },
+          // The test copy's toolbox: its time machine, test students, the messages it would have sent. Only where the
+          // build says so (NEXT_PUBLIC_STAGING_TOOLBOX=1); the owner and admins, by role, as its API allows.
+          ...(process.env.NEXT_PUBLIC_STAGING_TOOLBOX === "1"
+            ? [
+                {
+                  href: "/ops/toolbox",
+                  label: "Toolbox",
+                  icon: "history",
+                  tone: HUE.slate,
+                  badge: "TEST",
+                  roles: ["admin"],
+                } satisfies OpsNavItem,
+              ]
+            : []),
         ],
       },
     ],
@@ -254,6 +275,7 @@ export function isOpsSuperAdmin(me: MeLike): boolean {
 /** Whether this viewer may see one item (see "Who sees what" above). */
 export function canSeeItem(item: OpsNavItem, me: MeLike): boolean {
   if (item.superAdminOnly && !isOpsSuperAdmin(me)) return false;
+  if (item.roles && !isOpsSuperAdmin(me) && !item.roles.includes(String(me?.role ?? "").trim().toLowerCase())) return false;
   if (item.notForDesk && isDeskViewer(me)) return false;
   return holds(me, ...(item.requires ?? []));
 }

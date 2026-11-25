@@ -130,6 +130,12 @@ def _call(method: str, params: dict, *, token: str = "") -> TgResult:
 
 
 def _send(req: urllib.request.Request, method: str) -> TgResult:
+    from staging.outbound import captured
+
+    if captured():  # the test copy: Telegram is never called (staging.capture_telegram)
+        from staging.capture_telegram import class_bot
+
+        return TgResult(True, result=class_bot(req, method))
     try:
         with urllib.request.urlopen(req, timeout=API_TIMEOUT_SECONDS) as resp:
             body = json.loads(resp.read().decode("utf-8"))

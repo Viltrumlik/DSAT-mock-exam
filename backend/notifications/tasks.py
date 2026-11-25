@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 DUE_SOON_WINDOW_HOURS = 24
 
 
+def _captured() -> bool:
+    """The test copy: it has no push keys, and every push stops at the capture before it would leave
+    (``staging.outbound``), so the fan-out still runs there."""
+    from staging.outbound import captured
+
+    return captured()
+
+
 @shared_task(
     name="notifications.send_push_for_notification",
     autoretry_for=(Exception,),
@@ -36,7 +44,7 @@ def send_push_for_notification(notification_id: int) -> dict:
     from . import push
     from .models import Notification, PushSubscription
 
-    if not push.is_configured():
+    if not (push.is_configured() or _captured()):
         return {"sent": 0, "skipped": "not configured"}
 
     notification = Notification.objects.filter(pk=notification_id).select_related(
@@ -80,7 +88,7 @@ def send_push_for_notifications(notification_ids: list[int]) -> dict:
     ids = [int(pk) for pk in (notification_ids or ()) if pk]
     if not ids:
         return {"sent": 0, "skipped": "empty"}
-    if not push.is_configured():
+    if not (push.is_configured() or _captured()):
         return {"sent": 0, "skipped": "not configured"}
 
     notifications = list(Notification.objects.filter(pk__in=ids))
@@ -122,7 +130,7 @@ def send_apns_for_notifications(notification_ids: list[int]) -> dict:
     ids = [int(pk) for pk in (notification_ids or ()) if pk]
     if not ids:
         return {"sent": 0, "skipped": "empty"}
-    if not apns.is_configured():
+    if not (apns.is_configured() or _captured()):
         return {"sent": 0, "skipped": "not configured"}
 
     notifications = list(Notification.objects.filter(pk__in=ids))

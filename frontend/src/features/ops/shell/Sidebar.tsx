@@ -133,6 +133,14 @@ function SidebarItem({ item, active, count, folded }: { item: OpsNavItem; active
         <Icon name={item.icon} size="sm" className="size-4" />
       </span>
       {folded ? null : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+      {item.badge && !folded ? (
+        <span
+          data-nav-badge
+          className="rounded-[4px] border border-ms-attention-line bg-ms-attention-soft px-1.5 text-[10.5px] font-bold uppercase leading-[16px] tracking-wide text-ms-attention-fg"
+        >
+          {item.badge}
+        </span>
+      ) : null}
       {count > 0 ? (
         <span
           data-nav-count
