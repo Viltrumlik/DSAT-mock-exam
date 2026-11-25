@@ -12,6 +12,7 @@ import { ANY_REQUEST, useAskTime, useTimeMachineWait, useTimeState } from "./too
 import { CARD, CONTROL, ErrorLine, TD, TH } from "./ui";
 
 const WORKING = "The time machine is working… (the copy restarts, 10–60 s)";
+const NOT_ANSWERED = "The time machine has not answered; it may be stopped.";
 const LOST = "Everything done after this point is lost.";
 const ACTION_TEXT: Record<string, string> = {
   forward: "Forward",
@@ -127,7 +128,7 @@ export function TimeMachinePanel({ reload = reloadPage }: { reload?: () => void 
   const [date, setDate] = useState("");
   const data = state.data;
   const othersRunning = Boolean(data && (data.busy || data.pending));
-  const failed = useTimeMachineWait(mine ?? (othersRunning ? ANY_REQUEST : null), reload);
+  const { failed, gaveUp } = useTimeMachineWait(mine ?? (othersRunning ? ANY_REQUEST : null), reload);
   const working = Boolean(mine) || othersRunning;
   const off = working || ask.isPending || !data;
 
@@ -176,7 +177,8 @@ export function TimeMachinePanel({ reload = reloadPage }: { reload?: () => void 
             Go to date
           </button>
         </div>
-        {working ? (
+        {gaveUp ? <ErrorLine>{NOT_ANSWERED} Reload the page to look again.</ErrorLine> : null}
+        {working && !gaveUp ? (
           <p role="status" className="rounded-ms-ctl border border-ms-border bg-ms-surface-2 px-3 py-2 text-[14px] text-ms-fg">
             {WORKING}
             {!mine && data.busy ? <span className="block text-ms-fg-2">{jobTitle(data.busy)}{data.busy.by ? `, asked by ${data.busy.by}` : ""}.</span> : null}

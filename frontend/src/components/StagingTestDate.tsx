@@ -10,8 +10,11 @@ const subscribe = () => () => {};
 function testDate(): string {
   const days = Number((window as ClockWindow).__STG_OFFSET_DAYS__ || 0);
   if (!(days > 0)) return "";
-  // `Date` is already moved by the clock script (/api/staging/clock.js), so today is the test date.
-  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  // `Date` is already moved by the clock script (/api/staging/clock.js), so today is the test date — in Tashkent, as
+  // every other date of the toolbox, whatever zone the browser is in.
+  const today = new Date().toLocaleDateString("en-GB", {
+    day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Tashkent",
+  });
   return ` · Test date: ${today} (+${days} day${days === 1 ? "" : "s"})`;
 }
 

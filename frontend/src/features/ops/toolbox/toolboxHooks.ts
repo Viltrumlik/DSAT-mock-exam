@@ -12,6 +12,8 @@ import { toolboxApi, type MessageQuery } from "./toolboxApi";
 
 /** How often the panel asks the time machine whether it has finished. */
 export const TIME_POLL_MS = 3_000;
+/** How long the panel waits for the time machine before it says the machine may be stopped. */
+export const TIME_WAIT_LIMIT_MS = 10 * 60_000;
 /** Wait for whatever the time machine is doing, not for one particular request (someone else's). */
 export const ANY_REQUEST = "*";
 
@@ -41,6 +43,9 @@ export function useAskTime() {
   return useMutation({
     ...MUTATION,
     mutationFn: toolboxApi.ask,
+    // A refusal (409: busy, or another request waits) means the panel's picture is old: read the machine again, so
+    // the other person's request shows as working.
+    onError: () => client.invalidateQueries({ queryKey: toolboxKeys.time }),
     onSettled: () => client.invalidateQueries({ queryKey: toolboxKeys.actions }),
   });
 }
@@ -54,11 +59,13 @@ export function stillWorking(error: unknown): boolean {
 /**
  * While `request` runs (an id, or `ANY_REQUEST`), ask the time machine every `TIME_POLL_MS` until it is free and, for an
  * id, its last request is that one; then `onDone()`. The copy stops and restarts meanwhile, so an ask that fails that
- * way (`stillWorking`) is only asked again. Any other failure stops the wait and is returned.
+ * way (`stillWorking`) is only asked again. Any other failure stops the wait and is returned as `failed`; after
+ * `TIME_WAIT_LIMIT_MS` the wait stops too (`gaveUp`): the machine may be stopped.
  */
-export function useTimeMachineWait(request: string | null, onDone: () => void): unknown {
+export function useTimeMachineWait(request: string | null, onDone: () => void): { failed: unknown; gaveUp: boolean } {
   const done = useRef(onDone);
   const [failed, setFailed] = useState<unknown>(null);
+  const [gaveUp, setGaveUp] = useState(false);
 
   useEffect(() => {
     done.current = onDone;
@@ -68,6 +75,7 @@ export function useTimeMachineWait(request: string | null, onDone: () => void): 
     if (!request) return undefined;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
     const poll = async () => {
       try {
         const state = await toolboxApi.time();
@@ -84,6 +92,10 @@ export function useTimeMachineWait(request: string | null, onDone: () => void): 
           return;
         }
       }
+      if (Date.now() - startedAt >= TIME_WAIT_LIMIT_MS) {
+        setGaveUp(true);
+        return;
+      }
       timer = setTimeout(poll, TIME_POLL_MS);
     };
     timer = setTimeout(poll, TIME_POLL_MS);
@@ -93,7 +105,7 @@ export function useTimeMachineWait(request: string | null, onDone: () => void): 
     };
   }, [request]);
 
-  return failed;
+  return { failed, gaveUp };
 }
 
 export function useToolboxActions() {

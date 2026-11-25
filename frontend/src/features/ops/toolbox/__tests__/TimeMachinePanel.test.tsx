@@ -163,4 +163,42 @@ describe("TimeMachinePanel", () => {
     expect(alerts.map((a) => a.textContent)).toEqual([expect.stringContaining("balance warnings: not installed")]);
     expect(alerts[0].className).toContain("attention");
   });
+
+  it("after a 409 reads the machine again, so someone else's request shows as working", async () => {
+    time.mockResolvedValueOnce(stateOf()).mockResolvedValue(stateOf({ pending: true }));
+    ask.mockRejectedValue(
+      Object.assign(new Error("Request failed with status code 409"), {
+        response: { status: 409, data: { detail: "A request is already waiting for the time machine." } },
+      }),
+    );
+    render();
+    await settle();
+    const asked = time.mock.calls.length;
+    await act(async () => button("+1 day").click());
+    await settle();
+    expect(time.mock.calls.length).toBeGreaterThan(asked);
+    expect(host.textContent).toContain("A request is already waiting for the time machine.");
+    expect(host.textContent).toContain("The time machine is working");
+    expect(button("+1 day").disabled).toBe(true);
+  });
+
+  it("gives up after ten minutes without an answer, and says so", async () => {
+    time.mockResolvedValue(stateOf());
+    ask.mockResolvedValue({ id: "r1" });
+    const reload = render();
+    await settle();
+    await act(async () => button("+1 day").click());
+    await settle();
+
+    time.mockRejectedValue(new Error("Network Error"));
+    await advance(9 * 60_000);
+    expect(host.textContent).not.toContain("has not answered");
+    await advance(60_000 + 3_000);
+    expect(host.textContent).toContain("The time machine has not answered; it may be stopped.");
+    expect(host.textContent).not.toContain("The time machine is working");
+    const asked = time.mock.calls.length;
+    await advance(60_000);
+    expect(time.mock.calls.length).toBe(asked);
+    expect(reload).not.toHaveBeenCalled();
+  });
 });

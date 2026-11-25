@@ -39,6 +39,7 @@ export function StatusPanel() {
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Fact label="Release">{release ? `${release.release_id ?? ""} ${release.git_short ?? ""}`.trim() || "—" : "—"}</Fact>
             <Fact label="Database">{s.database}</Fact>
+            <Fact label="Copied from prod">{stampText(s.database_copied_at)}</Fact>
             <Fact label="Messages captured">{yesNo(s.capture)}</Fact>
             <Fact label="Clock">{offsetText(s.clock.offset_days)} · {stampText(s.clock.test_now)}</Fact>
             <Fact label="Celery worker answers">{yesNo(s.worker_alive)}</Fact>

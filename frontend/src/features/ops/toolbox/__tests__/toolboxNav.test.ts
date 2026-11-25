@@ -41,4 +41,16 @@ describe("the Toolbox menu item", () => {
     expect([OWNER_ME, ADMIN_ME, ACCOUNTANT_ME, TEACHER_ME].map((me) => canSeeItem(item!, me))).toEqual([true, true, false, false]);
     expect(opsPathAllowed("/ops/toolbox", ADMIN_ME)).toBe(true);
   });
+
+  it("follows the API's rule — the role, not a permission someone can be ticked", async () => {
+    vi.stubEnv("NEXT_PUBLIC_STAGING_TOOLBOX", "1");
+    const { OPS_NAV_GROUPS, canSeeItem } = await loadNav();
+    const item = OPS_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.href === "/ops/toolbox")!;
+    // Ticked manage_users, but not an admin: the API (super_admin, admin or superuser) refuses them.
+    const tickedTestAdmin = { role: "test_admin", permissions: ["manage_tests", "manage_users"] };
+    // An admin with manage_users ticked off still passes the API's role rule.
+    const adminWithoutUsers = { role: "Admin", permissions: ["view_people"] };
+    const superuser = { role: "teacher", permissions: ["*"], is_superuser: true };
+    expect([tickedTestAdmin, adminWithoutUsers, superuser].map((me) => canSeeItem(item, me))).toEqual([false, true, true]);
+  });
 });

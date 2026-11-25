@@ -67,6 +67,8 @@ export type TimeRequest =
 export interface ToolboxStatus {
   release: Record<string, string> | null;
   database: string;
+  /** When the copy was taken from prod (the time machine's base checkpoint); null when it does not know. */
+  database_copied_at: string | null;
   toolbox: boolean;
   capture: boolean;
   clock: { offset_days: number; test_now: string };

@@ -49,6 +49,11 @@ export type OpsNavItem = {
   superAdminOnly?: boolean;
   /** Shown only to a viewer holding one of these permissions: the ones the page's API checks. */
   requires?: readonly string[];
+  /**
+   * Shown only to these roles, and to the owner (`isOpsSuperAdmin`): for a page whose API checks the role, not a
+   * permission (the test copy's Toolbox: super_admin, admin or a superuser), so a per-person tick cannot differ.
+   */
+  roles?: readonly string[];
   /** The owner keeps this off the desk's console: hidden from desk viewers (`isDeskViewer`). */
   notForDesk?: boolean;
   /** A page reached from another (Timetable from Groups and the top bar): routed and guarded, not listed. */
@@ -235,7 +240,7 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
           // A broadcast cannot be recalled — super admins only, like the endpoint.
           { href: "/ops/broadcast", label: "Broadcast", icon: "ms-broadcast", tone: HUE.purple, superAdminOnly: true },
           // The test copy's toolbox: its time machine, test students, the messages it would have sent. Only where the
-          // build says so (NEXT_PUBLIC_STAGING_TOOLBOX=1); the owner and admins, as its API allows.
+          // build says so (NEXT_PUBLIC_STAGING_TOOLBOX=1); the owner and admins, by role, as its API allows.
           ...(process.env.NEXT_PUBLIC_STAGING_TOOLBOX === "1"
             ? [
                 {
@@ -244,7 +249,7 @@ export const OPS_CATEGORIES: readonly ConsoleCategory[] = [
                   icon: "history",
                   tone: HUE.slate,
                   badge: "TEST",
-                  requires: [P.manageUsers],
+                  roles: ["admin"],
                 } satisfies OpsNavItem,
               ]
             : []),
@@ -270,6 +275,7 @@ export function isOpsSuperAdmin(me: MeLike): boolean {
 /** Whether this viewer may see one item (see "Who sees what" above). */
 export function canSeeItem(item: OpsNavItem, me: MeLike): boolean {
   if (item.superAdminOnly && !isOpsSuperAdmin(me)) return false;
+  if (item.roles && !isOpsSuperAdmin(me) && !item.roles.includes(String(me?.role ?? "").trim().toLowerCase())) return false;
   if (item.notForDesk && isDeskViewer(me)) return false;
   return holds(me, ...(item.requires ?? []));
 }
