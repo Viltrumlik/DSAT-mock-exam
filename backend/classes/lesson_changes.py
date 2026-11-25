@@ -89,6 +89,51 @@ def is_lesson_day(room, day: date) -> bool:
     return day.isoweekday() in weekdays_of(room) or day in changes.moved.values()
 
 
+def _words(kind: str, reason: str, new_day: date | None) -> str:
+    """A day off in the console's words: "Lesson cancelled: Teacher ill", "Lesson moved to 9 Dec: Room taken"."""
+    if kind == "holiday":
+        head = "Centre holiday"
+    elif kind == LessonChange.Kind.MOVE:
+        head = f"Lesson moved to {short(new_day)}" if new_day else "Lesson moved"
+    else:
+        head = "Lesson cancelled"
+    return f"{head}: {reason}" if reason else head
+
+
+def day_effects(classroom_ids, day: date) -> tuple[dict[int, dict], set[int]]:
+    """``(off, moved_in)`` for these classes on ``day``, in one query.
+
+    ``off``: id -> {kind, reason, new_day, text} for each class with no lesson that day by a change (kind "cancel",
+    "move" = moved away with ``new_day`` in ISO, or "holiday"); a class with no change is absent, and a change of its
+    own wins over a centre holiday on the same day. ``moved_in``: the classes with a live lesson moved INTO ``day``."""
+    ids = list(classroom_ids)
+    rows = list(
+        _live()
+        .filter(Q(day=day) | Q(new_day=day, kind=LessonChange.Kind.MOVE))
+        .filter(Q(classroom__isnull=True) | Q(classroom_id__in=ids))
+        .values_list("classroom_id", "kind", "reason", "day", "new_day")
+    )
+    off: dict[int, dict] = {}
+    holiday = next((r for r in rows if r[0] is None and r[3] == day), None)
+    if holiday:
+        off = {i: {"kind": "holiday", "reason": holiday[2], "new_day": None, "text": _words("holiday", holiday[2], None)} for i in ids}
+    for classroom_id, kind, reason, original, new_day in rows:
+        if classroom_id is not None and original == day:
+            off[classroom_id] = {
+                "kind": kind,
+                "reason": reason,
+                "new_day": new_day.isoformat() if new_day else None,
+                "text": _words(kind, reason, new_day),
+            }
+    moved_in = {c for c, kind, _, _, new_day in rows if c is not None and kind == LessonChange.Kind.MOVE and new_day == day}
+    return off, moved_in
+
+
+def off_on(classroom_ids, day: date) -> dict[int, dict]:
+    """Why each of these classes has no lesson on ``day`` by a change (see ``day_effects``)."""
+    return day_effects(classroom_ids, day)[0]
+
+
 # ── The rules ────────────────────────────────────────────────────────────────────────────────────────────────
 
 

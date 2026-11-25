@@ -216,13 +216,19 @@ def _today(room, students: int) -> dict | None:
     register is open, else today's marks by kind. Its days are the timetable's less a day called off or
     moved away, plus a lesson moved in (``lesson_changes.is_lesson_day``).
     """
-    from .lesson_changes import is_lesson_day
+    from .lesson_changes import is_lesson_day, off_on
     from .lesson_schedule import has_begun
     from .models_attendance import AttendanceRecord, AttendanceSession
+    from .seat_actions import weekdays_of
 
     day = timezone.localdate()
     register = AttendanceSession.objects.filter(classroom=room, date=day).exists()
     scheduled = room.is_active and is_lesson_day(room, day) and has_begun(room, day)
+    # A lesson called off or moved away is not today's lesson, even when a register was opened for it: the header
+    # says so, with the reason, instead of counting marks.
+    off = off_on([room.pk], day).get(room.pk)
+    if off and room.is_active and day.isoweekday() in weekdays_of(room):
+        return {"lesson_time": room.lesson_time or "", "students": students, "marked": None, "change": off}
     if not (register or scheduled):
         return None
     marked = None

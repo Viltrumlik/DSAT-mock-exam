@@ -42,6 +42,8 @@ export type TeacherClass = {
   studentCount: number;
   nextLessonAt: string | null;
   state: ClassState;
+  /** Today's lesson called off, moved away or a centre holiday: the words for the card ("Lesson cancelled: …"). */
+  change?: string | null;
   /** Only for a class meeting today, and only when homework is due at that lesson. */
   homework: TodayHomework | null;
 };
@@ -124,6 +126,7 @@ export function parseTeacherToday(raw: unknown): TeacherToday {
         studentCount: num(row.student_count),
         nextLessonAt: orNull(row.next_lesson_at),
         state: state(row.state),
+        change: orNull(obj(row.change).text),
         homework: parseHomework(row.homework),
       };
     }),

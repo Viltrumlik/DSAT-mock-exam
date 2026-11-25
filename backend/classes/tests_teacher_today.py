@@ -471,6 +471,95 @@ class LessonStateTests(TeacherTodayFixture):
 
 
 # ── §4: the owner's reading order ────────────────────────────────────────────
+class LessonChangeTests(TeacherTodayFixture):
+    """Walkthrough gap 14: a cancelled lesson still showed as "Lesson finished" on the teacher's dashboard."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin = User.objects.create_user("tt_admin@t.com")
+        self.classroom = self.make_classroom(lesson_time="18:00")  # ODD: Mon, Wed, Fri
+        self.join(self.classroom, self.teacher)
+        self.student(self.classroom)
+
+    def row(self, now):
+        return self.class_row(build_teacher_today(self.teacher, now=now), self.classroom)
+
+    def test_an_ordinary_day_carries_no_change(self):
+        self.assertIsNone(self.row(at(MONDAY, 9))["change"])
+
+    def test_a_cancelled_lesson_is_not_a_lesson_that_day(self):
+        from classes import lesson_changes
+
+        lesson_changes.cancel(self.classroom, MONDAY, "Teacher ill", by=self.admin, today=MONDAY)
+        row = self.row(at(MONDAY, 21))  # after the hour the lesson would have ended
+        self.assertNotEqual(row["state"], "done")
+        self.assertEqual(row["state"], "upcoming")
+        self.assertEqual(row["next_lesson_at"], iso(WEDNESDAY, 18))
+        self.assertEqual(row["change"]["kind"], "cancel")
+        self.assertEqual(row["change"]["text"], "Lesson cancelled: Teacher ill")
+
+    def test_a_cancelled_lesson_leaves_no_homework_due_at_it(self):
+        from classes import lesson_changes
+
+        self.homework(self.classroom, due_at=at(MONDAY, 18))
+        lesson_changes.cancel(self.classroom, MONDAY, "Teacher ill", by=self.admin, today=MONDAY)
+        self.assertIsNone(self.row(at(MONDAY, 9))["homework"])
+
+    def test_a_centre_holiday_is_a_day_off_for_every_class(self):
+        from classes import lesson_changes
+
+        lesson_changes.cancel(None, MONDAY, "New Year", by=self.admin, today=MONDAY)
+        row = self.row(at(MONDAY, 21))
+        self.assertEqual(row["state"], "upcoming")
+        self.assertEqual(row["change"]["kind"], "holiday")
+        self.assertEqual(row["change"]["text"], "Centre holiday: New Year")
+
+    def test_a_lesson_moved_away_says_where_it_went(self):
+        from classes import lesson_changes
+
+        lesson_changes.move(self.classroom, MONDAY, TUESDAY, "Room taken", by=self.admin, today=MONDAY)
+        row = self.row(at(MONDAY, 9))
+        self.assertEqual(row["change"]["kind"], "move")
+        self.assertEqual(row["change"]["text"], "Lesson moved to 22 Sep: Room taken")
+        self.assertEqual(row["state"], "upcoming")
+        self.assertEqual(row["next_lesson_at"], iso(WEDNESDAY, 18))
+
+    def test_a_lesson_moved_in_is_a_lesson_that_day(self):
+        from classes import lesson_changes
+
+        lesson_changes.move(self.classroom, MONDAY, TUESDAY, "Room taken", by=self.admin, today=MONDAY)
+        self.assertEqual(self.meeting_today(TUESDAY), ["Math Junior 3"])
+        row = self.row(at(TUESDAY, 18, 30))
+        self.assertEqual(row["state"], "now")
+        self.assertEqual(row["next_lesson_at"], iso(TUESDAY, 18))
+        self.assertIsNone(row["change"])
+        self.assertEqual(self.row(at(TUESDAY, 21))["state"], "done")
+
+    def test_a_lesson_moved_in_carries_that_days_homework(self):
+        from classes import lesson_changes
+
+        lesson_changes.move(self.classroom, MONDAY, TUESDAY, "Room taken", by=self.admin, today=MONDAY)
+        self.homework(self.classroom, due_at=at(TUESDAY, 18))
+        self.assertIsNotNone(self.row(at(TUESDAY, 9))["homework"])
+
+    def test_an_undone_change_is_the_timetable_again(self):
+        from classes import lesson_changes
+
+        change = lesson_changes.cancel(self.classroom, MONDAY, "Teacher ill", by=self.admin, today=MONDAY)
+        lesson_changes.undo(change, by=self.admin, today=MONDAY)
+        row = self.row(at(MONDAY, 21))
+        self.assertEqual(row["state"], "done")
+        self.assertIsNone(row["change"])
+
+    def test_the_query_count_stays_bounded(self):
+        from classes import lesson_changes
+
+        lesson_changes.cancel(self.classroom, MONDAY, "Teacher ill", by=self.admin, today=MONDAY)
+        with CaptureQueriesContext(connection) as ctx:
+            build_teacher_today(self.teacher, now=at(MONDAY, 9))
+        self.assertLessEqual(len(ctx), 14)
+
+
 class ClassOrderingTests(TeacherTodayFixture):
     def names(self, now):
         return [r["name"] for r in build_teacher_today(self.teacher, now=now)["classes"]]
@@ -1105,7 +1194,7 @@ class EndpointTests(TeacherTodayFixture):
         self.assertEqual(
             set(payload["classes"][0]),
             {"classroom_id", "name", "subject", "room", "lesson_days", "lesson_days_label",
-             "lesson_time", "student_count", "next_lesson_at", "state", "homework"},
+             "lesson_time", "student_count", "next_lesson_at", "state", "change", "homework"},
         )
         self.assertEqual(
             set(payload["classes"][0]["homework"]),
@@ -1178,4 +1267,4 @@ class EndpointTests(TeacherTodayFixture):
             self.join(extra, self.teacher)
             fill(extra, i)
         self.assertEqual(cost(), one)
-        self.assertLessEqual(one, 12)
+        self.assertLessEqual(one, 13)  # 12 and the day's lesson changes

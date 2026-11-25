@@ -87,6 +87,8 @@ export type ClassroomGlance = {
     lesson_time: string;
     students: number;
     marked: { present: number; late: number; absent: number; excused: number } | null;
+    /** Today's lesson called off, moved away or a centre holiday: `text` is the header's words ("Lesson cancelled: …"). */
+    change?: { kind: "cancel" | "move" | "holiday"; reason: string; new_day: string | null; text: string };
   } | null;
 };
 
