@@ -8,6 +8,7 @@ from . import templates as T
 #: #52393 ("Bugun oxirgi kun!") on the last one. ``SmsSettings`` starts as exactly this.
 DEFAULT_DEBT_HOUR = 10
 DEBT_HOUR_MIN, DEBT_HOUR_MAX = 8, 20
+DEFAULT_BALANCE_HOUR = 10
 DEFAULT_WARNING_TEMPLATE_ID = 64942
 DEFAULT_LAST_DAY_TEMPLATE_ID = 52393
 
@@ -33,6 +34,18 @@ class SmsSettings(models.Model):
     last_day_template_id = models.PositiveIntegerField(default=DEFAULT_LAST_DAY_TEMPLATE_ID)
     last_day_pattern = models.TextField(default=T.DEBT_LAST_DAY.text)
     last_day_slots = models.JSONField(default=default_debt_slots)
+    #: The balance SMS (owner, 2026-11-25; db_default for the same deploy reason as ``EskizTemplate.alias``): off until the owner switches it on, at its own hour. Its two templates
+    #: are empty until picked in /ops/sms → Balance: nothing is sent without an approved text.
+    balance_enabled = models.BooleanField(default=False, db_default=False)
+    balance_hour = models.PositiveSmallIntegerField(
+        default=DEFAULT_BALANCE_HOUR, db_default=DEFAULT_BALANCE_HOUR, validators=[MinValueValidator(DEBT_HOUR_MIN), MaxValueValidator(DEBT_HOUR_MAX)]
+    )
+    low_template_id = models.PositiveIntegerField(null=True, blank=True)
+    low_pattern = models.TextField(blank=True, default="", db_default="")
+    low_slots = models.JSONField(default=list, db_default=[])
+    frozen_template_id = models.PositiveIntegerField(null=True, blank=True)
+    frozen_pattern = models.TextField(blank=True, default="", db_default="")
+    frozen_slots = models.JSONField(default=list, db_default=[])
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
@@ -169,7 +182,15 @@ class SmsMessage(models.Model):
     KIND_DEBT_WARNING = "debt_warning"
     KIND_CAMPAIGN = "campaign"
     KIND_TEST = "test"
-    KIND_CHOICES = [(KIND_DEBT_WARNING, "Debt warning"), (KIND_CAMPAIGN, "Campaign"), (KIND_TEST, "Test")]
+    KIND_BALANCE_LOW = "balance_low"
+    KIND_BALANCE_FROZEN = "balance_frozen"
+    KIND_CHOICES = [
+        (KIND_DEBT_WARNING, "Debt warning"),
+        (KIND_CAMPAIGN, "Campaign"),
+        (KIND_TEST, "Test"),
+        (KIND_BALANCE_LOW, "Balance low"),
+        (KIND_BALANCE_FROZEN, "Frozen for debt"),
+    ]
 
     STATUS_PENDING = "PENDING"  # claimed; the request is about to leave
     STATUS_SENT = "SENT"  # eskiz took it; delivery not known yet
@@ -235,3 +256,18 @@ class SmsMessage(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind} {self.run_on} {self.dedupe_key}: {self.status}"
+
+
+class BalanceNotice(models.Model):
+    """Once per occurrence (owner, 2026-11-25): a low balance is told once per dip, a debt freeze once per freeze;
+    each is armed again when it clears."""
+
+    account = models.OneToOneField("billing.Account", on_delete=models.CASCADE, related_name="balance_notice")
+    low_armed = models.BooleanField(default=True)
+    frozen_armed = models.BooleanField(default=True)
+    low_sent_at = models.DateTimeField(null=True, blank=True)
+    frozen_sent_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "sms_balance_notices"

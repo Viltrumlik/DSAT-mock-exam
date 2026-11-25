@@ -24,3 +24,7 @@ def is_configured() -> bool:
 
 def debt_warnings_enabled() -> bool:
     return bool(getattr(settings, "SMS_DEBT_WARNINGS_ENABLED", False))
+
+
+def balance_warnings_enabled() -> bool:
+    return bool(getattr(settings, "SMS_BALANCE_WARNINGS_ENABLED", False))

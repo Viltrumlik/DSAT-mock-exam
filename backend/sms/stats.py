@@ -36,6 +36,8 @@ UNFINISHED = (S.STATUS_SENT, S.STATUS_PENDING, S.STATUS_UNCERTAIN)
 CHARGED = (S.STATUS_PENDING, S.STATUS_SENT, S.STATUS_DELIVERED, S.STATUS_UNDELIVERED, S.STATUS_UNCERTAIN)
 #: The cost chart's series, in order (``automation`` arrives with the builder).
 KINDS = ("debt_warning", "campaign", "automation", "test")
+#: Kinds that are charted under another series: the balance SMS are automations.
+SERIES_OF = {S.KIND_BALANCE_LOW: "automation", S.KIND_BALANCE_FROZEN: "automation"}
 DEFAULT_DAYS = 30
 MAX_DAYS = 366
 #: The debt effect's windows, in days from the first warning (that day counts as day 1).
@@ -148,8 +150,9 @@ def _cost_by_month(qs, tz) -> list[dict]:
     for row in rows:
         key = row["month"].strftime("%Y-%m")
         into = months.setdefault(key, {"month": key, **{kind: 0 for kind in KINDS}, "total": 0})
-        if row["kind"] in KINDS:
-            into[row["kind"]] += row["cost"] or 0
+        series = SERIES_OF.get(row["kind"], row["kind"])
+        if series in KINDS:
+            into[series] += row["cost"] or 0
         into["total"] += row["cost"] or 0
     return list(months.values())
 
