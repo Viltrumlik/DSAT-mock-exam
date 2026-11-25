@@ -196,7 +196,9 @@ def _glance(room) -> dict:
 
     every = list(AttendanceRecord.objects.filter(session__classroom=room).values_list("status", flat=True))
     last = AttendanceSession.objects.filter(classroom=room).order_by("-date").values_list("date", flat=True).first()
-    ids = list(_student_seats(room).values_list("user_id", flat=True))
+    seats = _student_seats(room)
+    # A demo seat is not a student: it is not expected to hand homework in, and its mark is not a student marked.
+    ids = list(seats.exclude(seat_status=SEAT_TRIAL).values_list("user_id", flat=True))
     work = [a for a in _homework_work(room) if a.status == Assignment.STATUS_PUBLISHED]
     published = {a.pk for a in work}
     done = _completion_map(room, ids, work) if ids and work else {}
@@ -209,7 +211,7 @@ def _glance(room) -> dict:
             "expected": len(ids) * len(published),
         },
         "owing": LcupStudentLink.objects.filter(user_id__in=ids, balance__lt=0).count() if ids else 0,
-        "today": _today(room, len(ids) - _demo_count(room)),
+        "today": _today(room, ids),
     }
 
 
@@ -217,12 +219,12 @@ def _glance(room) -> dict:
 _MARKS = (("present", "PRESENT"), ("late", "LATE"), ("absent", "ABSENT"), ("excused", "EXCUSED"))
 
 
-def _today(room, students: int) -> dict | None:
+def _today(room, student_ids: list) -> dict | None:
     """
     "Does it meet today, and is the register done?" (design handoff, scenario 5: "header shows today's
     lesson and the roster count"). None when the class has no lesson today — by its days once it has
     begun (a live class only), or a register opened today on any day. ``marked`` is None while no
-    register is open, else today's marks by kind.
+    register is open, else today's marks by kind, of ``student_ids`` only (a demo seat's mark is not a student's).
     """
     from .lesson_schedule import has_begun, lesson_weekdays
     from .models_attendance import AttendanceRecord, AttendanceSession
@@ -235,11 +237,11 @@ def _today(room, students: int) -> dict | None:
     marked = None
     if register:
         counts = dict(
-            AttendanceRecord.objects.filter(session__classroom=room, session__date=day)
+            AttendanceRecord.objects.filter(session__classroom=room, session__date=day, student_id__in=student_ids)
             .order_by().values("status").annotate(n=Count("pk")).values_list("status", "n")
         )
         marked = {word: counts.get(status, 0) for word, status in _MARKS}
-    return {"lesson_time": room.lesson_time or "", "students": students, "marked": marked}
+    return {"lesson_time": room.lesson_time or "", "students": len(student_ids), "marked": marked}
 
 
 def _homework_work(room):
@@ -247,6 +249,19 @@ def _homework_work(room):
     from .analytics import _academic_assignments
 
     return [a for a in _academic_assignments(room) if a.category != Assignment.CATEGORY_CLASSWORK]
+
+
+def _owed_balances(ids) -> dict:
+    """user id -> balance for the roster's Owes: the ledger's once it is the master (leaving lc-up, 1 Dec 2026), else lc-up's."""
+    from billing.conf import ledger_is_ours
+
+    if ledger_is_ours():
+        from billing.reads import balances_by_user
+
+        return balances_by_user(ids)
+    from lcup.models import LcupStudentLink
+
+    return dict(LcupStudentLink.objects.filter(user_id__in=ids).values_list("user_id", "balance"))
 
 
 def roster_part(room, request=None) -> dict:
@@ -267,7 +282,7 @@ def roster_part(room, request=None) -> dict:
         session__classroom=room, student_id__in=ids
     ).values_list("student_id", "status"):
         statuses[student_id].append(status)
-    balances = dict(LcupStudentLink.objects.filter(user_id__in=ids).values_list("user_id", "balance"))
+    balances = _owed_balances(ids)
     work = _homework_work(room)
     published = {a.pk for a in work if a.status == Assignment.STATUS_PUBLISHED}
     done = _completion_map(room, ids, work) if ids and work else {}
@@ -492,7 +507,8 @@ def register_part(room, request=None) -> dict:
     ):
         marks[student_id][iso(day)] = status
 
-    seats = sorted(_student_seats(room), key=lambda s: display_name(s.user).casefold())
+    # Paying and frozen seats first, a demo seat after them, each block by name.
+    seats = sorted(_student_seats(room), key=lambda s: (s.seat_status == SEAT_TRIAL, display_name(s.user).casefold()))
     sitting = {s.user_id for s in seats}
     froze = frozen_on(room) if any(s.seat_status == ClassroomMembership.SEAT_FROZEN for s in seats) else {}
     students = [
@@ -502,6 +518,7 @@ def register_part(room, request=None) -> dict:
             "section": section_of(s.user),
             "joined": iso(timezone.localdate(s.joined_at)) if s.joined_at else None,
             "seat_status": s.seat_status,
+            "is_demo": s.seat_status == SEAT_TRIAL,
             "frozen_on": iso(froze.get(s.user_id)) if s.seat_status == ClassroomMembership.SEAT_FROZEN else None,
             "left": False,
             "marks": marks.get(s.user_id, {}),
@@ -513,7 +530,7 @@ def register_part(room, request=None) -> dict:
         (
             {
                 "id": u.pk, "name": display_name(u), "section": section_of(u), "joined": None,
-                "seat_status": None, "frozen_on": None, "left": True, "marks": marks[u.pk],
+                "seat_status": None, "is_demo": False, "frozen_on": None, "left": True, "marks": marks[u.pk],
             }
             for u in gone
         ),
