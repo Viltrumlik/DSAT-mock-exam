@@ -7,8 +7,8 @@ the change's own transaction.
   ``ledger._bill_lessons`` skips the day, so the 15-minute tick never writes it again.
 * A moved lesson is charged once, on its new day, by ``_bill_lessons`` (``ledger.MOVED_KEY``): ``bill_span`` writes it
   now when that day has come, else the tick on that day does.
-* An undo voids the moved lesson and lets ``bill_span`` write the day again: a new row at the voided row's own amount,
-  and the voided one stays.
+* An undo voids the moved lesson and lets ``bill_span`` write the day again: a new row at the voided row's own amount
+  (for a move, the moved lesson's), and the voided one stays.
 * Each takes the spans' rows first (``_spans``), so the 15-minute tick billing the same span never interleaves with it.
 * A new student's first month is flat (owner, 2026-11-22), so a change inside it finds nothing to void or write.
 
@@ -122,10 +122,13 @@ def apply(change, *, today: date, by) -> dict:
 
 def revert(change, *, today: date, by) -> dict:
     """An undone change: a move's lesson on its new day is voided, then the day is charged again (``bill_span``, for
-    a day that has come; the tick writes one still ahead on its day), at what it was charged at before the change took
-    it back — a lesson already written keeps its price (``ledger.set_personal_price``). ``change`` is already undone."""
+    a day that has come; the tick writes one still ahead on its day), at what it was charged at before: the moved
+    lesson's amount, or the day's own row the cancel voided. A lesson already written keeps its price
+    (``ledger.set_personal_price``). ``change`` is already undone."""
     with transaction.atomic():
         spans = _spans(change)
+        days = {span.pk: f"{ledger.LESSON_KEY}{span.pk}:{change.day.isoformat()}" for span in spans}
+        prices = ledger.last_voided_amounts(days.values())
         voided = []
         if change.new_day is not None:
             words = f"Move undone: {change.reason}"
@@ -133,6 +136,8 @@ def revert(change, *, today: date, by) -> dict:
                 row = _void_live(f"{ledger.MOVED_KEY}{span.pk}:{change.day.isoformat()}", words, by)
                 if row is not None:
                     voided.append(row)
-        days = {f"{ledger.LESSON_KEY}{span.pk}:{change.day.isoformat()}" for span in spans}
-        charged = _bill(spans, today, days, prices=ledger.last_voided_amounts(days))
+                    # Back to its old day at what it was charged on the new one, even when the old day was never
+                    # charged (moved before it came).
+                    prices[days[span.pk]] = row.amount
+        charged = _bill(spans, today, set(days.values()), prices=prices)
         return _summary(spans, voided, charged)

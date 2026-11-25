@@ -358,6 +358,25 @@ class PriceTests(Case):
         L.undo(change, by=self.admin, today=WED)
         self.assertEqual(ledger.balance(account), before)
 
+    def test_a_move_undone_puts_its_lesson_back_at_what_the_moved_lesson_was_charged(self):
+        # Moved before Wednesday came: no Wednesday row to void or copy. Thursday's tick charges the moved lesson.
+        _, account, span = self.old_student(today=MON)
+        change = self.move(WED, THU, today=MON)
+        ledger.own_tick(THU)
+        before = ledger.balance(account)
+        ledger.set_personal_price(span.seat, 400_000, reason="sibling", by=None, today=THU)
+        undone = L.undo(change, by=self.admin, today=THU)
+        self.assertEqual(ledger.balance(account), before)
+        rows = Entry.objects.filter(key=key("lesson:", span, WED))
+        self.assertEqual(
+            [(row.amount, row.day, row.note, row.voided_at is None) for row in rows],
+            [(-PRICE, WED, "Lesson 2026-12-09", True)],
+        )
+        self.assertEqual(
+            undone.money,
+            {"voided": 1, "students": 1, "amount": PRICE, "charged": 1, "charged_amount": PRICE, "unfrozen": 0},
+        )
+
 
 class SpanLockTests(Case):
     """A lesson change and a tick billing the same span take turns on the span's row (``select_for_update``), so the
