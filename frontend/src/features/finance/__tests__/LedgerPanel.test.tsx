@@ -319,7 +319,10 @@ describe("LedgerPanel on a device outside Tashkent", () => {
     expect(text).toContain("This ledger is the centre's record: payments, refunds and lesson charges are kept here.");
     expect(text).not.toContain("runs beside lc-up");
     expect(text).not.toContain("Following lc-up is switched off");
-    expect(text).toContain("lc-up comparison (history)");
-    expect(text).toContain("compared on 20 Nov 2026");
+    expect(text).toContain("lc-up comparison (history, last compared 20 Nov 2026)");
+    expect(text).not.toContain("A small difference is up to");
+    // The history tiles stay readable but carry no attention tint.
+    const big = [...document.querySelectorAll("dt")].find((dt) => dt.textContent === "Big differences");
+    expect(big?.parentElement?.outerHTML).not.toMatch(/critical/i);
   });
 });

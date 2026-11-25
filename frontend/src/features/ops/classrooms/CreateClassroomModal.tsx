@@ -62,6 +62,7 @@ export function CreateClassroomModal({
   const [form, setForm] = useState<CreateForm>(BLANK);
   const [teachers, setTeachers] = useState<StaffOpt[]>([]);
   const [supportOpts, setSupportOpts] = useState<StaffOpt[]>([]);
+  const [teachersFailed, setTeachersFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const regions = useRegions();
@@ -76,7 +77,8 @@ export function CreateClassroomModal({
         setTeachers(choices.teachers);
         setSupportOpts(choices.support_teachers);
       } catch {
-        /* the pickers are optional: a class can be created and staffed later */
+        // The pickers are optional: a class can be created and staffed later, but say so.
+        if (alive) setTeachersFailed(true);
       }
     })();
     return () => {
@@ -295,6 +297,11 @@ export function CreateClassroomModal({
               </option>
             ))}
           </Select>
+          {teachersFailed ? (
+            <p role="status" className="mt-1 text-[12px] text-ms-fg-3">
+              Could not load the teachers. You can create the group and assign a teacher later.
+            </p>
+          ) : null}
         </Field>
 
         <Field

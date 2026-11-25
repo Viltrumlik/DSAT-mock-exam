@@ -366,6 +366,19 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
   );
 }
 
+/** The lc-up comparison tiles; `attention` tints the ones that need a look, which only a live comparison does. */
+function comparisonFigures(counts: Partial<Record<"matched" | "small" | "big" | "unknown" | "missing", number>>, attention: boolean) {
+  return (
+    <>
+      <Figure label="Matched" value={String(counts.matched ?? 0)} />
+      <Figure label="Small differences" value={String(counts.small ?? 0)} />
+      <Figure label="Big differences" value={String(counts.big ?? 0)} debt={attention && (counts.big ?? 0) > 0} />
+      <Figure label="lc-up balance unknown" value={String(counts.unknown ?? 0)} />
+      <Figure label="Missing here" value={String(counts.missing ?? 0)} debt={attention && (counts.missing ?? 0) > 0} />
+    </>
+  );
+}
+
 export function LedgerPanel() {
   const q = useLedgerSummary();
   const [accountId, setAccountId] = useState<number | null>(null);
@@ -378,6 +391,7 @@ export function LedgerPanel() {
   }
   if (accountId !== null) return <AccountView id={accountId} onBack={() => setAccountId(null)} />;
   const counts = summary.comparison?.ok ? summary.comparison.counts : null;
+  const ours = Boolean(summary.ledger_is_ours);
   return (
     <div className="space-y-3">
       {summary.ledger_is_ours ? (
@@ -394,24 +408,24 @@ export function LedgerPanel() {
       <dl
         className={cn(
           "grid grid-cols-2 gap-px overflow-hidden rounded-ms-card border border-ms-border bg-ms-grid sm:grid-cols-4 xl:grid-cols-7",
-          counts && "[&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1",
+          counts && !ours && "[&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1",
         )}
       >
         <Figure label="Accounts" value={String(summary.accounts)} />
         <Figure label="Former students" value={String(summary.former)} />
-        {counts ? (
-          <>
-            <Figure label="Matched" value={String(counts.matched ?? 0)} />
-            <Figure label="Small differences" value={String(counts.small ?? 0)} />
-            <Figure label="Big differences" value={String(counts.big ?? 0)} debt={(counts.big ?? 0) > 0} />
-            <Figure label="lc-up balance unknown" value={String(counts.unknown ?? 0)} />
-            <Figure label="Missing here" value={String(counts.missing ?? 0)} debt={(counts.missing ?? 0) > 0} />
-          </>
-        ) : null}
+        {counts && !ours ? comparisonFigures(counts, true) : null}
       </dl>
-      {counts ? (
+      {counts && ours ? (
+        <section aria-label="lc-up comparison (history)" className="space-y-2">
+          <h2 className={CAPTION}>lc-up comparison (history, last compared {day(summary.comparison?.day)})</h2>
+          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-ms-card border border-ms-border bg-ms-grid sm:grid-cols-5">
+            {comparisonFigures(counts, false)}
+          </dl>
+        </section>
+      ) : null}
+      {counts && !ours ? (
         <p className="text-[12px] text-ms-fg-3">
-          {summary.ledger_is_ours ? "lc-up comparison (history): compared on " : "Compared on "}{day(summary.comparison?.day)}. A small difference is up to 1,000 UZS, usually rounding.
+          Compared on {day(summary.comparison?.day)}. A small difference is up to 1,000 UZS, usually rounding.
         </p>
       ) : null}
       <Problems problems={summary.problems} />

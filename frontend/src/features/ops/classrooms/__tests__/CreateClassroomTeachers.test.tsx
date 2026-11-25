@@ -53,4 +53,16 @@ describe("Add classroom teacher list", () => {
     expect(options[0]).toContain("Assign a teacher later");
     expect(options.join("|")).toContain("Vali Aliyev");
   });
+
+  it("says so under the picker when the teachers cannot be loaded", async () => {
+    teacherChoices.mockRejectedValue(new Error("Network Error"));
+    await open();
+    expect(document.body.textContent).toContain("Could not load the teachers. You can create the group and assign a teacher later.");
+  });
+
+  it("shows no such note when they load", async () => {
+    teacherChoices.mockResolvedValue({ teachers: [], support_teachers: [] });
+    await open();
+    expect(document.body.textContent).not.toContain("Could not load the teachers");
+  });
 });
