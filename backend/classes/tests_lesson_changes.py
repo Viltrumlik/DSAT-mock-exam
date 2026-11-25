@@ -4,15 +4,19 @@ December 2026: Monday 7, Tuesday 8, Wednesday 9, Thursday 10, Friday 11. The cla
 Mon/Wed/Fri and never on a Tuesday. Today is fixed at Monday 7 December and passed in, never read from the clock.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.utils import timezone
+from rest_framework.test import APIClient
 
 from billing.tests_seat_class import make_room
+from classes import attendance_auto
 from classes import lesson_changes as L
+from classes.models_attendance import AttendanceSession
 from classes.models_lesson_changes import LessonChange
 
 User = get_user_model()
@@ -20,6 +24,12 @@ User = get_user_model()
 TODAY = date(2026, 12, 7)
 MON, TUE, WED, THU, FRI = (date(2026, 12, d) for d in (7, 8, 9, 10, 11))
 SUN = date(2026, 12, 13)
+HOST = "admin.mastersat.uz"
+
+
+def at(day: date, hour: int) -> datetime:
+    """An aware moment on the school's clock."""
+    return timezone.make_aware(datetime(day.year, day.month, day.day, hour))
 
 
 class Case(TestCase):
@@ -286,3 +296,80 @@ class MoneyHookTests(Case):
         with mock.patch("billing.lesson_money.apply") as apply, self.assertRaises(L.ChangeRefused):
             self.cancel(TUE)
         apply.assert_not_called()
+
+
+class RegisterCase(Case):
+    def setUp(self):
+        super().setUp()
+        # A start date, so ``attendance_auto`` never floors the window at the day the row was created.
+        self.room.lesson_time, self.room.start_date = "09:00", date(2026, 11, 2)
+        self.room.save(update_fields=["lesson_time", "start_date"])
+
+
+class DueRegisterTests(RegisterCase):
+    """A register opens by itself on a lesson day (``attendance_auto``): not on a day off, and on a lesson moved in."""
+
+    def due(self, now, backfill=2):
+        return attendance_auto.due_lesson_dates(self.room, now=now, backfill_days=backfill)
+
+    def test_no_register_on_a_day_called_off_or_a_holiday(self):
+        self.cancel(MON)
+        self.holiday(WED)
+        self.assertEqual(self.due(at(WED, 12)), [])
+        self.assertEqual(self.due(at(FRI, 12), backfill=4), [FRI])
+        self.assertEqual(attendance_auto.ensure_sessions(self.room, now=at(FRI, 12), backfill_days=4)[0].date, FRI)
+        self.assertEqual(list(AttendanceSession.objects.values_list("date", flat=True)), [FRI])
+
+    def test_a_lesson_moved_in_opens_its_register_once_it_has_started(self):
+        self.move(MON, TUE)
+        self.assertEqual(self.due(at(TUE, 8)), [])
+        self.assertEqual(self.due(at(TUE, 10)), [TUE])
+        created = attendance_auto.ensure_sessions(self.room, now=at(TUE, 10), backfill_days=2)
+        self.assertEqual([session.date for session in created], [TUE])
+
+    def test_a_lesson_moved_beyond_the_window_waits_for_its_day(self):
+        self.move(MON, SUN)
+        self.assertEqual(self.due(at(WED, 12)), [WED])
+        self.assertEqual(self.due(at(SUN, 12), backfill=0), [SUN])
+
+    def test_an_undone_change_brings_the_day_back(self):
+        L.undo(self.cancel(MON), by=self.admin, today=TODAY)
+        self.assertEqual(self.due(at(MON, 12)), [MON])
+
+
+@override_settings(ALLOWED_HOSTS=["testserver", HOST])
+class SessionChangeTests(RegisterCase):
+    """A register held on a day now off says why (``views_attendance``): the teacher's page shows it, not the marks."""
+
+    def get(self, path):
+        api = APIClient()
+        api.force_authenticate(self.admin)
+        with mock.patch("classes.attendance_auto.ensure_sessions", return_value=[]):
+            return api.get(path, HTTP_HOST=HOST)
+
+    def test_the_list_and_the_register_say_the_day_is_off(self):
+        monday = AttendanceSession.objects.create(classroom=self.room, date=MON)
+        AttendanceSession.objects.create(classroom=self.room, date=WED)
+        friday = AttendanceSession.objects.create(classroom=self.room, date=FRI)
+        self.cancel(MON)
+        self.move(WED, THU)
+        base = f"/api/classes/{self.room.pk}/attendance/sessions/"
+        listed = {row["date"]: row["change"] for row in self.get(base).json()["sessions"]}
+        self.assertEqual(
+            listed,
+            {
+                "2026-12-07": {"kind": "cancel", "reason": "Teacher ill", "new_day": None},
+                "2026-12-09": {"kind": "move", "reason": "Teacher at a seminar", "new_day": "2026-12-10"},
+                "2026-12-11": None,
+            },
+        )
+        self.assertEqual(
+            self.get(f"{base}{monday.pk}/").json()["change"], {"kind": "cancel", "reason": "Teacher ill", "new_day": None}
+        )
+        self.assertIsNone(self.get(f"{base}{friday.pk}/").json()["change"])
+
+    def test_a_centre_holiday_says_so_too(self):
+        session = AttendanceSession.objects.create(classroom=self.room, date=FRI)
+        self.holiday(FRI)
+        detail = self.get(f"/api/classes/{self.room.pk}/attendance/sessions/{session.pk}/").json()
+        self.assertEqual(detail["change"], {"kind": "cancel", "reason": "Independence Day", "new_day": None})

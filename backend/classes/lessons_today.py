@@ -8,7 +8,8 @@ keeps it; a test holds the paired classes both find in agreement.
 Each rule is borrowed from where it already lives, so Today cannot disagree with the register:
 
 - **Meets on ``day``**: its ``lesson_days`` covers the weekday (``lesson_schedule.LESSON_WEEKDAYS``), it has
-  begun by ``day`` (``lesson_schedule.begun_by``), and it ``is_active``.
+  begun by ``day`` (``lesson_schedule.begun_by``), and it ``is_active``. A day it called off or moved away and a
+  centre holiday take it out; a lesson moved to ``day`` puts it in (``lesson_changes``, 2026-11-25).
 - **The lesson**: ``lesson_schedule.lesson_interval``. A class whose ``lesson_time`` cannot be read is still
   listed, with no times and phase ``unknown``, so a lesson never goes silently missing from Today.
 - **The roster**: the register's own rule (``views_attendance._active_students``): active student seats
@@ -52,18 +53,55 @@ MARKS = {
 }
 
 
-def meeting_classrooms(day: date) -> list[Classroom]:
-    """Every active class that holds a lesson on ``day``, teacher and branch joined: one query (none on a
-    Sunday, which belongs to no schedule)."""
-    codes = [code for code, weekdays in LESSON_WEEKDAYS.items() if day.weekday() in weekdays]
-    if not codes:
+def changes_on(day: date) -> list:
+    """The live lesson changes that touch ``day`` (``classes.lesson_changes``): called off, moved away, moved to it,
+    or a centre holiday. One query."""
+    from .models_lesson_changes import LessonChange
+
+    return list(
+        LessonChange.objects.filter(undone_at__isnull=True)
+        .filter(Q(day=day) | Q(new_day=day))
+        .select_related("classroom")
+        .order_by("pk")
+    )
+
+
+def meeting_classrooms(day: date, changes: list | None = None) -> list[Classroom]:
+    """Every active class that holds a lesson on ``day``, teacher and branch joined: its weekdays, less a class that
+    called the day off or moved it away and every class on a centre holiday, plus a lesson moved to ``day``
+    (``changes``, from :func:`changes_on` when not given). One query for the classes, none when nothing meets (a
+    Sunday, which belongs to no schedule, unless a lesson was moved to it)."""
+    if changes is None:
+        changes = changes_on(day)
+    holiday = any(change.classroom_id is None and change.day == day for change in changes)
+    off = {change.classroom_id for change in changes if change.classroom_id is not None and change.day == day}
+    moved_in = {change.classroom_id for change in changes if change.new_day == day}
+    codes = [] if holiday else [code for code, weekdays in LESSON_WEEKDAYS.items() if day.weekday() in weekdays]
+    meets = None
+    if codes:
+        meets = Q(lesson_days__in=codes) & ~Q(pk__in=off) if off else Q(lesson_days__in=codes)
+    if moved_in:
+        meets = Q(pk__in=moved_in) if meets is None else meets | Q(pk__in=moved_in)
+    if meets is None:
         return []
     return list(
-        Classroom.objects.filter(is_active=True, lesson_days__in=codes)
+        Classroom.objects.filter(meets, is_active=True)
         .filter(begun_by(day))
         .select_related("teacher", "branch")
         .order_by("pk")
     )
+
+
+def _change_row(change) -> dict:
+    return {
+        "id": change.pk,
+        "classroom_id": change.classroom_id,
+        "classroom": change.classroom.name if change.classroom_id else None,
+        "kind": change.kind,
+        "reason": change.reason,
+        "day": change.day.isoformat(),
+        "new_day": change.new_day.isoformat() if change.new_day else None,
+    }
 
 
 def _rosters(room_ids, day: date) -> tuple[dict[int, set[int]], dict[int, set[int]]]:
@@ -147,7 +185,8 @@ def _iso(value: datetime | None) -> str | None:
 def lessons_today(day: date, *, now: datetime | None = None) -> dict:
     """The lessons of ``day`` as ``GET /api/classes/admin/lessons/today/`` reports them, judged at ``now``."""
     now = now or timezone.now()
-    rooms = meeting_classrooms(day)
+    changes = changes_on(day)
+    rooms = meeting_classrooms(day, changes)
     room_ids = [room.pk for room in rooms]
     roster, seat_frozen = _rosters(room_ids, day) if room_ids else ({}, {})
     marks = _marks(room_ids, day) if room_ids else {}
@@ -210,4 +249,12 @@ def lessons_today(day: date, *, now: datetime | None = None) -> dict:
             ),
             "no_teacher": sum(1 for row in lessons if row["teacher"] is None),
         },
+        # The day's lesson changes, for the timetable's table that undoes them: a centre holiday first, then by class.
+        "changes": [
+            _change_row(change)
+            for change in sorted(
+                changes,
+                key=lambda c: (c.classroom_id is not None, (c.classroom.name if c.classroom_id else "").casefold(), c.pk),
+            )
+        ],
     }

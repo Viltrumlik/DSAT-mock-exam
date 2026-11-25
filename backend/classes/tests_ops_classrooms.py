@@ -227,6 +227,15 @@ class ClassroomChangeFormTests(ClassroomFixture):
             {"lesson_time": "", "students": 1, "marked": {"present": 0, "late": 0, "absent": 0, "excused": 0}},
         )
 
+    def test_today_follows_a_lesson_called_off_or_moved_in(self):
+        from classes import lesson_changes
+
+        lesson_changes.cancel(self.paired, WEDNESDAY, "Teacher ill", by=self.admin, today=WEDNESDAY)
+        self.assertIsNone(self.today(self.paired, WEDNESDAY))
+        lesson_changes.move(self.unpaired, TUESDAY, WEDNESDAY, "Room taken", by=self.admin, today=WEDNESDAY)
+        self.assertIsNone(self.today(self.unpaired, TUESDAY))
+        self.assertEqual(self.today(self.unpaired, WEDNESDAY), {"lesson_time": "", "students": 1, "marked": None})
+
     def test_an_unpaired_class_has_no_lcup_block(self):
         self.assertIsNone(self.get(self.url(self.unpaired.pk)).json()["lcup"])
 

@@ -53,7 +53,12 @@ def due_lesson_dates(classroom: Classroom, *, now=None, backfill_days: int = BAC
     ``schedule_is_usable``. Today counts only once its lesson start time has passed; a class
     with an unreadable ``lesson_time`` but a readable ``lesson_days`` gets its past lesson
     days and today, on the grounds that the day is the part we are sure of.
+
+    A day the class called off or moved away, or a centre holiday, opens no register; a lesson
+    moved to a day inside the window opens one like any other (``lesson_changes``, 2026-11-25).
     """
+    from .lesson_changes import day_changes
+
     now = now or timezone.now()
     today = timezone.localdate(now)
     first = today - timedelta(days=max(0, int(backfill_days)))
@@ -66,7 +71,10 @@ def due_lesson_dates(classroom: Classroom, *, now=None, backfill_days: int = BAC
     if classroom.start_date is None:
         first = max(first, timezone.localdate(classroom.created_at))
 
-    dates = [day for day in lesson_days_in_range(classroom, first, today) if has_begun(classroom, day)]
+    changes = day_changes(classroom.pk, first, today)
+    moved_in = {day for day in changes.moved.values() if first <= day <= today}
+    timetable = {day for day in lesson_days_in_range(classroom, first, today) if day not in changes.off}
+    dates = sorted(day for day in timetable | moved_in if has_begun(classroom, day))
     if not dates:
         return []
 
