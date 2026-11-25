@@ -139,6 +139,18 @@ OPS_SITE_URL = os.getenv('OPS_SITE_URL', 'https://admin.mastersat.uz')
 # opt-in and stays off until the Mailgun domain is verified.
 EMAIL_SENDING_ENABLED = _env_bool('EMAIL_SENDING_ENABLED', default_when_unset=False)
 
+
+def _email_settings_for(staging_toolbox: bool, backend: str, sending: bool) -> tuple[str, bool]:
+    """The test copy captures every e-mail, as it does every SMS, Telegram message and push: the capture backend, and
+    sending on so each mail reaches it. ``staging.mail`` still captures only on the copy's own database and sends
+    nothing anywhere else. Off the copy, as configured above."""
+    if staging_toolbox:
+        return 'staging.mail.CaptureEmailBackend', True
+    return backend, sending
+
+
+EMAIL_BACKEND, EMAIL_SENDING_ENABLED = _email_settings_for(STAGING_TOOLBOX, EMAIL_BACKEND, EMAIL_SENDING_ENABLED)
+
 # Email address claim: when someone proves control of an address that another account
 # holds UNVERIFIED, the address moves to them and the other account is left with NULL.
 # An unverified address is an unproven claim, so it belongs to whoever can show they
