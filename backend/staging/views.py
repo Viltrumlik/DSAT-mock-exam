@@ -419,6 +419,10 @@ class SignInView(ToolboxView):
             user = tools.link_holder(token)
         except tm.ToolboxRefused as refused:
             return Response({"detail": str(refused)}, status=refused.status)
+        # Only on the host the link was made for: a student's link opened on the admin host would otherwise replace
+        # the admin's own sign-in there (the console rules below let a learner through on that host).
+        if getattr(request, "lms_console", "") != tools.side_of(user):
+            return Response({"detail": "Open this link on the site it was made for."}, status=http.HTTP_403_FORBIDDEN)
         refusal = _console_refusal_for(request, user)
         if refusal is not None:
             return refusal  # before the link is used up: it still works on the right host

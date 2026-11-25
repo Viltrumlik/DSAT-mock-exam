@@ -323,7 +323,8 @@ class SignInTests(ToolboxApiCase):
 
     def test_the_wrong_console_is_refused_and_the_link_kept(self):
         url = self.link(self.student).data["url"]
-        self.assertEqual(self.call("get", urlsplit(url).path, authenticate=False, host=TEACHER_HOST).status_code, 403)
+        for host in (TEACHER_HOST, ADMIN_HOST):
+            self.assertEqual(self.call("get", urlsplit(url).path, authenticate=False, host=host).status_code, 403, host)
         self.assertEqual(self.redeem(url).status_code, 302)
 
     def test_an_admin_cannot_become_someone_ranked_as_high(self):
