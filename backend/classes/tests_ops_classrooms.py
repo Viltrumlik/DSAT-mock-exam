@@ -309,3 +309,50 @@ class ClassroomChangeFormTests(ClassroomFixture):
         self.assertEqual(self.get(self.url(999999, "roster")).status_code, 404)
         self.assertEqual(self.get(self.url(self.paired.pk), user=self.teacher).status_code, 403)
         self.assertEqual(self.get(self.url(self.paired.pk, "roster"), user=self.teacher).status_code, 403)
+
+
+class DemoSeatsAreNotStudentsTests(ClassroomFixture):
+    """A demo (trial) seat holds a chair but is not a student: it is counted apart, as ``demo``."""
+
+    def setUp(self):
+        super().setUp()
+        self.room = Classroom.objects.create(
+            name="G9 Demo", subject="MATH", lesson_days="ODD", created_by=self.teacher, teacher=self.teacher,
+            max_students=3,
+        )
+        for name, seat in (("a1", "active"), ("f1", "frozen"), ("t1", "trial")):
+            ClassroomMembership.objects.create(
+                classroom=self.room, user=make(name), role=STUDENT, seat_status=seat
+            )
+
+    def test_the_list_row_counts_active_and_frozen_as_students_and_keeps_the_demo_in_trial(self):
+        row = {r["id"]: r for r in self.get().json()["results"]}[self.room.pk]
+        self.assertEqual((row["students"], row["trial"]), (2, 1))
+
+    def test_ordering_by_students_leaves_the_demo_out(self):
+        body = self.get(o="-students").json()
+        self.assertEqual({r["id"]: r["students"] for r in body["results"]}[self.room.pk], 2)
+        counts = [r["students"] for r in body["results"]]
+        self.assertEqual(counts, sorted(counts, reverse=True))
+
+    def test_the_change_form_counts_two_students_and_one_demo(self):
+        body = self.get(f"{URL}{self.room.pk}/").json()
+        self.assertEqual((body["students"], body["demo"]), (2, 1))
+
+    def test_the_roster_still_lists_the_demo_seat_so_the_page_can_block_it_apart(self):
+        body = self.get(f"{URL}{self.room.pk}/roster/").json()
+        self.assertEqual(sorted(s["seat_status"] for s in body["students"]), ["active", "frozen", "trial"])
+
+    def test_todays_header_counts_the_students_not_the_demo(self):
+        with mock.patch("classes.ops_classrooms.timezone.localdate", return_value=WEDNESDAY):
+            today = self.get(f"{URL}{self.room.pk}/").json()["glance"]["today"]
+        self.assertEqual(today["students"], 2)
+
+    def test_a_demo_seat_carries_the_lessons_it_came_to_and_no_other_seat_does(self):
+        demo = ClassroomMembership.objects.get(classroom=self.room, seat_status="trial").user
+        for day, status in ((WEDNESDAY, "PRESENT"), (TUESDAY, "LATE"), (date(2026, 11, 9), "ABSENT")):
+            session = AttendanceSession.objects.create(classroom=self.room, date=day)
+            AttendanceRecord.objects.create(session=session, student=demo, status=status)
+        rows = {s["seat_status"]: s for s in self.get(f"{URL}{self.room.pk}/roster/").json()["students"]}
+        self.assertEqual(rows["trial"]["demo_lessons"], 2)
+        self.assertIsNone(rows["active"]["demo_lessons"])

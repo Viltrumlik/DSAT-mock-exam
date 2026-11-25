@@ -22,10 +22,13 @@ HOMEWORK_LIMIT = 20
 HISTORY_LIMIT = 200
 LEFT_LIMIT = 50
 
-#: A class's students: active STUDENT seats. TAs, teachers and removed seats are not students.
+SEAT_TRIAL = ClassroomMembership.SEAT_TRIAL
+#: A class's students: active STUDENT seats. TAs, teachers and removed seats are not students, and neither is a demo
+#: (trial) seat: it holds a chair (the capacity check counts everyone) but is counted apart, as ``demo``.
 STUDENT_SEATS = Count(
     "memberships",
-    filter=Q(memberships__role=ClassroomMembership.ROLE_STUDENT, memberships__status=ClassroomMembership.STATUS_ACTIVE),
+    filter=Q(memberships__role=ClassroomMembership.ROLE_STUDENT, memberships__status=ClassroomMembership.STATUS_ACTIVE)
+    & ~Q(memberships__seat_status=SEAT_TRIAL),
     distinct=True,
 )
 #: Paired with lc-up: a confirmed link whose group lc-up has not deleted (lcup.guards.is_lcup_managed,
@@ -117,7 +120,12 @@ def _person(u):
 
 
 def _student_seats(room):
+    """Every active student seat, a demo one included: the roster lists them (the page puts the demo apart)."""
     return ClassroomMembership.objects.filter(classroom=room, role=STUDENT, status=ACTIVE).select_related("user")
+
+
+def _demo_count(room) -> int:
+    return _student_seats(room).filter(seat_status=SEAT_TRIAL).count()
 
 
 def _lcup_block(room):
@@ -167,7 +175,8 @@ def classroom_core(room) -> dict:
         "created_at": iso(room.created_at),
         "teacher": _person(room.teacher) if room.teacher_id else None,
         "tas": sorted((_person(m.user) for m in tas), key=lambda p: p["name"].casefold()),
-        "students": _student_seats(room).count(),
+        "students": _student_seats(room).exclude(seat_status=SEAT_TRIAL).count(),
+        "demo": _demo_count(room),
         "lcup": _lcup_block(room),
         "glance": _glance(room),
     }
@@ -200,7 +209,7 @@ def _glance(room) -> dict:
             "expected": len(ids) * len(published),
         },
         "owing": LcupStudentLink.objects.filter(user_id__in=ids, balance__lt=0).count() if ids else 0,
-        "today": _today(room, len(ids)),
+        "today": _today(room, len(ids) - _demo_count(room)),
     }
 
 
@@ -252,6 +261,7 @@ def roster_part(room, request=None) -> dict:
     seats = sorted(_student_seats(room), key=lambda s: display_name(s.user).casefold())
     ids = [s.user_id for s in seats]
     froze = frozen_on(room) if any(s.seat_status == ClassroomMembership.SEAT_FROZEN for s in seats) else {}
+    came = (AttendanceRecord.STATUS_PRESENT, AttendanceRecord.STATUS_LATE)
     statuses = defaultdict(list)
     for student_id, status in AttendanceRecord.objects.filter(
         session__classroom=room, student_id__in=ids
@@ -290,6 +300,8 @@ def roster_part(room, request=None) -> dict:
                 "owes": owes(s.user_id),
                 "attendance_rate": compute_attendance_score(statuses[s.user_id]) if statuses[s.user_id] else None,
                 "homework_rate": homework_rate(s.user_id),
+                # A demo's own figure: the lessons they came to here (present or late); None for any other seat.
+                "demo_lessons": sum(1 for st in statuses[s.user_id] if st in came) if s.seat_status == SEAT_TRIAL else None,
             }
             for s in seats
         ],

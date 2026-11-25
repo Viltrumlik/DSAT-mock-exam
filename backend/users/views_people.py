@@ -28,6 +28,7 @@ from .activity import with_activity_counts
 from .changelist import DEFAULT_PAGE_SIZE, PAGE_SIZES  # noqa: F401 — still importable from here
 from .changelist import apply_search, facets, page_slice, paginate, to_int
 from .models import RefreshSession
+from .people_detail import demo_only_q, is_demo_only
 from .views import manageable_users_queryset
 
 SECTIONS = {
@@ -152,7 +153,7 @@ def _show_q(value):
     return None
 
 
-_SHOW_LABELS = (("owes", "Owe money"), ("trial", "Trial"), ("frozen", "Frozen"), ("nogroup", "No group"))
+_SHOW_LABELS = (("owes", "Owe money"), ("trial", "Demo"), ("frozen", "Frozen"), ("nogroup", "No group"))
 
 _SHOW = (
     "Show",
@@ -160,6 +161,15 @@ _SHOW = (
     lambda qs: [("all", "All", qs.count())] + [(v, label, qs.filter(_show_q(v)).count()) for v, label in _SHOW_LABELS],
     _show_q,
 )
+
+
+def _hides_demo_only(params) -> bool:
+    """The default Students list leaves out someone whose only seats are demo ones (they are not students yet): they
+    sit under the Demo chip, and a search (name, phone or the typed phone filters) still finds them."""
+    searching = bool((params.get("q") or "").strip()) or any(
+        _DIGITS.sub("", params.get(p) or "") for p, _ in _PHONE_PARAMS
+    )
+    return not searching and (params.get("show") or "").strip() != "trial"
 
 _LEVEL_ORDER = {level: i for i, (level, _) in enumerate(Classroom.LEVEL_CHOICES)}
 _LEVEL_WORDS = dict(Classroom.LEVEL_CHOICES)
@@ -387,6 +397,7 @@ def _row(u, section, request=None):
     if section == "students":
         link = getattr(u, "lcup_student_link", None)
         row["groups"] = [_group_cell(s) for s in getattr(u, "active_seats", [])]
+        row["is_demo_only"] = is_demo_only(getattr(u, "active_seats", []))
         # The balance is money: ``view_money``'s alone (teachers saw it here once; the badge, never the amount).
         money = request is not None and authorize(request.user, C.PERM_VIEW_MONEY)
         row["lcup"] = _balance_cell(u, link, money)
@@ -403,6 +414,17 @@ def _row(u, section, request=None):
     return row
 
 
+def _count_demo_chip(filters, everyone, defs, params) -> None:
+    """The Demo chip counts the demo-only people the list leaves out, with every other filter applied as a facet is."""
+    for key, (_, _, to_q) in defs.items():
+        value = (params.get(key) or "").strip()
+        q = to_q(value) if value and key != "show" else None
+        if q is not None:
+            everyone = everyone.filter(q)
+    demo = next(o for f in filters if f["key"] == "show" for o in f["options"] if o["value"] == "trial")
+    demo["count"] = everyone.filter(_show_q("trial")).count()
+
+
 class PeopleListView(APIView):
     permission_classes = [Requires(C.PERM_VIEW_PEOPLE)]
 
@@ -414,7 +436,13 @@ class PeopleListView(APIView):
         qs = manageable_users_queryset(request.user).filter(SECTIONS[section])
         qs = apply_search(qs, params.get("q") or "", PEOPLE_SEARCH)
         qs = _phone_filters(qs, params)
+        hide_demo = section == "students" and _hides_demo_only(params)
+        everyone = qs
+        if hide_demo:
+            qs = qs.exclude(demo_only_q())
         qs, filters = facets(qs, FILTERS[section], params)
+        if hide_demo:
+            _count_demo_chip(filters, everyone, FILTERS[section], params)
 
         qs = qs.annotate(
             last_seen=Subquery(

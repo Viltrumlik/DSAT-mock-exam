@@ -35,8 +35,8 @@ describe("the items", () => {
     expect(debtItem({ debtors: 0, total_debt: 0, frozen: 0, exempt: 0 } as never)).toBeNull();
   });
 
-  it("reads trials waiting from lc-up's pending count", () => {
-    expect(trialsItem({ pending: 16, trials: [], not_on_list: new Array(9) } as never)?.title).toBe("16 trial students to call back");
+  it("reads demo students waiting from lc-up's pending count", () => {
+    expect(trialsItem({ pending: 16, trials: [], not_on_list: new Array(9) } as never)?.title).toBe("16 demo students to call back");
     expect(trialsItem({ pending: 0, trials: [], not_on_list: [] } as never)).toBeNull();
   });
 

@@ -74,7 +74,8 @@ function openTabOf(raw: string | null, tabs: ClassTab[]): ClassTab {
 /** What a tab holds, said on the tab when worth knowing before opening (Controls board · Tabs). */
 export function classTabCounts(room: ClassroomCore): Partial<Record<ClassTab, { count: number | string; tone?: "critical" | "attention" }>> {
   const out: Partial<Record<ClassTab, { count: number | string; tone?: "critical" | "attention" }>> = {};
-  if (room.students) out.students = { count: room.students };
+  const demo = room.demo ?? 0;
+  if (room.students || demo) out.students = { count: demo ? `${room.students} +${demo} demo` : room.students };
   const rate = room.glance.attendance_rate;
   if (rate != null) out.attendance = { count: `${Math.round(rate)}%`, tone: rate < 60 ? "critical" : rate < 85 ? "attention" : undefined };
   if (room.glance.homework.assignments) out.homework = { count: room.glance.homework.assignments };

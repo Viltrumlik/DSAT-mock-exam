@@ -18,9 +18,9 @@ import type { PersonCore, PersonGroup } from "../personApi";
  * lc-up is off), the old remove of a seat not run by lc-up, the ledger's payment. A group lc-up runs says so.
  */
 
-const SEAT: Record<string, { label: string; tone: "positive" | "info" | "frozen" }> = {
+const SEAT: Record<string, { label: string; tone: "positive" | "demo" | "frozen" }> = {
   active: { label: "Active", tone: "positive" },
-  trial: { label: "Trial", tone: "info" },
+  trial: { label: "DEMO", tone: "demo" },
   frozen: { label: "Frozen", tone: "frozen" },
 };
 

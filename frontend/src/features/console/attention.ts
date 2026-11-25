@@ -81,9 +81,9 @@ export function trialsItem(f: LcupFollowups): AttentionItem | null {
     icon: "ms-trial",
     tone: "attention",
     count: f.pending,
-    title: `${plural(f.pending, "trial student", "trial students")} to call back`,
+    title: `${plural(f.pending, "demo student", "demo students")} to call back`,
     detail: missing ? `${plural(missing, "lc-up member", "lc-up members")} missing from a class list` : undefined,
-    action: { label: "Open trials", href: "/ops/trials" },
+    action: { label: "Open demo", href: "/ops/trials" },
   };
 }
 

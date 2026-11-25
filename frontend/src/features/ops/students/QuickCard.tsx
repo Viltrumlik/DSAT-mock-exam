@@ -31,7 +31,7 @@ import { groupLabel, groupLevel, shortDay, timeRange } from "./format";
 
 const SEAT: Record<string, { label: string; tone: BadgeTone }> = {
   active: { label: "Active", tone: "positive" },
-  trial: { label: "Trial", tone: "info" },
+  trial: { label: "DEMO", tone: "demo" },
   frozen: { label: "Frozen", tone: "frozen" },
 };
 

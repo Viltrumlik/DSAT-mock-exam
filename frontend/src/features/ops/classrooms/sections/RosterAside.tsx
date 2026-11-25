@@ -5,7 +5,7 @@ import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
-import { Button, Menu, Sheet, signedAmount, type MenuItem } from "@/features/console/ui";
+import { Button, DemoBadge, Menu, Sheet, signedAmount, type MenuItem } from "@/features/console/ui";
 import { formatPhone } from "@/features/ops/people/format";
 import { dayText } from "@/features/ops/detail/groupFacts";
 import { serverReason, useClassroomPart, type ClassroomCore, type ClassroomRoster } from "../classroomsApi";
@@ -28,11 +28,11 @@ type Dot = "active" | "owes" | "trial" | "frozen";
 const DOT: Record<Dot, { label: string; colour: string }> = {
   active: { label: "Active", colour: "bg-ms-positive" },
   owes: { label: "Owes", colour: "bg-ms-critical" },
-  trial: { label: "Trial", colour: "bg-ms-info" },
+  trial: { label: "Demo", colour: "bg-ms-attention" },
   frozen: { label: "Frozen", colour: "bg-ms-frozen" },
 };
 
-/** A frozen or trial seat says so first; a debt next; anyone else is active. */
+/** A frozen or demo seat says so first; a debt next; anyone else is active. */
 export function dotOf(row: Pick<Row, "seat_status" | "owes">): Dot {
   if (row.seat_status === "frozen") return "frozen";
   if (row.seat_status === "trial") return "trial";
@@ -112,13 +112,16 @@ export function RosterAside({
     return items;
   };
 
-  const students = query.data?.students ?? [];
+  const everyone = query.data?.students ?? [];
+  // A demo (trial) seat is no student yet: its own block under the paying and frozen rows, apart in the count too.
+  const students = everyone.filter((s) => s.seat_status !== "trial");
+  const demo = everyone.filter((s) => s.seat_status === "trial");
   const left = query.data?.left ?? [];
   const sorted = descending ? [...students].reverse() : students;
   const shown = all ? sorted : sorted.slice(0, FIRST);
   // "Owes" counts students, never families (owner's rule 5); a debt shows only with `view_money`.
   const tally: Record<Dot, number> = { active: 0, owes: 0, trial: 0, frozen: 0 };
-  for (const s of students) tally[canMoney ? dotOf(s) : dotOf({ ...s, owes: null })] += 1;
+  for (const s of everyone) tally[canMoney ? dotOf(s) : dotOf({ ...s, owes: null })] += 1;
 
   return (
     <aside aria-label="Students" className={cn("flex min-w-0 flex-col gap-1 rounded-ms-card border border-ms-border bg-ms-card px-3 pb-3 pt-4", className)}>
@@ -129,6 +132,7 @@ export function RosterAside({
             {students.length}
           </span>
         ) : null}
+        {query.data && demo.length ? <span className="text-[13px] font-semibold tabular-nums text-ms-fg-3">+{demo.length} demo</span> : null}
         <Button
           variant="ghost"
           size="sm"
@@ -162,9 +166,9 @@ export function RosterAside({
             Retry
           </button>
         </p>
-      ) : students.length === 0 ? (
+      ) : everyone.length === 0 ? (
         <p className="px-2 py-2 text-[14px] text-ms-fg-2">No students in this group.</p>
-      ) : (
+      ) : students.length === 0 ? null : (
         <ol className="m-0 flex list-none flex-col p-0">
           {shown.map((s) => {
             const n = sorted.indexOf(s) + 1;
@@ -189,6 +193,34 @@ export function RosterAside({
           })}
         </ol>
       )}
+
+      {demo.length ? (
+        <div aria-label="Demo" role="group" className="mt-2 border-t border-ms-border pt-2">
+          <h3 className="text-ms-over px-2 pb-1 text-ms-fg-3">Demo ({demo.length})</h3>
+          <ul className="m-0 flex list-none flex-col p-0">
+            {demo.map((s) => {
+              const name = s.name || s.username;
+              const lessons = s.demo_lessons ?? 0;
+              return (
+                <li key={s.id} data-testid="demo-row" className="flex min-h-12 items-center gap-2.5 rounded-ms-ctl px-2 hover:bg-ms-row-hover">
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} title={name} className="block truncate font-medium text-ms-fg hover:underline">
+                        {name}
+                      </Link>
+                      <DemoBadge className="shrink-0" />
+                    </span>
+                    <span className="block truncate text-[12.5px] tabular-nums text-ms-fg-3">
+                      added {dayText(s.seat_start_date ?? s.joined_at)} · {lessons} {lessons === 1 ? "lesson" : "lessons"}
+                    </span>
+                  </span>
+                  <Menu label={`More actions for ${name}`} items={itemsFor(s)} disabled={busy} />
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="mt-1.5 flex flex-wrap gap-1.5 px-1">
         {sorted.length > FIRST ? (

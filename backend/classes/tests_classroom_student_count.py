@@ -83,6 +83,25 @@ class ClassroomStudentCountTests(TestCase):
         )
         self.assertEqual(self._row(MY_CLASSES)["student_count"], 2)
 
+    def test_a_demo_seat_is_not_counted_as_a_student(self):
+        ClassroomMembership.objects.create(
+            classroom=self.classroom,
+            user=User.objects.create_user("count_demo@t.com", "secret123", role=C.ROLE_STUDENT),
+            role=ClassroomMembership.ROLE_STUDENT, seat_status=ClassroomMembership.SEAT_TRIAL,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom,
+            user=User.objects.create_user("count_frozen@t.com", "secret123", role=C.ROLE_STUDENT),
+            role=ClassroomMembership.ROLE_STUDENT, seat_status=ClassroomMembership.SEAT_FROZEN,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.admin,
+            role=ClassroomMembership.ROLE_ADMIN, status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        # two active + one frozen; the demo seat is the fourth student row and stays out
+        self.assertEqual(self._row(DIRECTORY)["student_count"], 3)
+        self.assertEqual(self._row(MY_CLASSES)["student_count"], 3)
+
     def test_an_invited_student_is_not_yet_enrolled(self):
         # The roster the button opens filters to ACTIVE, so the number beside it must too.
         ClassroomMembership.objects.create(

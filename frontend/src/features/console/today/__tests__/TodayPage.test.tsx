@@ -93,7 +93,7 @@ describe("TodayPage", () => {
     expect(host.querySelector("h1")?.textContent).toBe(`Today · ${todayDate()}`);
     expect(text).not.toMatch(/Good (morning|afternoon|evening)/);
     expect(host.querySelector("[data-needs-count]")?.textContent).toBe("6");
-    const order = ["Junior J6 · Math attendance not marked", "22 SMS did not arrive today", "13 students owe 9 450 000 so'm", "16 trial students to call back", "3 lc-up groups to pair", "1 class has no teacher"];
+    const order = ["Junior J6 · Math attendance not marked", "22 SMS did not arrive today", "13 students owe 9 450 000 so'm", "16 demo students to call back", "3 lc-up groups to pair", "1 class has no teacher"];
     const at = order.map((t) => text.indexOf(t));
     expect(at.every((i) => i >= 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);

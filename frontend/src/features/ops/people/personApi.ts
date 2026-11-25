@@ -131,6 +131,8 @@ export type PersonCore = {
   sat: { exam_date: string | null; target_score: number | null; target_english: number | null; target_math: number | null };
   /** Learners only ([] for staff). */
   groups: PersonGroup[];
+  /** Only demo seats: not a student yet (absent on an older server). */
+  is_demo_only?: boolean;
   past_groups: { id: number; name: string; left_at: string | null }[];
   /** Active classes not paired with lc-up that the learner is not in — "Add to class". */
   open_classes: { id: number; name: string }[];

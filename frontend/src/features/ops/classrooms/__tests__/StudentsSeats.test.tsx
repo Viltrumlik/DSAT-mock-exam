@@ -35,10 +35,10 @@ const ROOM = {
 const row = (id: number, name: string, seat_status: "active" | "trial" | "frozen") => ({
   id, name, username: name, avatar_url: null, section: "students" as const, joined_at: null, seat_status,
   seat_start_date: "2026-10-12", seat_frozen_on: seat_status === "frozen" ? "2026-10-20" : null,
-  owes: null, attendance_rate: null, homework_rate: null,
+  owes: null, attendance_rate: null, homework_rate: null, demo_lessons: seat_status === "trial" ? 1 : null,
 });
 const ROSTER: ClassroomRoster = {
-  students: [row(1, "Ali Trial", "trial"), row(2, "Vali Active", "active"), row(3, "Sara Frozen", "frozen")],
+  students: [row(1, "Ali Demo", "trial"), row(2, "Vali Active", "active"), row(3, "Sara Frozen", "frozen")],
   left: [{ id: 4, name: "Olim Left", section: "public", seat_left_on: "2026-10-05" }],
 };
 
@@ -171,8 +171,60 @@ describe("while lc-up runs", () => {
   it("still shows the badges", async () => {
     route();
     await mount({ ...ROOM, seats_open: false });
-    expect(rowOf("Ali Trial").textContent).toContain("Trial");
+    expect(rowOf("Ali Demo").textContent).toContain("DEMO");
     expect(rowOf("Sara Frozen").textContent).toContain("Frozen");
+  });
+});
+
+describe("the Demo block", () => {
+  const blockHeading = () =>
+    Array.from(host.querySelectorAll("h3")).find((h) => h.textContent?.startsWith("Demo")) as HTMLElement | undefined;
+
+  it("sits under the paying and frozen rows with its own ruled table", async () => {
+    route();
+    await mount();
+    const heading = blockHeading()!;
+    expect(heading.textContent).toBe("Demo (1)");
+    const tables = Array.from(host.querySelectorAll("table"));
+    expect(tables.length).toBeGreaterThanOrEqual(2);
+    const paying = tables[0];
+    const demo = heading.nextElementSibling!.querySelector("table")!;
+    expect(paying.textContent).toContain("Vali Active");
+    expect(paying.textContent).toContain("Sara Frozen");
+    expect(paying.textContent).not.toContain("Ali Demo");
+    expect(paying.compareDocumentPosition(demo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(Array.from(demo.querySelectorAll("th")).map((th) => th.textContent?.trim())).toEqual(["Name", "Added on", "Lessons attended", ""]);
+  });
+
+  it("shows the day added, the lessons attended, the DEMO badge and Activate / Remove", async () => {
+    route();
+    await mount();
+    const demo = rowOf("Ali Demo");
+    expect(demo.textContent).toContain("DEMO");
+    expect(demo.textContent).toMatch(/Oct\s+12/);
+    expect(demo.querySelectorAll("td")[2].textContent).toBe("1");
+    expect(buttonsIn(demo).filter(Boolean).slice(0, 2)).toEqual(["Activate", "Remove"]);
+  });
+
+  it("asks to remove with Remove, not Leave", async () => {
+    route();
+    await mount();
+    await click(button(rowOf("Ali Demo"), "Remove"));
+    expect(dialog()!.textContent).toContain("Remove Ali Demo from this group?");
+    expect(button(dialog()!, "Remove")).toBeDefined();
+  });
+
+  it("is not drawn when nobody is on a demo", async () => {
+    route({ roster: { ...ROSTER, students: ROSTER.students.filter((s) => s.seat_status !== "trial") } });
+    await mount();
+    expect(blockHeading()).toBeUndefined();
+  });
+
+  it("keeps the old Remove for a class lc-up does not run", async () => {
+    route();
+    await mount({ ...ROOM, seats_open: false });
+    expect(blockHeading()!.textContent).toBe("Demo (1)");
+    expect(button(rowOf("Ali Demo"), "Remove")).toBeDefined();
   });
 });
 
@@ -180,7 +232,7 @@ describe("once lc-up is off", () => {
   it("offers on each row the actions that fit its seat", async () => {
     route();
     await mount();
-    expect(await offered("Ali Trial")).toEqual(["Activate", "Move", "Leave", "Fix date"]);
+    expect(await offered("Ali Demo")).toEqual(["Activate", "Remove", "Move", "Fix date"]);
     expect(await offered("Vali Active")).toEqual(["Freeze", "Move", "Leave", "Fix date"]);
     expect(await offered("Sara Frozen")).toEqual(["Return", "Leave", "Fix date"]);
   });
@@ -225,7 +277,7 @@ describe("once lc-up is off", () => {
     route();
     post.mockResolvedValue({ data: {} });
     await mount();
-    await click(button(rowOf("Ali Trial"), "Activate"));
+    await click(button(rowOf("Ali Demo"), "Activate"));
     setValue(dateInput(), "2026-10-21");
     await click(button(dialog()!, "Activate"));
     expect(post).toHaveBeenCalledWith("/classes/admin/classrooms/45/seats/1/activate/", { date: "2026-10-21" });
@@ -250,11 +302,11 @@ describe("once lc-up is off", () => {
     expect(dialog()!.textContent).toContain("goes back to their balance");
   });
 
-  it.each(["Leave", "Fix date"])("speaks of no money when a trial seat chooses %s", async (label) => {
+  it.each(["Remove", "Fix date"])("speaks of no money when a demo seat chooses %s", async (label) => {
     route();
     await mount();
-    await choose("Ali Trial", label);
-    expect(dialog()!.textContent).toContain("A trial costs nothing");
+    await choose("Ali Demo", label);
+    expect(dialog()!.textContent).toContain("A demo costs nothing");
     expect(dialog()!.textContent).not.toContain("balance");
     expect(dialog()!.textContent).not.toContain("voided");
   });
@@ -289,7 +341,7 @@ describe("once lc-up is off", () => {
     route();
     post.mockRejectedValue({ response: { data: { detail: "Junior G1 has no monthly price." } } });
     await mount();
-    await click(button(rowOf("Ali Trial"), "Activate"));
+    await click(button(rowOf("Ali Demo"), "Activate"));
     await click(button(dialog()!, "Activate"));
     expect(dialog()!.textContent).toContain("Junior G1 has no monthly price.");
     expect(onChanged).not.toHaveBeenCalled();
@@ -317,7 +369,7 @@ describe("once lc-up is off", () => {
     expect(dialog()!.querySelector("select")).not.toBeNull();
   });
 
-  it("adds a student found by search, asking trial or active and the date", async () => {
+  it("adds a student found by search, asking demo or paying and the date", async () => {
     route();
     post.mockResolvedValue({ data: {} });
     await mount();

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { ROLE_LABELS } from "@/lib/roles";
 import { formatDate, formatLastSeen } from "@/features/ops/users/peopleColumns";
-import { Avatar, Badge, Button, HeaderCard, Menu, groupDigits, type GlanceFact } from "@/features/console/ui";
+import { Avatar, Badge, Button, DemoBadge, HeaderCard, Menu, groupDigits, type GlanceFact } from "@/features/console/ui";
 import type { Tone as VerdictTone } from "@/features/console/ui";
 import type { Tone } from "./Fieldset";
 import { formatPhone } from "./format";
@@ -128,6 +128,7 @@ function badges(person: PersonCore): ReactNode {
   return (
     <>
       <Badge tone={person.section === "public" ? "info" : "neutral"} icon="user">{role}</Badge>
+      {person.is_demo_only ? <DemoBadge /> : null}
       {person.frozen_reason === "debt" ? (
         <Badge tone="frozen" icon="snow">Frozen for debt</Badge>
       ) : person.is_frozen ? (

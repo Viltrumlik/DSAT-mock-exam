@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { RollNumber } from "@/features/console/RollNumber";
 import { toast } from "@/features/console/toast";
-import { Badge, CourseTag, Menu, balanceVerdict, signedAmount, type MenuItem } from "@/features/console/ui";
+import { Badge, CourseTag, DemoBadge, Menu, balanceVerdict, signedAmount, type MenuItem } from "@/features/console/ui";
 import { FacetSelect, FilterText, QuickChips, facetCount, type QuickChip } from "@/features/ops/changelist/BoardFields";
 import { withListFilters } from "@/features/ops/changelist/backLink";
 import type { ChangeListAction, ChangeListColumn, ChangeListFilter } from "@/features/ops/changelist/ChangeList";
@@ -26,7 +26,7 @@ import { QuickCard } from "./QuickCard";
 
 /**
  * /ops/students in lc-up's shape (canvas board "Students", owner 22 Nov 2026): the title with the total and rows per
- * page; the chips All / Owe money / Trial / Frozen / No group; a filter card; the ruled table — #, the student, the
+ * page; the chips All / Owe money / Demo / Frozen / No group; a filter card; the ruled table — #, the student, the
  * phone, each group as a course tag with its room, the signed balance, the teachers, a ⋮ menu; the bulk bar. A group
  * chip opens the student's quick card. Everything is the people list's own data (users/views_people.py).
  */
@@ -100,7 +100,7 @@ function StudentsListInner() {
     chip(null, "All"),
     // Who owes is money: the chip is `view_money`'s, as the balance is.
     ...(money ? [chip("owes", "Owe money", "var(--ms-critical)")] : []),
-    chip("trial", "Trial", "var(--ms-info)"),
+    chip("trial", "Demo", "var(--ms-attention)"),
     chip("frozen", "Frozen", "var(--ms-frozen)"),
     chip("nogroup", "No group", "var(--ms-neutral)"),
   ];
@@ -147,7 +147,10 @@ function StudentsListInner() {
       render: (r) => r.name || r.username || `User ${r.id}`,
       renderLinked: (r, link) => (
         <span className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate">{link(r.name || r.username || `User ${r.id}`)}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate">{link(r.name || r.username || `User ${r.id}`)}</span>
+            {r.is_demo_only ? <DemoBadge className="shrink-0" /> : null}
+          </span>
           {/* lc-up's second line: whom to call (owner, 22 Nov 2026: "Ha, chiqsin"). */}
           {r.parent_phone ? (
             <span data-parent-phone className="mt-[3px] truncate text-[13px] text-ms-fg-3 tabular-nums">
@@ -184,7 +187,7 @@ function StudentsListInner() {
                 >
                   <CourseTag level={groupLevel(g.level, g.name)}>{groupLabel(g.name, g.subject, surname(g.teacher))}</CourseTag>
                 </button>
-                {g.seat_status === "trial" ? <Badge tone="info">Trial</Badge> : null}
+                {g.seat_status === "trial" ? <DemoBadge /> : null}
                 {g.seat_status === "frozen" ? <Badge tone="frozen">Frozen</Badge> : null}
                 {g.room ? <span className="text-[13px] text-ms-fg-3">Room {g.room}</span> : null}
               </span>

@@ -1,6 +1,6 @@
 /**
  * The lc-up and Trials pages' tabs, apart from the pages: Next lets a `page.tsx` export nothing else,
- * and the console's panel draws the same tabs as trees under "lc-up link" and Trials
+ * and the console's panel draws the same tabs as trees under "lc-up link" and Demo
  * (Shell v0.4), in the same words.
  */
 export type LcupTab = "status" | "groups" | "students" | "teachers" | "accounts" | "attendance" | "archive";
@@ -22,6 +22,6 @@ export type TrialsTab = "trials" | "missing";
 export const TRIALS_TAB_IDS: readonly TrialsTab[] = ["trials", "missing"];
 
 export const TRIALS_TAB_LABEL: Record<TrialsTab, string> = {
-  trials: "Trial students",
+  trials: "Demo students",
   missing: "Not on class list",
 };

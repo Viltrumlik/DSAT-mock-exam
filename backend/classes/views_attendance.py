@@ -182,7 +182,11 @@ class AttendanceSessionDetailView(_ClassroomScopedView):
                 # On trial in lc-up: lessons come to before this one, and whether the free trial is
                 # behind them (owner, 2026-10-20: the teacher sends them to the admin). None otherwise.
                 "lcup_trial": trial.get(m.user_id),
+                # A demo (trial) seat, whether or not lc-up runs: the page puts these in a block of their own.
+                "is_demo": m.seat_status == ClassroomMembership.SEAT_TRIAL,
             })
+        # Demo rows last; the sort is stable, so the others keep the order they came in.
+        roster.sort(key=lambda row: row["is_demo"])
         return Response({
             **_session_brief(session, classroom=classroom, user=request.user),
             "roster": roster,
