@@ -546,8 +546,9 @@ def register_part(room, request=None) -> dict:
     last = (first + timedelta(days=32)).replace(day=1) - timedelta(days=1)
     sessions = list(AttendanceSession.objects.filter(classroom=room, date__range=(first, last)))
     held = {s.date for s in sessions}
+    # The days it meets from today on: today's lesson is a column before its register opens (to cancel or move it).
     scheduled = (
-        [d for d in lesson_days_in_range(room, max(first, today + timedelta(days=1)), last) if has_begun(room, d)]
+        [d for d in lesson_days_in_range(room, max(first, today), last) if has_begun(room, d)]
         if room.is_active
         else []
     )
