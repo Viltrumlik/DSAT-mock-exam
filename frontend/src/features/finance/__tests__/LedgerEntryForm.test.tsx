@@ -311,6 +311,27 @@ describe("entering money", () => {
 describe("a personal price", () => {
   const SEAT = { id: 7, group_name: "Junior G1", state: "active", price: 500000, personal_price: null, price_changes: [] };
 
+  it("paying per lesson, says nothing written is charged again, the first month neither", async () => {
+    await open(account({ seats: [{ ...SEAT, rule: "lesson", lesson_price: 38500 }] }));
+    await click("Personal price");
+    expect(document.body.textContent).toContain(
+      "Charges already written keep their price, the first month too. Lessons from the next one on are charged at the new price.",
+    );
+    expect(document.body.textContent).not.toContain("written again");
+  });
+
+  it("paying by the month, says this month's charge is written again", async () => {
+    await open(account({ seats: [{ ...SEAT, rule: "month" }] }));
+    await click("Personal price");
+    expect(document.body.textContent).toContain("This month's charge is written again at the new price.");
+  });
+
+  it("before a seat was ever charged, says the first charge uses the new price", async () => {
+    await open(account({ seats: [{ ...SEAT, rule: null }] }));
+    await click("Personal price");
+    expect(document.body.textContent).toContain("Nothing is charged yet: the first charge uses the new price.");
+  });
+
   it("can be set while entering money is still closed", async () => {
     post.mockResolvedValue({ data: { balance: -400000 } });
     await open(account({ payments_open: false, seats: [SEAT] }));

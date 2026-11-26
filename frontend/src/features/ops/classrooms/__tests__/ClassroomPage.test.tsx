@@ -46,6 +46,29 @@ vi.mock("next/navigation", () => ({
 }));
 
 const { ClassroomPage, classTabCounts } = await import("../ClassroomPage");
+const { lessonToMark } = await import("../ClassHeader");
+
+describe("the lesson the header's Mark button opens", () => {
+  const cancelled = { kind: "cancel" as const, reason: "Teacher ill", new_day: null, text: "Lesson cancelled: Teacher ill" };
+  const today = (change?: typeof cancelled) => ({ lesson_time: "20:00-22:00", students: 4, marked: null, ...(change ? { change } : {}) });
+  const room = (glance: Partial<ClassroomCore["glance"]>) => core({ glance: { ...core().glance, ...glance } });
+
+  it("is today's when the class meets today", () => {
+    expect(lessonToMark(room({ last_lesson: "2026-12-01", today: today() }), "2026-12-03")).toEqual({ date: "2026-12-03", today: true });
+  });
+
+  it("is the last one held when today's is called off or moved away", () => {
+    expect(lessonToMark(room({ last_lesson: "2026-12-01", today: today(cancelled) }), "2026-12-03")).toEqual({ date: "2026-12-01", today: false });
+  });
+
+  it("is none when the only register is today's and today's lesson is called off", () => {
+    expect(lessonToMark(room({ last_lesson: "2026-12-03", today: today(cancelled) }), "2026-12-03")).toBeNull();
+  });
+
+  it("is the last one held on a day the class does not meet", () => {
+    expect(lessonToMark(room({ last_lesson: "2026-12-01", today: null }), "2026-12-02")).toEqual({ date: "2026-12-01", today: false });
+  });
+});
 
 const LOCKED = [
   "name", "subject", "level", "lesson_days", "lesson_time", "lesson_hours", "branch", "room_number", "start_date", "is_active",

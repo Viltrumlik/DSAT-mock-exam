@@ -11,7 +11,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from billing import ledger, shadow, tasks
-from billing.models import Account, BillingRun, BillingState, EntryKind
+from billing.models import Account, BillingRun, BillingState, EntryKind, Seat, SeatState
 from billing.tests_shadow import NOW, Fixture, Opened, at
 from lcup.models import LcupMembership, LcupStudentLink
 
@@ -122,6 +122,20 @@ class AccountListTests(ApiCase, TestCase):
         rows = self.get("/api/billing/accounts/?scope=current").json()["accounts"]
         self.assertEqual([r["name"] for r in rows], ["A Student"])
         self.assertFalse(rows[0]["former"])
+
+    def test_a_student_who_moved_groups_is_current(self):
+        # A Move leaves the old seat LEFT and opens a new one: one seat still open is a current student.
+        Seat.objects.filter(account=self.account()).update(state=SeatState.LEFT)
+        Seat.objects.create(account=self.account(), group_name="Junior G2", lcup_group_id=11, price=500_000, state=SeatState.ACTIVE)
+        current = self.get("/api/billing/accounts/?scope=current").json()["accounts"]
+        former = self.get("/api/billing/accounts/?scope=former").json()["accounts"]
+        self.assertEqual(([r["name"] for r in current], [r["name"] for r in former]), (["A Student"], ["Former"]))
+        self.assertEqual(self.get("/api/billing/summary/").json()["former"], 1)
+
+    def test_a_student_whose_every_seat_is_left_is_former(self):
+        Seat.objects.filter(account=self.account()).update(state=SeatState.LEFT)
+        rows = self.get("/api/billing/accounts/?scope=former").json()["accounts"]
+        self.assertEqual(sorted(r["name"] for r in rows), ["A Student", "Former"])
 
 
 class AccountDetailTests(ApiCase, TestCase):

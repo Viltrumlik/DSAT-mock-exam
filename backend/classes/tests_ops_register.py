@@ -75,9 +75,17 @@ class RegisterPartTests(TestCase):
         self.assertEqual(body["today"], "2026-11-18")
         held = [(d["date"], d["held"]) for d in body["dates"]]
         self.assertEqual(held, [
-            ("2026-11-02", True), ("2026-11-16", True), ("2026-11-20", False), ("2026-11-23", False),
-            ("2026-11-25", False), ("2026-11-27", False), ("2026-11-30", False),
+            ("2026-11-02", True), ("2026-11-16", True), ("2026-11-18", False), ("2026-11-20", False),
+            ("2026-11-23", False), ("2026-11-25", False), ("2026-11-27", False), ("2026-11-30", False),
         ])
+
+    def test_todays_lesson_is_a_column_before_its_register_opens(self):
+        # A lesson day's column is there from the morning, so it can be cancelled or moved before anyone marks it.
+        before = [(d["date"], d["held"]) for d in self.register(month="2026-11").json()["dates"]]
+        self.assertIn(("2026-11-18", False), before)
+        AttendanceSession.objects.create(classroom=self.room, date=TODAY)
+        after = [(d["date"], d["held"]) for d in self.register(month="2026-11").json()["dates"]]
+        self.assertEqual([held for day, held in after if day == "2026-11-18"], [True])
 
     def test_each_student_carries_their_marks_and_the_day_they_joined(self):
         body = self.register(month="2026-11").json()
@@ -120,8 +128,8 @@ class RegisterPartTests(TestCase):
         dates = {d["date"]: (d["held"], d["change"]) for d in self.register(month="2026-11").json()["dates"]}
         self.assertEqual(
             list(dates),
-            ["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-20", "2026-11-23", "2026-11-24", "2026-11-25",
-             "2026-11-27", "2026-11-30"],
+            ["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-18", "2026-11-20", "2026-11-23", "2026-11-24",
+             "2026-11-25", "2026-11-27", "2026-11-30"],
         )
         self.assertEqual(
             dates["2026-11-20"], (False, {"id": cancelled.pk, "kind": "cancel", "reason": "Teacher ill", "holiday": False})

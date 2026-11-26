@@ -18,6 +18,30 @@ class FollowupsApiTests(FollowupsFixtureMixin, TestCase):
     def test_a_teacher_is_refused(self):
         self.assertEqual(self.get(self.teacher).status_code, 403)
 
+    def test_the_admin_who_created_the_group_is_not_its_teacher(self):
+        # The console makes a group's creator an ADMIN member; the Teacher column names the class's teacher alone.
+        ClassroomMembership.objects.create(classroom=self.room, user=self.admin, role=ClassroomMembership.ROLE_ADMIN)
+        self.lcup_member("Jasur Toshmatov", status="trial", since=self.MONDAY)
+        self.assertEqual(self.get(self.admin).json()["not_on_list"][0]["teachers"], ["Tess Teacher"])
+
+    def test_a_frozen_teacher_is_not_stood_in_for_by_the_admin_who_created_the_group(self):
+        # The class's teacher is known: nobody is named while they are frozen, least of all the group's creator.
+        ClassroomMembership.objects.create(classroom=self.room, user=self.admin, role=ClassroomMembership.ROLE_ADMIN)
+        User.objects.filter(pk=self.teacher.pk).update(is_frozen=True)
+        self.lcup_member("Jasur Toshmatov", status="trial", since=self.MONDAY)
+        self.assertEqual(self.get(self.admin).json()["not_on_list"][0]["teachers"], [])
+
+    def test_the_class_teacher_made_an_assistant_in_the_roster_is_still_named(self):
+        # "Assign teacher" makes them a TEACHER member, which an owner may turn into TA in the roster; the class still
+        # names them its teacher (Classroom.teacher), as the console's Teacher badge does.
+        cora = User.objects.create_user(
+            None, password=None, username="cora", role="teacher", subject="math", first_name="Cora", last_name="Teacher"
+        )
+        ClassroomMembership.objects.create(classroom=self.room, user=cora, role=ClassroomMembership.ROLE_TA)
+        type(self.room).objects.filter(pk=self.room.pk).update(teacher=cora)
+        self.lcup_member("Jasur Toshmatov", status="trial", since=self.MONDAY)
+        self.assertEqual(self.get(self.admin).json()["not_on_list"][0]["teachers"], ["Cora Teacher"])
+
     def test_the_desk_sees_trials_neediest_first_and_the_missing(self):
         used, came = self.student("Sardor", "Nazarov"), self.student("Ali", "Valiyev")
         self.lcup_member("Not Yet", user=self.student("Not", "Yet"), status="trial", since=date(2026, 10, 1))
