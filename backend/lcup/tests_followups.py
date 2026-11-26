@@ -266,6 +266,18 @@ class SendLessonChecksTests(FollowupsFixtureMixin, TestCase):
         send_lesson_checks(now=at(self.MONDAY, 16, 5))
         self.assertEqual(set(self.sent().values_list("recipient_id", flat=True)), {self.teacher.pk, second.pk})
 
+    def test_not_the_admin_who_only_created_the_group(self):
+        # Creating a group in the console makes its creator an ADMIN member too; the class's teacher is someone else.
+        self.staff("creator", ClassroomMembership.ROLE_ADMIN)
+        send_lesson_checks(now=at(self.MONDAY, 16, 5))
+        self.assertEqual(set(self.sent().values_list("recipient_id", flat=True)), {self.teacher.pk})
+
+    def test_a_class_with_no_teacher_set_tells_its_owners(self):
+        type(self.room).objects.filter(pk=self.room.pk).update(teacher=None)
+        creator = self.staff("creator", ClassroomMembership.ROLE_ADMIN)
+        send_lesson_checks(now=at(self.MONDAY, 16, 5))
+        self.assertEqual(set(self.sent().values_list("recipient_id", flat=True)), {self.teacher.pk, creator.pk})
+
     def test_a_class_that_has_not_started_yet_has_no_lesson_to_check(self):
         # No register at all: one dated before ``start_date`` is proof the class was already meeting
         # (a class lc-up moved up a level — ``classes.lesson_schedule.has_begun``).
