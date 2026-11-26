@@ -38,11 +38,17 @@ export function todayBadge(room: ClassroomCore): { text: string; tone: "positive
   return { text: `${when} · ${marked} of ${plural(today.students, "student")} marked`, tone: marked >= today.students ? "positive" : "attention" };
 }
 
-/** The lesson "Mark …'s lesson" opens: today's when the class meets today, else the last one held. */
+/**
+ * The lesson "Mark …'s lesson" opens: today's when the class meets today, else the last one held. A lesson called off
+ * or moved away today is none to mark (the header says why): it offers the last one held before today instead, and
+ * nothing when the only register is today's (opened before the change; Undo brings the lesson back).
+ */
 export function lessonToMark(room: ClassroomCore, todayIso: string): { date: string; today: boolean } | null {
-  if (room.glance.today) return { date: todayIso, today: true };
-  if (room.glance.last_lesson) return { date: room.glance.last_lesson, today: room.glance.last_lesson === todayIso };
-  return null;
+  const today = room.glance.today;
+  if (today && !today.change) return { date: todayIso, today: true };
+  const last = room.glance.last_lesson;
+  if (!last || (today?.change && last === todayIso)) return null;
+  return { date: last, today: last === todayIso };
 }
 
 function facts(room: ClassroomCore, canMoney: boolean): ReactNode[] {
