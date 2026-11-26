@@ -355,15 +355,16 @@ def due_lessons(now) -> list[tuple]:
 
 
 def teachers_by_room(room_ids) -> dict[int, list]:
-    """Who runs each class — its teacher (``Classroom.teacher``) and the members marked TEACHER (lc-up's other
-    teachers on a paired class), not assistants — in one query. The admin who creates a group in the console is an
-    ADMIN member of it too, but not its teacher, and never stands in for one: while the teacher is frozen or gone
-    nobody is named. Only a class with no teacher set falls back to its owners, as before. The one definition: the
-    lesson-end message and /ops/trials both name these people."""
+    """Who runs each class — its teacher (``Classroom.teacher``, in whatever staff role the roster gives them: the
+    console names them its teacher too) and the members marked TEACHER (lc-up's other teachers on a paired class),
+    not other assistants — in one query. The admin who creates a group in the console is an ADMIN member of it too,
+    but not its teacher, and never stands in for one: while the teacher is frozen or gone nobody is named. Only a
+    class with no teacher set falls back to its owners, as before. The one definition: the lesson-end message and
+    /ops/trials both name these people."""
     seats = (
         ClassroomMembership.objects.filter(
             classroom_id__in=room_ids,
-            role__in=ClassroomMembership.MANAGER_ROLES,
+            role__in=ClassroomMembership.STAFF_ROLES,
             status=ClassroomMembership.STATUS_ACTIVE,
             user__is_active=True,
             user__is_frozen=False,
@@ -372,18 +373,19 @@ def teachers_by_room(room_ids) -> dict[int, list]:
         .select_related("user")
         .order_by("pk")
     )
-    managers: dict[int, list] = {}
+    owners: dict[int, list] = {}
     teachers: dict[int, list] = {}
     no_teacher_set: set[int] = set()
     for seat in seats:
-        managers.setdefault(seat.classroom_id, []).append(seat.user)
         if seat.room_teacher_id is None:
             no_teacher_set.add(seat.classroom_id)
         if seat.role == ClassroomMembership.ROLE_TEACHER or seat.user_id == seat.room_teacher_id:
             teachers.setdefault(seat.classroom_id, []).append(seat.user)
+        elif seat.role in ClassroomMembership.MANAGER_ROLES:
+            owners.setdefault(seat.classroom_id, []).append(seat.user)
     return {
-        room_id: teachers.get(room_id) or (team if room_id in no_teacher_set else [])
-        for room_id, team in managers.items()
+        room_id: teachers.get(room_id) or (owners.get(room_id, []) if room_id in no_teacher_set else [])
+        for room_id in teachers.keys() | owners.keys()
     }
 
 

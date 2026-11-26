@@ -31,6 +31,17 @@ class FollowupsApiTests(FollowupsFixtureMixin, TestCase):
         self.lcup_member("Jasur Toshmatov", status="trial", since=self.MONDAY)
         self.assertEqual(self.get(self.admin).json()["not_on_list"][0]["teachers"], [])
 
+    def test_the_class_teacher_made_an_assistant_in_the_roster_is_still_named(self):
+        # "Assign teacher" makes them a TEACHER member, which an owner may turn into TA in the roster; the class still
+        # names them its teacher (Classroom.teacher), as the console's Teacher badge does.
+        cora = User.objects.create_user(
+            None, password=None, username="cora", role="teacher", subject="math", first_name="Cora", last_name="Teacher"
+        )
+        ClassroomMembership.objects.create(classroom=self.room, user=cora, role=ClassroomMembership.ROLE_TA)
+        type(self.room).objects.filter(pk=self.room.pk).update(teacher=cora)
+        self.lcup_member("Jasur Toshmatov", status="trial", since=self.MONDAY)
+        self.assertEqual(self.get(self.admin).json()["not_on_list"][0]["teachers"], ["Cora Teacher"])
+
     def test_the_desk_sees_trials_neediest_first_and_the_missing(self):
         used, came = self.student("Sardor", "Nazarov"), self.student("Ali", "Valiyev")
         self.lcup_member("Not Yet", user=self.student("Not", "Yet"), status="trial", since=date(2026, 10, 1))
