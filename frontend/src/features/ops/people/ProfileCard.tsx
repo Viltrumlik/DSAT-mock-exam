@@ -23,7 +23,7 @@ import {
 } from "@/features/console/ui";
 import { dayText } from "@/features/ops/detail/groupFacts";
 import { formatDateTime, formatPhone } from "./format";
-import { ONE_TIME_PASSWORD_ROLES, todayFact } from "./PersonHeader";
+import { ONE_TIME_PASSWORD_ROLES, debtFreezeLift, lcupLinked, ledgerIsOurs, todayFact } from "./PersonHeader";
 import type { PersonCore } from "./personApi";
 
 /**
@@ -86,7 +86,7 @@ function StateBadges({ person }: { person: PersonCore }) {
         <Badge tone="positive" dot>Active</Badge>
       )}
       {person.is_demo_only ? <DemoBadge /> : null}
-      {person.lcup ? <Badge tone="line" icon="link">lc-up linked</Badge> : null}
+      {lcupLinked(person) ? <Badge tone="line" icon="link">lc-up linked</Badge> : null}
       {otp ? (
         <Badge tone={otp.locked ? "critical" : "attention"} icon="key">
           {otp.locked ? "One-time password locked" : `One-time password · until ${dayText(otp.expires_at)}`}
@@ -107,7 +107,7 @@ function FrozenNote({ person }: { person: PersonCore }) {
       <p>
         <b>{debt ? "Frozen for debt." : "Frozen by an admin."}</b>{" "}
         {debt
-          ? "They can still come to lessons but can’t open homework or mocks. The freeze lifts when lc-up records the payment."
+          ? `They can still come to lessons but can’t open homework or mocks. ${debtFreezeLift(person)}`
           : "Their access stays closed until an admin unfreezes the account."}
       </p>
     </div>
@@ -130,7 +130,8 @@ function BalanceWell({ person }: { person: PersonCore }) {
         {balance === null ? "—" : signedAmount(balance)}
       </span>
       <span className="text-[12.5px] text-ms-fg-3">
-        lc-up · updated {formatDateTime(lcup.updated_at)}
+        {/* The ledger is never behind; lc-up's balance is as of its last sync. */}
+        {ledgerIsOurs(person) ? "Ledger · up to date" : `lc-up · updated ${formatDateTime(lcup.updated_at)}`}
         {lcup.exempt ? " · never frozen for debt" : ""}
       </span>
     </div>

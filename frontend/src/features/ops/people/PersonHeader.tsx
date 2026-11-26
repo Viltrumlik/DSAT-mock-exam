@@ -62,14 +62,33 @@ export function todayFact(person: PersonCore): GlanceFact {
   };
 }
 
-/** "Does he owe?" — lc-up's balance: a debt in so'm, or paid up. */
+/** Whether the centre's own ledger holds the money (leaving lc-up, 1 Dec 2026): its money block then carries the
+ * billing `rule` (`billing.reads.student_finance`), and payments are entered here. */
+export function ledgerIsOurs(person: PersonCore): boolean {
+  return Boolean(person.lcup?.rule || person.ledger?.payments_open);
+}
+
+/** Linked to a student in lc-up. Once the ledger is ours, someone made in the console has money but no link. */
+export function lcupLinked(person: PersonCore): boolean {
+  return person.lcup?.lcup_student_id != null;
+}
+
+/** What lifts a debt freeze: lc-up recording the payment while lc-up keeps the money, a payment here after it. */
+export function debtFreezeLift(person: PersonCore): string {
+  return person.lcup && !ledgerIsOurs(person)
+    ? "The freeze lifts when lc-up records the payment."
+    : "The freeze lifts once a payment clears the debt.";
+}
+
+/** "Does he owe?" — the balance, lc-up's or the ledger's once it holds the money: a debt in so'm, or paid up. */
 export function moneyFact(person: PersonCore): GlanceFact {
   if (!person.lcup) return { label: "Balance", value: "—", sub: "Not linked to lc-up" };
+  const source = ledgerIsOurs(person) ? "ledger balance" : "lc-up balance";
   const balance = person.lcup.balance;
   if (balance !== null && balance < 0) {
-    return { label: "Owes", value: groupDigits(String(Math.round(-balance))), unit: "so'm", tone: "critical", sub: person.lcup.exempt ? "lc-up balance · never frozen for debt" : "lc-up balance" };
+    return { label: "Owes", value: groupDigits(String(Math.round(-balance))), unit: "so'm", tone: "critical", sub: person.lcup.exempt ? `${source} · never frozen for debt` : source };
   }
-  return { label: "Balance", value: balance === null ? "—" : "Paid up", tone: balance === null ? undefined : "positive", sub: "lc-up balance" };
+  return { label: "Balance", value: balance === null ? "—" : "Paid up", tone: balance === null ? undefined : "positive", sub: source };
 }
 
 function facts(person: PersonCore): GlanceFact[] {
@@ -112,7 +131,7 @@ function notice(person: PersonCore) {
       tone: "frozen" as const,
       icon: "ms-freeze" as const,
       title: "Frozen for debt.",
-      body: "They can still come to lessons but can’t open homework or mocks. The freeze lifts when lc-up records the payment.",
+      body: `They can still come to lessons but can’t open homework or mocks. ${debtFreezeLift(person)}`,
     };
   }
   if (person.is_frozen) {
@@ -136,7 +155,7 @@ function badges(person: PersonCore): ReactNode {
       ) : (
         <Badge tone="positive" dot>Active</Badge>
       )}
-      {person.lcup ? <Badge tone="line" icon="link">lc-up linked</Badge> : null}
+      {lcupLinked(person) ? <Badge tone="line" icon="link">lc-up linked</Badge> : null}
       {otp ? (
         <Badge tone={otp.locked ? "critical" : "attention"} icon="key">
           {otp.locked ? "One-time password locked" : `One-time password · until ${formatDate(otp.expires_at)}`}

@@ -440,6 +440,25 @@ describe("the left card", () => {
     expect(card().textContent).toContain("Never signed in");
   });
 
+  it("once the ledger is the centre's own, says a payment lifts a debt freeze and names the ledger, not lc-up", async () => {
+    // After leaving lc-up the money block comes from the ledger (it carries `rule`); a student made in the console
+    // since has no lc-up link.
+    const ours = { ...core().lcup!, status: "", lcup_student_id: null, rule: "lesson" as const };
+    route(core({ is_frozen: true, frozen_reason: "debt", status: "frozen_debt", lcup: ours, ledger: { account_id: 5, payments_open: true } }));
+    await renderPage();
+    expect(card().textContent).toContain("The freeze lifts once a payment clears the debt.");
+    expect(card().textContent).not.toContain("lc-up linked");
+    const balance = card().querySelector('[data-testid="balance"]') as HTMLElement;
+    expect(balance.textContent).toContain("Ledger · up to date");
+    expect(balance.textContent).not.toContain("lc-up");
+  });
+
+  it("still says lc-up linked for a student lc-up knew, once the ledger is the centre's own", async () => {
+    route(core({ lcup: { ...core().lcup!, rule: "lesson" }, ledger: { account_id: 5, payments_open: true } }));
+    await renderPage();
+    expect(card().textContent).toContain("lc-up linked");
+  });
+
   it("marks someone whose only seats are demo ones with DEMO in the header, and no one else", async () => {
     route(core());
     await renderPage();

@@ -207,6 +207,16 @@ function parsePrice(raw: string): number | null {
   return Number.isSafeInteger(price) ? price : null;
 }
 
+/** What a new personal price writes again (`billing.ledger.set_personal_price`), by how the seat is billed: paying
+ * per lesson, nothing already written (the first month neither); paying by the month, this month's charge. */
+function priceNote(rule: LedgerSeat["rule"]): string {
+  if (rule === "lesson") {
+    return "Charges already written keep their price, the first month too. Lessons from the next one on are charged at the new price.";
+  }
+  if (rule === "month") return "This month's charge is written again at the new price.";
+  return "Nothing is charged yet: the first charge uses the new price.";
+}
+
 /** A student's own price. Open while lc-up runs, unlike entering money: it only touches this ledger. */
 export function SeatPriceForm({ seat, onClose }: { seat: LedgerSeat; onClose: () => void }) {
   const setPrice = useSetSeatPrice();
@@ -249,7 +259,7 @@ export function SeatPriceForm({ seat, onClose }: { seat: LedgerSeat; onClose: ()
           />
         </label>
       </div>
-      <p className="text-[12px] text-ms-fg-3">This month's charge is written again at the new price.</p>
+      <p className="text-[12px] text-ms-fg-3">{priceNote(seat.rule)}</p>
       <Refusal error={setPrice.error} />
       <div className="flex flex-wrap gap-1">
         <Btn primary type="submit" disabled={!hasReason || price === null}>

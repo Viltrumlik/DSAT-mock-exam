@@ -582,6 +582,17 @@ describe("the header", () => {
     expect(header.textContent).toContain("+998 90 123 45 67");
   });
 
+  it("once the ledger is the centre's own, says a payment lifts a debt freeze, in no lc-up words", async () => {
+    // The ledger's money block carries `rule`; someone made in the console after leaving lc-up has no lc-up link.
+    const ours = { ...core().lcup!, status: "", lcup_student_id: null, rule: "lesson" as const };
+    route(core({ is_frozen: true, frozen_reason: "debt", status: "frozen_debt", lcup: ours }));
+    await renderPage();
+    const header = host.querySelector("h1")!.closest("section") as HTMLElement;
+    expect(header.textContent).toContain("The freeze lifts once a payment clears the debt.");
+    expect(header.textContent).toContain("ledger balance");
+    expect(header.textContent).not.toContain("lc-up");
+  });
+
   it("keeps the photo, the name and the glance on every tab (the header comes before any tab)", async () => {
     route(core());
     await renderPage("public", "tab=groups");
