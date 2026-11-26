@@ -53,7 +53,9 @@ def _after_money(account) -> None:
 
 
 def _current_account_ids() -> set[int]:
-    return set(Account.objects.filter(seats__isnull=False).exclude(seats__state=SeatState.LEFT).values_list("pk", flat=True))
+    """Accounts with at least one seat not left. Read from the seats: ``Account.exclude(seats__state=LEFT)`` would
+    drop an account holding ANY left seat, so a student who moved groups (old seat left, new one open) was former."""
+    return set(Seat.objects.exclude(state=SeatState.LEFT).values_list("account_id", flat=True))
 
 
 class SummaryView(APIView):
